@@ -9,7 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import scene_spec as SP  # what the Blender renderer can draw (settings, characters, actions, props)
 HIST = os.path.join(ROOT, "data", "history.json")
-MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+MODEL = os.environ.get("GROQ_MODEL", "whisper-large-v3-turbo")
 
 GENRES = [
     "a surprising TRUE invention/origin story (well documented, famous sources only)",
