@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 import scene_spec as SP  # what the Blender renderer can draw (settings, characters, actions, props)
 HIST = os.path.join(ROOT, "data", "history.json")
 MODEL = os.environ.get("GROQ_MODEL", "whisper-large-v3-turbo")
+# Ensure a GENRES list exists -- prefer SP.GENRES if scene_spec defines it, otherwise fall back
+GENRES = getattr(SP, "GENRES", ["facts", "mystery", "history", "motivation", "funny"])
 
 PROMPT = """You write viral YouTube Shorts stories for the Hindi/Hinglish channel "Bounce Bhai".
 Write ONE original micro-story. Genre: {genre}.
