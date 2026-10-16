@@ -14,8 +14,7 @@ permissions:
   models: read
 
 jobs:
-  short:
-    if: github.event_name == 'workflow_dispatch' || vars.AUTO_POST == 'true'
+short:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
