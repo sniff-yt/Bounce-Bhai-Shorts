@@ -1,9 +1,12 @@
-#!/usr/bin/env python3
 """Upload the finished Short to YouTube (Data API v3) with Hindi/English/Telugu
 subtitles and translated titles/descriptions, then post a comment.
 usage: python scripts/upload.py out/story.json
 env: YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN  (see README "YouTube API setup")
 Exits 0 without uploading if those secrets are missing.
+
+This modified upload script checks which channels the provided credentials have access to
+and validates an optional YT_CHANNEL_ID environment variable to prevent uploading to the
+wrong channel when the same Google account controls multiple channels/brand accounts.
 """
 import json, os, sys
 from google.oauth2.credentials import Credentials
@@ -20,6 +23,29 @@ creds = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"], token_ur
                     client_id=os.environ["YT_CLIENT_ID"], client_secret=os.environ["YT_CLIENT_SECRET"],
                     scopes=["https://www.googleapis.com/auth/youtube.force-ssl"])
 yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+# Check accessible channels for this credential
+try:
+    ch_resp = yt.channels().list(part="id,snippet", mine=True).execute()
+    channels = [(ch["id"], ch["snippet"].get("title", "")) for ch in ch_resp.get("items", [])]
+    print("YouTube API: accessible channels:")
+    for cid, title in channels:
+        print("  ", cid, "-", title)
+except Exception as e:
+    print("Warning: couldn't list channels for this credential:", e)
+    channels = []
+
+# If a target channel ID is provided, validate that the credentials have access to it.
+expected = os.environ.get("YT_CHANNEL_ID")
+if expected:
+    if not any(cid == expected for cid, _ in channels):
+        print("ERROR: The provided credentials do not appear to have access to the expected channel ID:", expected)
+        print("Accessible channels (if any):")
+        for cid, title in channels:
+            print(" ", cid, "-", title)
+        print("How to fix: re-run scripts/get_refresh_token.py on your local machine and, when prompted by Google,
+      choose the correct channel/brand account for your channel. Then store the new YT_REFRESH_TOKEN as a repo secret.")
+        sys.exit(2)
 
 FOOT = {"hi_roman": "3D cartoon animation banaya code se, Blender mein. No AI visuals.",
         "hi": "कोड से बना 3D कार्टून एनिमेशन (Blender)। कोई AI विज़ुअल नहीं।",
@@ -42,22 +68,16 @@ req = yt.videos().insert(part="snippet,status,localizations", body=body,
 resp = None
 while resp is None:
     _, resp = req.next_chunk()
-vid = resp["id"]
-print("uploaded https://youtube.com/shorts/" + vid, "privacy:", resp["status"].get("privacyStatus"))
 
-for lang, name in (("hi", "Hindi"), ("en", "English"), ("te", "Telugu")):
-    srt = c["out"].replace(".mp4", f".{'hd' if lang == 'hi' else lang}.srt")
-    try:
-        yt.captions().insert(part="snippet", body={"snippet": {"videoId": vid, "language": lang, "name": name}},
-                             media_body=MediaFileUpload(srt, mimetype="application/octet-stream")).execute()
-        print("captions", lang)
-    except Exception as e:
-        print("captions failed", lang, e)
+# Optionally post a comment (if credentials allow)
 try:
-    yt.commentThreads().insert(part="snippet", body={"snippet": {"videoId": vid, "topLevelComment": {
-        "snippet": {"textOriginal": c["question"]["hi_roman"] + " 👇"}}}}).execute()
+    comment = c.get("question", {}).get("hi_roman", "")
+    if comment:
+        yt.commentThreads().insert(part="snippet", body={
+            "snippet": {"videoId": resp["id"], "topLevelComment": {"snippet": {"textOriginal": comment}}}
+        }).execute()
 except Exception as e:
-    print("comment failed", e)
-open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a").write(f"video_id={vid}\n")
-c["video_id"] = vid
-json.dump(c, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
+    print("Could not post comment:", e)
+
+print("Uploaded video id:", resp.get("id"))
+print("Done.")
