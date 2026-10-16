@@ -14,14 +14,17 @@ m = ChatterboxMultilingualTTS.from_pretrained(device="cuda" if torch.cuda.is_ava
 base = story_path.replace(".json", "")
 paths = []
 for i, sent in enumerate(s["sentences"]):
-    best = None
+    best, best_err = None, 9e9
+    expect = 0.35 + 0.075 * len(sent["hd"])
     for attempt in range(3):  # regenerate lines that come out cut off or rambling
         w = m.generate(sent["hd"], language_id="hi", audio_prompt_path=ref, exaggeration=0.6, cfg_weight=0.4)
         d = w.shape[-1] / m.sr
-        expect = 0.35 + 0.075 * len(sent["hd"])
+        err = abs(d / expect - 1)
+        print(f"line {i} try {attempt}: {d:.2f}s (expected ~{expect:.2f}s)", flush=True)
+        if err < best_err:
+            best, best_err = w, err  # keep the closest try, not just the last one
         if 0.5 * expect <= d <= 1.8 * expect:
-            best = w; break
-        best = w
+            break
     p = f"{base}_line{i}.wav"
     torchaudio.save(p, best, m.sr)
     paths.append(os.path.abspath(p))
