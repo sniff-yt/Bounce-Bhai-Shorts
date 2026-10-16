@@ -10,7 +10,32 @@ import scene_spec as SP  # what the Blender renderer can draw (settings, charact
 HIST = os.path.join(ROOT, "data", "history.json")
 MODEL = os.environ.get("GROQ_MODEL", "whisper-large-v3-turbo")
 
-# ... (PROMPT and helper functions unchanged) ...
+PROMPT = """You write viral YouTube Shorts stories for the Hindi/Hinglish channel "Bounce Bhai".
+Write ONE original micro-story. Genre: {genre}.
+Rules:
+- 7 to 9 short sentences, 70-100 words total. Strong hook first sentence, twist/payoff in the LAST sentence.
+- If the story is TRUE, use only facts you are highly confident are correct and widely documented (names, years, numbers). If unsure about a detail, leave it out.
+- Never reuse these past stories: {past}
+- Never write about scams, politics, religion, violence, or real private people. Never use the story "Ismaeel's Silent Journey".
+- payoff_word: one single word that appears in the LAST sentence's "hi" text (the climax word).
+- The video is a 3D cartoon. Give a "cast" of 1-3 characters (real people in true stories are shown as generic
+  cartoon characters; "name" is just a label). type: one of {types}. color (their clothes): one of {colors}.
+- Every sentence gets a "scene" the animator can act out:
+  setting: one of {settings};
+  characters: 1-3 cast names on screen (first one does the action);
+  action: one of {actions} (pick the one that best SHOWS the sentence; vary them, avoid "talk" more than 3 times);
+  prop: one of {props}.
+Return ONLY JSON:
+{{"title": "short English title",
+  "cast": [{{"name": "Ravi", "type": "man", "color": "blue"}}],
+  "hook": "Hinglish hook, max 34 characters, ends with ...",
+  "payoff_word": "word",
+  "sentences": [{{"hi": "Hinglish in Roman script", "hd": "same sentence in Devanagari Hindi, numbers written out as Hindi words, acronyms spaced like आई बी एम", "en": "natural English[...]",
+  "yt_title": {{"hi_roman": "hook + 1 emoji + #shorts (<60 chars)", "hi": "Devanagari title + emoji + #shorts", "en": "English title + emoji + #shorts", "te": "Telugu title + emoji + #shorts"}},
+  "question": {{"hi_roman": "one Hinglish question to viewers about the story", "hi": "Devanagari", "en": "English", "te": "Telugu"}},
+  "tags": ["8 to 12 tags"],
+  "genre_tag": "#facts or #mystery or #history or #motivation or #funny"}}"""
+
 
 def _post(url, key, payload, timeout=120):
     """POST JSON to url and return a dict with either parsed JSON or raw body.
@@ -32,6 +57,7 @@ def _post(url, key, payload, timeout=120):
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         return {"http_error": {"code": e.code, "body": body}}
+
 
 def groq(prompt):
     """Groq if GROQ_API_KEY is set, otherwise free GitHub Models with the workflow's GITHUB_TOKEN.
@@ -119,12 +145,14 @@ def groq(prompt):
     raise SystemExit(f"story API failed on every model: {last}")
 
 # rest of the file (valid, main, etc.) unchanged
+
 def valid(s):
     ss = s.get("sentences") or []
     if not (6 <= len(ss) <= 10): return False
     if not all(all(x.get(k) for k in ("hi", "hd", "en", "te")) for x in ss): return False
     pw = s.get("payoff_word", "").strip("!.,").lower()
     return any(w.strip("!.,?").lower() == pw for w in ss[-1]["hi"].split())
+
 
 def main(out):
     hist = json.load(open(HIST)) if os.path.exists(HIST) else []
@@ -148,6 +176,7 @@ def main(out):
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(s, open(out, "w"), ensure_ascii=False, indent=1)
     print("story:", s["title"])
+
 
 if __name__ == "__main__":
     main(sys.argv[1])
