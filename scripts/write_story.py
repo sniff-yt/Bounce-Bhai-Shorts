@@ -6,6 +6,8 @@ env: GROQ_API_KEY (optional) or GITHUB_TOKEN (GitHub Models, free in Actions)
 import json, os, random, re, sys, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "engine"))
+import scene_spec as SP  # what the Blender renderer can draw (settings, characters, actions, props)
 HIST = os.path.join(ROOT, "data", "history.json")
 MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
@@ -27,11 +29,19 @@ Rules:
 - Never reuse these past stories: {past}
 - Never write about scams, politics, religion, violence, or real private people. Never use the story "Ismaeel's Silent Journey".
 - payoff_word: one single word that appears in the LAST sentence's "hi" text (the climax word).
+- The video is a 3D cartoon. Give a "cast" of 1-3 characters (real people in true stories are shown as generic
+  cartoon characters; "name" is just a label). type: one of {types}. color (their clothes): one of {colors}.
+- Every sentence gets a "scene" the animator can act out:
+  setting: one of {settings};
+  characters: 1-3 cast names on screen (first one does the action);
+  action: one of {actions} (pick the one that best SHOWS the sentence; vary them, avoid "talk" more than 3 times);
+  prop: one of {props}.
 Return ONLY JSON:
 {{"title": "short English title",
+  "cast": [{{"name": "Ravi", "type": "man", "color": "blue"}}],
   "hook": "Hinglish hook, max 34 characters, ends with ...",
   "payoff_word": "word",
-  "sentences": [{{"hi": "Hinglish in Roman script", "hd": "same sentence in Devanagari Hindi, numbers written out as Hindi words, acronyms spaced like आई बी एम", "en": "natural English", "te": "natural Telugu"}}],
+  "sentences": [{{"hi": "Hinglish in Roman script", "hd": "same sentence in Devanagari Hindi, numbers written out as Hindi words, acronyms spaced like आई बी एम", "en": "natural English", "te": "natural Telugu", "scene": {{"setting": "street", "characters": ["Ravi"], "action": "walk", "prop": "none"}}}}],
   "yt_title": {{"hi_roman": "hook + 1 emoji + #shorts (<60 chars)", "hi": "Devanagari title + emoji + #shorts", "en": "English title + emoji + #shorts", "te": "Telugu title + emoji + #shorts"}},
   "question": {{"hi_roman": "one Hinglish question to viewers about the story", "hi": "Devanagari", "en": "English", "te": "Telugu"}},
   "tags": ["8 to 12 tags"],
@@ -90,11 +100,14 @@ def main(out):
     hist = json.load(open(HIST)) if os.path.exists(HIST) else []
     past = "; ".join(h["title"] for h in hist[-200:]) or "none"
     for attempt in range(4):
-        s = groq(PROMPT.format(genre=random.choice(GENRES), past=past))
+        s = groq(PROMPT.format(genre=random.choice(GENRES), past=past, types=", ".join(SP.CHAR_TYPES),
+                               colors=", ".join(SP.COLORS), settings=", ".join(SP.SETTINGS),
+                               actions=", ".join(SP.ACTIONS), props=", ".join(SP.PROPS)))
         if valid(s) and s["title"].lower() not in {h["title"].lower() for h in hist}: break
         time.sleep(3)
     else:
         raise SystemExit("story generation failed")
+    SP.normalize(s)  # unsupported scene values -> safe defaults (never fails the run)
     rnd = random.Random()
     s.update({
         "out": out.replace(".json", ".mp4"),

@@ -7,7 +7,7 @@ import json, os, subprocess, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 sys.argv, story_path = [sys.argv[0]], sys.argv[1]
-import render3d as R
+import render3d as R  # audio/SRT helpers (shared by the Blender renderer)
 
 c = json.load(open(story_path))
 m = json.load(open(c["out"] + ".meta.json"))
@@ -16,11 +16,12 @@ sst, t = [], 0.4
 for v in vl:
     sst.append(t); t += len(v) / 44100 + 0.22
 dur0 = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", c["out"]]))
-dur = max(dur0 + 3, t + 1.0)
+tail = float(m.get("tail_pad", 3))  # seconds the last frame is held (Blender renderer already animates a 1 s tail)
+dur = max(dur0 + tail, t + 1.0)
 R.audio([], int(dur * R.FPS), m["esc"], "mix.wav", list(zip(sst, vl)), music=True, bounces=False)
 final = c["out"].replace(".mp4", "_final.mp4")
 subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", c["out"], "-i", "mix.wav", "-map", "0:v", "-map", "1:a",
-                "-vf", "tpad=stop_mode=clone:stop_duration=3", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+                "-vf", f"tpad=stop_mode=clone:stop_duration={tail}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", final], check=True)
 os.remove("mix.wav")
 fd = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", final]))

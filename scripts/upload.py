@@ -21,11 +21,11 @@ creds = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"], token_ur
                     scopes=["https://www.googleapis.com/auth/youtube.force-ssl"])
 yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
-FOOT = {"hi_roman": "Real physics simulation, made with code. No AI visuals.",
-        "hi": "असली फ़िज़िक्स सिम्युलेशन, कोड से बना। कोई AI विज़ुअल नहीं।",
-        "en": "Real physics simulation, made with code. No AI visuals.",
-        "te": "నిజమైన ఫిజిక్స్ సిమ్యులేషన్, కోడ్‌తో తయారు. AI విజువల్స్ లేవు."}
-tags_line = f"#shorts #satisfying #story {c.get('genre_tag', '#facts')}"
+FOOT = {"hi_roman": "3D cartoon animation banaya code se, Blender mein. No AI visuals.",
+        "hi": "कोड से बना 3D कार्टून एनिमेशन (Blender)। कोई AI विज़ुअल नहीं।",
+        "en": "3D cartoon animation made with code in Blender. No AI visuals.",
+        "te": "కోడ్‌తో Blender లో తయారైన 3D కార్టూన్ యానిమేషన్. AI విజువల్స్ లేవు."}
+tags_line = f"#shorts #animation #story {c.get('genre_tag', '#facts')}"
 desc = lambda k: f"{c['question'][k]} 👇\n{FOOT[k]}\n{tags_line}"
 yt_t = c["yt_title"]
 

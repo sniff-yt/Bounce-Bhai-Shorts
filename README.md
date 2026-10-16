@@ -1,7 +1,7 @@
 # Bounce Bhai Shorts 🫧
 
-Automatic YouTube Shorts for **Bounce Bhai** (@bouncebhaiofficial): a 3D-looking ball-escape physics
-simulation, a fresh micro-story narrated in the creator's own cloned voice (Hindi), soft code-made
+Automatic YouTube Shorts for **Bounce Bhai** (@bouncebhaiofficial): a fresh micro-story acted out as a
+3D cartoon rendered in Blender (procedural low-poly characters and sets, built from code), narrated in the creator's own cloned voice (Hindi), soft code-made
 background music, Hinglish captions, and Hindi / English / Telugu subtitles + translated titles.
 
 No AI images or video. No bounce sounds. Voice = creator's own clone (exempt from YouTube's AI label).
@@ -9,9 +9,16 @@ No AI images or video. No bounce sounds. Voice = creator's own clone (exempt fro
 ## How it works
 `scripts/make_short.sh` runs the whole pipeline:
 
-1. `write_story.py` – writes a new story with the free Groq API (never repeats `data/history.json`)
+1. `write_story.py` – writes a new story with the free Groq API (never repeats `data/history.json`), plus a
+   cast and one scene per sentence (setting, characters, action, prop) from the lists in `engine/scene_spec.py`;
+   anything unsupported falls back to safe defaults
 2. `voice.py` – narrates each line with Chatterbox Multilingual (MIT licence, runs on CPU)
-3. `engine/render3d.py` – renders the 1080×1920 3D simulation; the ball escapes on the story's payoff word
+3. `engine/render_blender.py` – `blender -b --python engine/render_blender.py -- out/story.json` builds the
+   characters/sets procedurally, animates one shot per sentence timed to its voice line, renders with Cycles
+   (CPU, 540×960, few samples + OpenImageDenoise), then burns in the hook + word-by-word Hinglish captions at
+   1080×1920 and writes the SRTs using `render3d.py`'s helpers. It times itself and lowers samples →
+   resolution → frame rate ("on twos") if a render would overrun its budget (`BB_BUDGET_MIN`, `BB_DEADLINE`).
+   (`engine/render3d.py`, the old ball-physics renderer, is kept but no longer used.)
 4. `finish.py` – mixes voice + soft pad music, pads the ending, fixes subtitle timing
 5. `upload.py` – uploads to YouTube with subtitles, translations and a comment
 
@@ -42,6 +49,7 @@ While the consent screen is in **Testing**, Google expires the refresh token aft
 Actions → **Bounce Bhai Shorts** → **Run workflow**.
 
 ## Locally
+Needs Blender 4.2+ (`BLENDER=/path/to/blender`) and ffmpeg.
 ```bash
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
