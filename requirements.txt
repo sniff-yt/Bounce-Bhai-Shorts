@@ -3,3 +3,5 @@ pillow
 chatterbox-tts
 google-api-python-client
 google-auth
+noisereduce
+scipy
