@@ -1,0 +1,65 @@
+{
+ "out": "out/example.mp4",
+ "seed": 4182,
+ "gap_deg": 28,
+ "spin": 50,
+ "grow": 0.8,
+ "target": [
+  32,
+  33
+ ],
+ "hook": "1957 mein ek wallpaper FLOP hua...",
+ "payoff_word": "Bubble",
+ "hue": 0.62,
+ "ball_hue": 0.52,
+ "sentences": [
+  {
+   "hi": "1957 mein do engineers ne naya wallpaper banaya.",
+   "en": "In 1957, two engineers made a new kind of wallpaper.",
+   "hd": "1957 में दो इंजीनियरों ने एक नया वॉलपेपर बनाया।",
+   "te": "1957లో ఇద్దరు ఇంజనీర్లు ఒక కొత్త వాల్‌పేపర్ తయారు చేశారు."
+  },
+  {
+   "hi": "Do plastic shower curtains jod diye, beech mein hawa ke bubbles.",
+   "en": "They sealed two plastic shower curtains together, with air bubbles trapped inside.",
+   "hd": "दो प्लास्टिक शावर कर्टन जोड़ दिए, बीच में हवा के बुलबुले।",
+   "te": "రెండు ప్లాస్టిక్ షవర్ కర్టెన్లను అతికించారు, మధ్యలో గాలి బుడగలు."
+  },
+  {
+   "hi": "Kisi ne nahi khareeda. Flop!",
+   "en": "Nobody bought it. Flop!",
+   "hd": "किसी ने नहीं खरीदा। फ्लॉप!",
+   "te": "ఎవరూ కొనలేదు. ఫ్లాప్!"
+  },
+  {
+   "hi": "Phir greenhouse ko garam rakhne ke liye becha. Woh bhi flop!",
+   "en": "Then they sold it to keep greenhouses warm. Another flop!",
+   "hd": "फिर ग्रीनहाउस को गरम रखने के लिए बेचा। वो भी फ्लॉप!",
+   "te": "తర్వాత గ్రీన్‌హౌస్‌లను వెచ్చగా ఉంచడానికి అమ్మారు. అదీ ఫ్లాప్!"
+  },
+  {
+   "hi": "Koi aur hota toh chhod deta. Inhone haar nahi maani.",
+   "en": "Anyone else would have quit. They didn't give up.",
+   "hd": "कोई और होता तो छोड़ देता। इन्होंने हार नहीं मानी।",
+   "te": "వేరే ఎవరైనా వదిలేసేవారు. వీళ్ళు ఓటమి ఒప్పుకోలేదు."
+  },
+  {
+   "hi": "Phir IBM ko apne naye computers safe bhejne the.",
+   "en": "Then IBM needed to ship its new computers safely.",
+   "hd": "फिर IBM को अपने नए कंप्यूटर सुरक्षित भेजने थे।",
+   "te": "అప్పుడు IBM తమ కొత్త కంప్యూటర్లను సురక్షితంగా పంపాల్సి వచ్చింది."
+  },
+  {
+   "hi": "Aur wahi flop wallpaper ban gaya duniya ka hero:",
+   "en": "And that flop wallpaper became the world's hero:",
+   "hd": "और वही फ्लॉप वॉलपेपर बन गया दुनिया का हीरो:",
+   "te": "అదే ఫ్లాప్ వాల్‌పేపర్ ప్రపంచానికి హీరో అయ్యింది:"
+  },
+  {
+   "hi": "Bubble Wrap! Ab ek bubble phodo",
+   "en": "Bubble Wrap! Now go pop one",
+   "hd": "बबल रैप! अब एक बबल फोड़ो",
+   "te": "బబుల్ ర్యాప్! ఇప్పుడు ఒక బబుల్ పగలగొట్టు"
+  }
+ ]
+}

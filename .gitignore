@@ -1,0 +1,5 @@
+out/
+voice/ref.wav
+*.pyc
+__pycache__/
+mix.wav

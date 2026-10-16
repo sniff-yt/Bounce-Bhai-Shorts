@@ -1,0 +1,82 @@
+name: Bounce Bhai Shorts
+
+on:
+  schedule:
+    - cron: "5 * * * *"        # every hour at :05 UTC (only posts if repo variable AUTO_POST = true)
+  workflow_dispatch: {}        # "Run workflow" button for a manual Short
+
+concurrency:
+  group: bouncebhai-shorts
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  models: read
+
+jobs:
+  short:
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_POST == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - name: Python packages
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+          pip install -r requirements.txt
+
+      - name: Cache voice model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-chatterbox-v1
+
+      - name: Unlock voice sample
+        env:
+          VOICE_KEY: ${{ secrets.VOICE_KEY }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
+          # API keys are stored encrypted in the repo too (same VOICE_KEY); repo secrets override them
+          if [ -f voice/keys.env.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
+            while IFS='=' read -r k v; do [ -n "$k" ] && echo "::add-mask::$v" && echo "$k=$v" >> "$GITHUB_ENV"; done < /tmp/keys.env
+            rm /tmp/keys.env
+          fi
+
+      - name: Make and upload the Short
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || env.GROQ_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID || env.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET || env.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN || env.YT_REFRESH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YT_PRIVACY: ${{ vars.YT_PRIVACY || 'public' }}
+        run: bash scripts/make_short.sh
+
+      - name: Save the video
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME || 'short' }}
+          path: |
+            out/*_final.mp4
+            out/*.srt
+            out/*.json
+          retention-days: 14
+
+      - name: Remember the story (no repeats)
+        run: |
+          git config user.name "bouncebhai-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/history.json
+          git commit -m "log: $NAME" || exit 0
+          git pull --rebase && git push

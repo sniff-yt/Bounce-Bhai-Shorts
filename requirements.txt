@@ -1,0 +1,5 @@
+numpy<2
+pillow
+chatterbox-tts
+google-api-python-client
+google-auth
