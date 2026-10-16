@@ -1,28 +1,12 @@
-name: Bounce Bhai Shorts
-
-on:
-  schedule:
-    - cron: "5 * * * *"        # every hour at :05 UTC (only posts if repo variable AUTO_POST = true)
-  workflow_dispatch: {}        # "Run workflow" button for a manual Short
-
-concurrency:
-  group: bouncebhai-shorts
-  cancel-in-progress: false
-
-permissions:
-  contents: write
-  models: read
-
 jobs:
-short:
+  short:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      BLENDER_VERSION: "4.5.14"   # official LTS build (x64, includes OpenImageDenoise + Embree)
-      BB_BUDGET_MIN: "25"         # max minutes for the Blender render; it self-adjusts quality to fit
+      BLENDER_VERSION: "4.5.14"
+      BB_BUDGET_MIN: "25"
     steps:
       - name: Job clock
-        # the renderer must finish by start + 44 min, leaving time for mux, upload and the history commit
         run: echo "BB_DEADLINE=$(( $(date +%s) + 44*60 ))" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
@@ -75,7 +59,6 @@ short:
           VOICE_KEY: ${{ secrets.VOICE_KEY }}
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
-          # API keys are stored encrypted in the repo too (same VOICE_KEY); repo secrets override them
           if [ -f voice/keys.env.enc ]; then
             openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
             while IFS='=' read -r k v; do [ -n "$k" ] && echo "::add-mask::$v" && echo "$k=$v" >> "$GITHUB_ENV"; done < /tmp/keys.env
@@ -83,31 +66,12 @@ short:
           fi
 
       - name: Make and upload the Short
-  env:
-    CRYSTAL_API_KEY: ${{ secrets.CRYSTAL_API_KEY || vars.CRYSTAL_API_KEY }}
-    GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || env.GROQ_API_KEY }}
-    YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID || env.YT_CLIENT_ID }}
-    YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET || env.YT_CLIENT_SECRET }}
-    YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN || env.YT_REFRESH_TOKEN }}
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    YT_PRIVACY: ${{ vars.YT_PRIVACY || 'public' }}
-  run: bash scripts/make_short.sh
-
-      - name: Save the video
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.NAME || 'short' }}
-          path: |
-            out/*_final.mp4
-            out/*.srt
-            out/*.json
-          retention-days: 14
-
-      - name: Remember the story (no repeats)
-        run: |
-          git config user.name "bouncebhai-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add data/history.json
-          git commit -m "log: $NAME" || exit 0
-          git pull --rebase && git push
+        env:
+          CRYSTAL_API_KEY: ${{ secrets.CRYSTAL_API_KEY || vars.CRYSTAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || env.GROQ_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID || env.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET || env.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN || env.YT_REFRESH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YT_PRIVACY: ${{ vars.YT_PRIVACY || 'public' }}
+        run: bash scripts/make_short.sh
