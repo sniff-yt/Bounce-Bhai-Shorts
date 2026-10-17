@@ -9,8 +9,21 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 sys.argv, story_path = [sys.argv[0]], sys.argv[1]
 import render3d as R  # audio/SRT helpers (shared by the Blender renderer)
 
+
+def load_json(path, default):
+    if not os.path.exists(path):
+        return default
+    with open(path) as fh:
+        return json.load(fh)
+
+
 c = json.load(open(story_path))
-m = json.load(open(c["out"] + ".meta.json"))
+meta_path = c["out"] + ".meta.json"
+meta = load_json(meta_path, {"esc": 0.0, "tail_pad": 3})
+if not os.path.exists(meta_path):
+    print(f"warning: missing metadata at {meta_path}; using defaults", flush=True)
+
+m = meta
 vl = [R.load_voice(p) for p in c["voice_lines"]]
 sst, t = [], 0.4
 for v in vl:
