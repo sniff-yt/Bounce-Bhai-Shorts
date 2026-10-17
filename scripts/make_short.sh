@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Full pipeline: story -> voice -> Blender 3D story render -> audio/subtitles -> (upload)
-set -euo pipefail
+set -x
+set -Eeuo pipefail
+trap 'echo "::error::Failed at line $LINENO: $BASH_COMMAND"' ERR
 cd "$(dirname "$0")/.."
 NAME="short_$(date -u +%Y%m%d_%H%M)"
 mkdir -p out
