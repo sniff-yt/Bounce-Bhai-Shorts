@@ -84,6 +84,7 @@ jobs:
 
       - name: Make and upload the Short
         env:
+          SKETCHFAB_TOKEB: ${{secrets.SKETCHFAB_TOKEB }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent
           GEMINI_MODEL: gemini-3.1-flash-lite
