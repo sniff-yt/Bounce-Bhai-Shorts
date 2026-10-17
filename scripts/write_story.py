@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """Generate a Bounce Bhai story using Crystal API.
 Usage: python scripts/write_story.py out/story.json
@@ -193,28 +192,32 @@ def post_story(prompt):
     )
 
 
-def valid(story):
+def validate_with_reason(story):
+    """Return (True, None) if story is valid, otherwise (False, reason string)."""
     if not isinstance(story, dict):
-        return False
+        return False, "Story is not a JSON object"
 
     sentences = story.get("sentences") or []
     if not (7 <= len(sentences) <= 9):
-        return False
+        return False, f"Wrong sentence count: {len(sentences)} (expected 7-9)"
 
-    if not all(
-        isinstance(sentence, dict)
-        and all(sentence.get(k) for k in ("hi", "hd", "en", "te"))
-        for sentence in sentences
-    ):
-        return False
+    for i, sentence in enumerate(sentences, start=1):
+        if not isinstance(sentence, dict):
+            return False, f"Sentence {i} is not an object"
+        for k in ("hi", "hd", "en", "te"):
+            if not sentence.get(k):
+                return False, f"Sentence {i} missing field '{k}'"
 
     payoff = str(story.get("payoff_word", "")).strip("!.,? ").lower()
     if not payoff:
-        return False
+        return False, "Missing payoff_word"
 
-    last_sentence = sentences[-1]["hi"]
+    last_sentence = sentences[-1].get("hi", "")
     words = re.findall(r"\w+", last_sentence.lower())
-    return payoff in words
+    if payoff not in words:
+        return False, f"payoff_word '{payoff}' not found in last sentence"
+
+    return True, None
 
 
 def main(out):
@@ -249,21 +252,25 @@ def main(out):
 
         try:
             candidate = post_story(prompt)
+            title = (candidate.get("title") or "<no title>").strip()
+            ok, reason = validate_with_reason(candidate)
 
-            if (
-                valid(candidate)
-                and candidate["title"].lower() not in old_titles
-            ):
+            if ok and title.lower() not in old_titles:
                 story = candidate
                 break
 
-            last_error = (
-                "Story failed validation or reused a previous title."
-            )
-            print(
-                f"Story attempt {attempt + 1}/4 failed validation; retrying.",
-                flush=True
-            )
+            if not ok:
+                last_error = reason
+                print(
+                    f"Story attempt {attempt + 1}/4 failed validation: {reason}; title: {title}",
+                    flush=True
+                )
+            else:
+                last_error = "Reused previous title"
+                print(
+                    f"Story attempt {attempt + 1}/4 failed: reused previous title: {title}",
+                    flush=True
+                )
 
         except Exception as exc:
             last_error = str(exc)
@@ -307,4 +314,3 @@ if __name__ == "__main__":
             "Usage: python scripts/write_story.py out/story.json"
         )
     main(sys.argv[1])
-  
