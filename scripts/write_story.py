@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Generate a Bounce Bhai story using Crystal API.
+"""Generate a Bounce Bhai story using Crystal API or an alternate provider (Gemini).
 Usage: python scripts/write_story.py out/story.json
 
 Environment:
   CRYSTAL_API_URL  Optional; defaults to the Crystal Worker URL
-  CRYSTAL_API_KEY  Required; your Crystal API key
+  CRYSTAL_API_KEY  Required unless GEMINI_API_KEY is used
   CRYSTAL_MODEL    Optional; defaults to the configured Llama model
+
+  GEMINI_API_URL   Optional; if provided along with GEMINI_API_KEY the script will
+                   call that endpoint instead of the Crystal API. Set by the workflow
+                   when you want to use Gemini/Google provider.
+  GEMINI_API_KEY   Optional; bearer token for the Gemini provider endpoint.
+  GEMINI_MODEL     Optional; provider-specific model name (only used by some providers).
 """
 import json
 import os
@@ -30,6 +36,13 @@ MODEL = os.environ.get(
     "CRYSTAL_MODEL",
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 )
+
+# Gemini (or other provider) settings: if GEMINI_API_KEY and GEMINI_API_URL are present
+# the script will prefer that provider. Set GEMINI_API_URL to the full endpoint that
+# accepts POST JSON and returns a JSON result containing either a text field, ``output``,
+# or ``candidates`` list (this keeps the client flexible across provider responses).
+GEMINI_API_URL = os.environ.get("GEMINI_API_URL")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1")
 
 GENRES = getattr(
     SP, "GENRES",
@@ -128,11 +141,113 @@ def make_unique_title(title, used_titles):
 
 
 def post_story(prompt):
+    """Fetch a story from the configured provider.
+
+    Priority: GEMINI provider if GEMINI_API_KEY + GEMINI_API_URL present, otherwise fall back
+    to the existing Crystal API using CRYSTAL_API_KEY.
+    """
+    # Prefer Gemini if configured
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    gemini_url = os.environ.get("GEMINI_API_URL") or GEMINI_API_URL
+    if gemini_key and gemini_url:
+        payload = {
+            "model": os.environ.get("GEMINI_MODEL", GEMINI_MODEL),
+            "prompt": prompt
+        }
+        req = urllib.request.Request(
+            gemini_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {gemini_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "bouncebhai/1.0"
+            },
+            method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=180) as response:
+                body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Provider HTTP {exc.code}: {details[:1000]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Provider connection failed: {exc}") from exc
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Provider returned invalid JSON: {body[:1000]}") from exc
+
+        # Flexible extraction: try common fields used by different provider APIs
+        # - data.result (Crystal)
+        # - data.output or data.output[0].content
+        # - data.candidates[0].content
+        # - data.text / data.response
+        if isinstance(data, dict):
+            # direct dict result
+            if isinstance(data.get("result"), dict):
+                return data["result"]
+
+            if isinstance(data.get("output"), str):
+                # some providers return plain text in 'output'
+                try:
+                    parsed = json.loads(data["output"])
+                    if isinstance(parsed, dict):
+                        return parsed
+                except Exception:
+                    # fall back to raw text
+                    return {"text": data["output"]}
+
+            if isinstance(data.get("output"), list) and data["output"] and isinstance(data["output"][0], dict):
+                # e.g., {output: [{content: '...'}]}
+                c = data["output"][0].get("content") or data["output"][0].get("text")
+                if isinstance(c, str):
+                    try:
+                        parsed = json.loads(c)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except Exception:
+                        return {"text": c}
+
+            if isinstance(data.get("candidates"), list) and data["candidates"]:
+                first = data["candidates"][0]
+                if isinstance(first, dict):
+                    c = first.get("content") or first.get("text")
+                    if isinstance(c, str):
+                        try:
+                            parsed = json.loads(c)
+                            if isinstance(parsed, dict):
+                                return parsed
+                        except Exception:
+                            return {"text": c}
+
+            # fallback common aliases
+            text = data.get("response") or data.get("text") or data.get("content") or ""
+            if isinstance(text, dict):
+                return text
+            if isinstance(text, str) and text.strip():
+                # try to parse JSON in the returned text
+                t = re.sub(r"^\s*```(?:json)?\s*", "", text)
+                t = re.sub(r"\s*```\s*$", "", t)
+                start = t.find("{")
+                end = t.rfind("}")
+                if start >= 0 and end > start:
+                    try:
+                        parsed = json.loads(t[start:end+1])
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except Exception:
+                        return {"text": text}
+                return {"text": text}
+
+        raise RuntimeError("Provider result was not a usable story JSON object: " + body[:1000])
+
+    # Fallback: existing Crystal API
     key = os.environ.get("CRYSTAL_API_KEY")
     if not key:
         raise SystemExit(
-            "Missing CRYSTAL_API_KEY environment variable. "
-            "Set your Crystal API key before running."
+            "Missing CRYSTAL_API_KEY environment variable and no GEMINI provider configured."
         )
 
     payload = {
@@ -169,6 +284,8 @@ def post_story(prompt):
             f"Crystal API returned invalid JSON: {body[:1000]}"
         ) from exc
 
+    # Support the response shape in your example: data.result.
+    # Also accept common alternative response shapes.
     result = data.get("result") if isinstance(data, dict) else None
 
     if isinstance(result, dict):
@@ -190,9 +307,11 @@ def post_story(prompt):
             f"Response: {body[:1000]}"
         )
 
+    # Handle JSON wrapped in Markdown fences.
     text = re.sub(r"^\s*```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```\s*$", "", text)
 
+    # Parse the returned story JSON.
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -340,477 +459,3 @@ if __name__ == "__main__":
             "Usage: python scripts/write_story.py out/story.json"
         )
     main(sys.argv[1])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
