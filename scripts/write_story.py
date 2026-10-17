@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
-"""Generate a Bounce Bhai story using Crystal API or an alternate provider (Gemini).
-Usage: python scripts/write_story.py out/story.json
+"""Generate a Bounce Bhai story using Gemini only."""
 
-Environment:
-  CRYSTAL_API_URL  Optional; defaults to the Crystal Worker URL
-  CRYSTAL_API_KEY  Required unless GEMINI_API_KEY is used
-  CRYSTAL_MODEL    Optional; defaults to the configured Llama model
-
-  GEMINI_API_URL   Optional; if provided along with GEMINI_API_KEY the script will
-                   call that endpoint instead of the Crystal API. Set by the workflow
-                   when you want to use Gemini/Google provider.
-  GEMINI_API_KEY   Optional; bearer token for the Gemini provider endpoint.
-  GEMINI_MODEL     Optional; provider-specific model name (only used by some providers).
-"""
 import json
 import os
 import random
@@ -28,21 +16,8 @@ import scene_spec as SP
 
 HIST = os.path.join(ROOT, "data", "history.json")
 
-API_URL = os.environ.get(
-    "CRYSTAL_API_URL",
-    "https://crystal-api.baddampujithareddy19.workers.dev/"
-)
-MODEL = os.environ.get(
-    "CRYSTAL_MODEL",
-    "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-)
-
-# Gemini (or other provider) settings: if GEMINI_API_KEY and GEMINI_API_URL are present
-# the script will prefer that provider. Set GEMINI_API_URL to the full endpoint that
-# accepts POST JSON and returns a JSON result containing either a text field, ``output``,
-# or ``candidates`` list (this keeps the client flexible across provider responses).
 GEMINI_API_URL = os.environ.get("GEMINI_API_URL")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 GENRES = getattr(
     SP, "GENRES",
@@ -72,51 +47,49 @@ Rules:
   prop: one of {props}.
 
 Return ONLY valid JSON with this structure:
-{{
+{
   "title": "short English title",
-  "cast": [{{"name":"Ravi","type":"man","color":"blue"}}],
+  "cast": [{"name":"Ravi","type":"man","color":"blue"}],
   "hook": "Hinglish hook, max 34 characters, ends with ...",
   "payoff_word": "word",
   "sentences": [
-    {{
+    {
       "hi": "Hinglish in Roman script",
       "hd": "Same sentence in Devanagari Hindi; numbers written as Hindi words",
       "en": "Natural English",
       "te": "Natural Telugu",
-      "scene": {{
+      "scene": {
         "setting": "allowed setting",
         "characters": ["Ravi"],
         "action": "allowed action",
         "prop": "allowed prop"
-      }}
-    }}
+      }
+    }
   ],
-  "yt_title": {{
+  "yt_title": {
     "hi_roman": "Hinglish title + emoji + #shorts",
     "hi": "Devanagari title + emoji + #shorts",
     "en": "English title + emoji + #shorts",
     "te": "Telugu title + emoji + #shorts"
-  }},
-  "question": {{
+  },
+  "question": {
     "hi_roman": "Hinglish question",
     "hi": "Devanagari question",
     "en": "English question",
     "te": "Telugu question"
-  }},
+  },
   "tags": ["8 to 12 tags"],
   "genre_tag": "#facts or #mystery or #history or #motivation or #funny"
-}}
+}
 
 Make every sentence's scene valid for the supplied animation options.
 Keep all required fields. Return only the JSON object.
 """
 
-
 def title_key(value):
     text = (value or "").strip().lower()
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
-
 
 def make_unique_title(title, used_titles):
     base = (title or "").strip()
@@ -126,7 +99,6 @@ def make_unique_title(title, used_titles):
     if title_key(base) not in used_titles:
         return base
 
-    # Keep the story moving even if the model repeats a title; add a unique suffix.
     suffix = random.randint(100, 999)
     candidate = f"{base.rstrip(' .:-_')} {suffix}"
     if title_key(candidate) not in used_titles:
@@ -139,179 +111,66 @@ def make_unique_title(title, used_titles):
 
     return f"{base.rstrip(' .:-_')} {time.time_ns()}"
 
-
 def post_story(prompt):
-    """Fetch a story from the configured provider.
-
-    Priority: GEMINI provider if GEMINI_API_KEY + GEMINI_API_URL present, otherwise fall back
-    to the existing Crystal API using CRYSTAL_API_KEY.
-    """
-    # Prefer Gemini if configured
+    """Fetch a story JSON from Gemini only."""
     gemini_key = os.environ.get("GEMINI_API_KEY")
     gemini_url = os.environ.get("GEMINI_API_URL") or GEMINI_API_URL
-    if gemini_key and gemini_url:
-        payload = {
-            "model": os.environ.get("GEMINI_MODEL", GEMINI_MODEL),
-            "prompt": prompt
-        }
-        req = urllib.request.Request(
-            gemini_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {gemini_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "bouncebhai/1.0"
-            },
-            method="POST"
-        )
 
-        try:
-            with urllib.request.urlopen(req, timeout=180) as response:
-                body = response.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Provider HTTP {exc.code}: {details[:1000]}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Provider connection failed: {exc}") from exc
-
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Provider returned invalid JSON: {body[:1000]}") from exc
-
-        # Flexible extraction: try common fields used by different provider APIs
-        # - data.result (Crystal)
-        # - data.output or data.output[0].content
-        # - data.candidates[0].content
-        # - data.text / data.response
-        if isinstance(data, dict):
-            # direct dict result
-            if isinstance(data.get("result"), dict):
-                return data["result"]
-
-            if isinstance(data.get("output"), str):
-                # some providers return plain text in 'output'
-                try:
-                    parsed = json.loads(data["output"])
-                    if isinstance(parsed, dict):
-                        return parsed
-                except Exception:
-                    # fall back to raw text
-                    return {"text": data["output"]}
-
-            if isinstance(data.get("output"), list) and data["output"] and isinstance(data["output"][0], dict):
-                # e.g., {output: [{content: '...'}]}
-                c = data["output"][0].get("content") or data["output"][0].get("text")
-                if isinstance(c, str):
-                    try:
-                        parsed = json.loads(c)
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except Exception:
-                        return {"text": c}
-
-            if isinstance(data.get("candidates"), list) and data["candidates"]:
-                first = data["candidates"][0]
-                if isinstance(first, dict):
-                    c = first.get("content") or first.get("text")
-                    if isinstance(c, str):
-                        try:
-                            parsed = json.loads(c)
-                            if isinstance(parsed, dict):
-                                return parsed
-                        except Exception:
-                            return {"text": c}
-
-            # fallback common aliases
-            text = data.get("response") or data.get("text") or data.get("content") or ""
-            if isinstance(text, dict):
-                return text
-            if isinstance(text, str) and text.strip():
-                # try to parse JSON in the returned text
-                t = re.sub(r"^\s*```(?:json)?\s*", "", text)
-                t = re.sub(r"\s*```\s*$", "", t)
-                start = t.find("{")
-                end = t.rfind("}")
-                if start >= 0 and end > start:
-                    try:
-                        parsed = json.loads(t[start:end+1])
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except Exception:
-                        return {"text": text}
-                return {"text": text}
-
-        raise RuntimeError("Provider result was not a usable story JSON object: " + body[:1000])
-
-    # Fallback: existing Crystal API
-    key = os.environ.get("CRYSTAL_API_KEY")
-    if not key:
-        raise SystemExit(
-            "Missing CRYSTAL_API_KEY environment variable and no GEMINI provider configured."
-        )
+    if not gemini_key or not gemini_url:
+        raise SystemExit("Missing GEMINI_API_KEY or GEMINI_API_URL")
 
     payload = {
-        "model": MODEL,
-        "prompt": prompt
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json"
+        }
     }
 
     req = urllib.request.Request(
-        API_URL,
+        gemini_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "X-Crystal-Key": key,
             "Content-Type": "application/json",
-            "User-Agent": "bouncebhai/1.0"
+            "User-Agent": "bouncebhai/1.0",
+            "x-goog-api-key": gemini_key,
         },
         method="POST"
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=180) as response:
             body = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(
-            f"Crystal API HTTP {exc.code}: {details[:1000]}"
-        ) from exc
+        raise RuntimeError(f"Gemini HTTP {exc.code}: {details[:1000]}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"Crystal API connection failed: {exc}") from exc
+        raise RuntimeError(f"Gemini connection failed: {exc}") from exc
 
     try:
         data = json.loads(body)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"Crystal API returned invalid JSON: {body[:1000]}"
-        ) from exc
+        raise RuntimeError(f"Gemini returned invalid JSON: {body[:1000]}") from exc
 
-    # Support the response shape in your example: data.result.
-    # Also accept common alternative response shapes.
-    result = data.get("result") if isinstance(data, dict) else None
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError(f"Gemini response had no candidates: {body[:1000]}")
 
-    if isinstance(result, dict):
-        return result
-
-    if isinstance(result, str):
-        text = result.strip()
-    elif isinstance(data, dict):
-        text = data.get("response") or data.get("text") or ""
-    else:
-        text = ""
-
-    if isinstance(text, dict):
-        return text
+    text = ""
+    first = candidates[0]
+    if isinstance(first, dict):
+        parts = first.get("content", {}).get("parts", [])
+        if parts:
+            text = parts[0].get("text", "")
 
     if not isinstance(text, str) or not text.strip():
-        raise RuntimeError(
-            "Crystal API response contains no usable result. "
-            f"Response: {body[:1000]}"
-        )
+        raise RuntimeError(f"Gemini response had no text: {body[:1000]}")
 
-    # Handle JSON wrapped in Markdown fences.
+    text = text.strip()
     text = re.sub(r"^\s*```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```\s*$", "", text)
 
-    # Parse the returned story JSON.
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -329,11 +188,7 @@ def post_story(prompt):
         except json.JSONDecodeError:
             pass
 
-    raise RuntimeError(
-        "Crystal API result was not a valid story JSON object: "
-        + text[:1000]
-    )
-
+    raise RuntimeError("Gemini result was not a valid story JSON object")
 
 def validate_with_reason(story):
     """Return (True, None) if story is valid, otherwise (False, reason string)."""
@@ -361,7 +216,6 @@ def validate_with_reason(story):
         return False, f"payoff_word '{payoff}' not found in last sentence"
 
     return True, None
-
 
 def main(out):
     hist = []
@@ -420,7 +274,7 @@ def main(out):
         except Exception as exc:
             last_error = str(exc)
             print(
-                f"Crystal API attempt {attempt + 1}/8 failed: {exc}",
+                f"Gemini API attempt {attempt + 1}/8 failed: {exc}",
                 flush=True
             )
 
@@ -451,7 +305,6 @@ def main(out):
         json.dump(story, file, ensure_ascii=False, indent=1)
 
     print("story:", story["title"])
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
