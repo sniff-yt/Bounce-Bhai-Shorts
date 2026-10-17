@@ -84,8 +84,9 @@ jobs:
 
       - name: Make and upload the Short
         env:
-          CRYSTAL_API_KEY: ${{ secrets.CRYSTAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent
+          GEMINI_MODEL: gemini-3.1-flash-lite
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
