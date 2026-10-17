@@ -99,6 +99,34 @@ Keep all required fields. Return only the JSON object.
 """
 
 
+def title_key(value):
+    text = (value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def make_unique_title(title, used_titles):
+    base = (title or "").strip()
+    if not base:
+        base = "Bounce Bhai Story"
+
+    if title_key(base) not in used_titles:
+        return base
+
+    # Keep the story moving even if the model repeats a title; add a unique suffix.
+    suffix = random.randint(100, 999)
+    candidate = f"{base.rstrip(' .:-_')} {suffix}"
+    if title_key(candidate) not in used_titles:
+        return candidate
+
+    for attempt in range(50):
+        alt = f"{base.rstrip(' .:-_')} {random.randint(100, 9999)}"
+        if title_key(alt) not in used_titles:
+            return alt
+
+    return f"{base.rstrip(' .:-_')} {time.time_ns()}"
+
+
 def post_story(prompt):
     key = os.environ.get("CRYSTAL_API_KEY")
     if not key:
@@ -141,8 +169,6 @@ def post_story(prompt):
             f"Crystal API returned invalid JSON: {body[:1000]}"
         ) from exc
 
-    # Support the response shape in your example: data.result.
-    # Also accept common alternative response shapes.
     result = data.get("result") if isinstance(data, dict) else None
 
     if isinstance(result, dict):
@@ -164,11 +190,9 @@ def post_story(prompt):
             f"Response: {body[:1000]}"
         )
 
-    # Handle JSON wrapped in Markdown fences.
     text = re.sub(r"^\s*```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```\s*$", "", text)
 
-    # Parse the returned story JSON.
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -230,8 +254,8 @@ def main(out):
         h["title"] for h in hist[-200:] if h.get("title")
     ) or "none"
 
-    old_titles = {
-        h["title"].lower()
+    used_titles = {
+        title_key(h["title"])
         for h in hist
         if h.get("title")
     }
@@ -239,7 +263,7 @@ def main(out):
     last_error = None
     story = None
 
-    for attempt in range(4):
+    for attempt in range(8):
         prompt = PROMPT.format(
             genre=random.choice(GENRES),
             past=past,
@@ -252,39 +276,41 @@ def main(out):
 
         try:
             candidate = post_story(prompt)
-            title = (candidate.get("title") or "<no title>").strip()
+            title = (candidate.get("title") or "").strip()
+            candidate["title"] = make_unique_title(title, used_titles)
+
             ok, reason = validate_with_reason(candidate)
 
-            if ok and title.lower() not in old_titles:
+            if ok and title_key(candidate["title"]) not in used_titles:
                 story = candidate
                 break
 
             if not ok:
                 last_error = reason
                 print(
-                    f"Story attempt {attempt + 1}/4 failed validation: {reason}; title: {title}",
+                    f"Story attempt {attempt + 1}/8 failed validation: {reason}; title: {candidate['title']}",
                     flush=True
                 )
             else:
                 last_error = "Reused previous title"
                 print(
-                    f"Story attempt {attempt + 1}/4 failed: reused previous title: {title}",
+                    f"Story attempt {attempt + 1}/8 failed: reused previous title: {candidate['title']}",
                     flush=True
                 )
 
         except Exception as exc:
             last_error = str(exc)
             print(
-                f"Crystal API attempt {attempt + 1}/4 failed: {exc}",
+                f"Crystal API attempt {attempt + 1}/8 failed: {exc}",
                 flush=True
             )
 
-        if attempt < 3:
+        if attempt < 7:
             time.sleep(3)
 
     if story is None:
         raise SystemExit(
-            f"Story generation failed after 4 attempts: {last_error}"
+            f"Story generation failed after 8 attempts: {last_error}"
         )
 
     SP.normalize(story)
@@ -314,3 +340,477 @@ if __name__ == "__main__":
             "Usage: python scripts/write_story.py out/story.json"
         )
     main(sys.argv[1])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
