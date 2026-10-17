@@ -47,49 +47,51 @@ Rules:
   prop: one of {props}.
 
 Return ONLY valid JSON with this structure:
-{
+{{
   "title": "short English title",
-  "cast": [{"name":"Ravi","type":"man","color":"blue"}],
+  "cast": [{{"name":"Ravi","type":"man","color":"blue"}}],
   "hook": "Hinglish hook, max 34 characters, ends with ...",
   "payoff_word": "word",
   "sentences": [
-    {
+    {{
       "hi": "Hinglish in Roman script",
       "hd": "Same sentence in Devanagari Hindi; numbers written as Hindi words",
       "en": "Natural English",
       "te": "Natural Telugu",
-      "scene": {
+      "scene": {{
         "setting": "allowed setting",
         "characters": ["Ravi"],
         "action": "allowed action",
         "prop": "allowed prop"
-      }
-    }
+      }}
+    }}
   ],
-  "yt_title": {
+  "yt_title": {{
     "hi_roman": "Hinglish title + emoji + #shorts",
     "hi": "Devanagari title + emoji + #shorts",
     "en": "English title + emoji + #shorts",
     "te": "Telugu title + emoji + #shorts"
-  },
-  "question": {
+  }},
+  "question": {{
     "hi_roman": "Hinglish question",
     "hi": "Devanagari question",
     "en": "English question",
     "te": "Telugu question"
-  },
+  }},
   "tags": ["8 to 12 tags"],
   "genre_tag": "#facts or #mystery or #history or #motivation or #funny"
-}
+}}
 
 Make every sentence's scene valid for the supplied animation options.
 Keep all required fields. Return only the JSON object.
 """
 
+
 def title_key(value):
     text = (value or "").strip().lower()
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
+
 
 def make_unique_title(title, used_titles):
     base = (title or "").strip()
@@ -110,6 +112,7 @@ def make_unique_title(title, used_titles):
             return alt
 
     return f"{base.rstrip(' .:-_')} {time.time_ns()}"
+
 
 def post_story(prompt):
     """Fetch a story JSON from Gemini only."""
@@ -190,6 +193,7 @@ def post_story(prompt):
 
     raise RuntimeError("Gemini result was not a valid story JSON object")
 
+
 def validate_with_reason(story):
     """Return (True, None) if story is valid, otherwise (False, reason string)."""
     if not isinstance(story, dict):
@@ -216,6 +220,7 @@ def validate_with_reason(story):
         return False, f"payoff_word '{payoff}' not found in last sentence"
 
     return True, None
+
 
 def main(out):
     hist = []
@@ -305,6 +310,7 @@ def main(out):
         json.dump(story, file, ensure_ascii=False, indent=1)
 
     print("story:", story["title"])
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
