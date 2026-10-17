@@ -35,18 +35,27 @@ except Exception as e:
     print("Warning: couldn't list channels for this credential:", e)
     channels = []
 
+
 # If a target channel ID is provided, validate that the credentials have access to it.
 expected = os.environ.get("YT_CHANNEL_ID")
 if expected:
     if not any(cid == expected for cid, _ in channels):
-        print("ERROR: The provided credentials do not appear to have access to the expected channel ID:", expected)
+        print(
+            "ERROR: The provided credentials do not appear to have access "
+            "to the expected channel ID:",
+            expected,
+        )
         print("Accessible channels (if any):")
         for cid, title in channels:
             print(" ", cid, "-", title)
-        print("How to fix: re-run scripts/get_refresh_token.py on your local machine and, when prompted by Google,
-      choose the correct channel/brand account for your channel. Then store the new YT_REFRESH_TOKEN as a repo secret.")
+        print(
+            "How to fix: re-run scripts/get_refresh_token.py on your local "
+            "machine and, when prompted by Google, choose the correct "
+            "channel/brand account for your channel. Then store the new "
+            "YT_REFRESH_TOKEN as a repo secret."
+        )
         sys.exit(2)
-
+        
 FOOT = {"hi_roman": "3D cartoon animation banaya code se, Blender mein. No AI visuals.",
         "hi": "कोड से बना 3D कार्टून एनिमेशन (Blender)। कोई AI विज़ुअल नहीं।",
         "en": "3D cartoon animation made with code in Blender. No AI visuals.",
