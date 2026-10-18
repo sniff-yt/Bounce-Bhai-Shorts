@@ -17,7 +17,7 @@ import scene_spec as SP
 HIST = os.path.join(ROOT, "data", "history.json")
 
 GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 GITHUB_MODELS_URL = "https://models.inference.ai.azure.com/chat/completions"
 GITHUB_MODEL = "gpt-4o-mini"
