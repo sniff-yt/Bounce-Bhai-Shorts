@@ -32,7 +32,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Cached apt packages: downloaded once, restored from cache on later runs.
       - name: System packages (cached)
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
@@ -60,7 +59,6 @@ jobs:
           echo "BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV"
           ~/blender/blender --version | head -1
 
-      # Whole virtualenv is cached (torch + requirements). Bump "v1" to force a rebuild.
       - name: Cache Python packages
         id: venv-cache
         uses: actions/cache@v4
