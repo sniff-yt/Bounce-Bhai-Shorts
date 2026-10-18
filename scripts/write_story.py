@@ -28,6 +28,18 @@ NARA_MODELS = [
 # none/minimal/low/medium/high/xhigh/max. Ignored by non-reasoning models.
 NARA_REASONING = os.environ.get("NARA_REASONING", "none")
 
+# NVIDIA NIM (build.nvidia.com, OpenAI-compatible). Key looks like nvapi-...
+NVIDIA_API_URL = os.environ.get("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+# Comma-separated, tried in order. Pick any chat model from build.nvidia.com.
+NVIDIA_MODELS = [
+    m.strip()
+    for m in os.environ.get(
+        "NVIDIA_MODELS",
+        "meta/llama-3.3-70b-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5"
+    ).split(",")
+    if m.strip()
+]
+
 GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
