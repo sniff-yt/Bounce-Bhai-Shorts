@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a Bounce Bhai story using Gemini only."""
+"""Generate a Bounce Bhai story using Groq, GitHub Models, or Gemini fallback."""
 
 import json
 import os
@@ -16,16 +16,23 @@ import scene_spec as SP
 
 HIST = os.path.join(ROOT, "data", "history.json")
 
-GEMINI_API_URL = os.environ.get("GEMINI_API_URL")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
+GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+GITHUB_MODELS_URL = "https://models.inference.ai.azure.com/chat/completions"
+GITHUB_MODEL = "gpt-4o-mini"
+
+GEMINI_API_URL = os.environ.get(
+    "GEMINI_API_URL",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+)
 
 GENRES = getattr(
     SP, "GENRES",
     ["facts", "mystery", "history", "motivation", "funny"]
 )
 
-PROMPT = """You write viral YouTube Shorts stories for the Hindi/Hinglish
-channel "Bounce Bhai".
+PROMPT = """You write viral YouTube Shorts stories for the Hindi/Hinglish channel "Bounce Bhai".
 
 Write ONE original micro-story. Genre: {genre}.
 
@@ -34,8 +41,7 @@ Rules:
 - Strong hook first sentence, twist/payoff in the LAST sentence.
 - If TRUE, use only widely documented facts you are confident are correct.
 - Never reuse these past stories: {past}
-- Never write about scams, politics, religion, violence, or real private
-  people. Never use the story "Ismaeel's Silent Journey".
+- Never write about scams, politics, religion, violence, or real private people. Never use the story "Ismaeel's Silent Journey".
 - payoff_word: one single word appearing in the LAST sentence's "hi" text.
 - The video is a 3D cartoon. Give a cast of 1-3 characters.
 - Character type must be one of: {types}.
@@ -46,10 +52,12 @@ Rules:
   action: one of {actions};
   prop: one of {props}.
 
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON matching this schema:
 {{
   "title": "short English title",
-  "cast": [{{"name":"Ravi","type":"man","color":"blue"}}],
+  "cast": [
+    {{"name": "Ravi", "type": "man", "color": "blue"}}
+  ],
   "hook": "Hinglish hook, max 34 characters, ends with ...",
   "payoff_word": "word",
   "sentences": [
@@ -78,12 +86,9 @@ Return ONLY valid JSON with this structure:
     "en": "English question",
     "te": "Telugu question"
   }},
-  "tags": ["8 to 12 tags"],
-  "genre_tag": "#facts or #mystery or #history or #motivation or #funny"
+  "tags": ["shorts", "facts", "viral", "animation"],
+  "genre_tag": "#{genre}"
 }}
-
-Make every sentence's scene valid for the supplied animation options.
-Keep all required fields. Return only the JSON object.
 """
 
 
@@ -106,7 +111,7 @@ def make_unique_title(title, used_titles):
     if title_key(candidate) not in used_titles:
         return candidate
 
-    for attempt in range(50):
+    for _ in range(50):
         alt = f"{base.rstrip(' .:-_')} {random.randint(100, 9999)}"
         if title_key(alt) not in used_titles:
             return alt
@@ -114,66 +119,10 @@ def make_unique_title(title, used_titles):
     return f"{base.rstrip(' .:-_')} {time.time_ns()}"
 
 
-def post_story(prompt):
-    """Fetch a story JSON from Gemini only."""
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    gemini_url = os.environ.get("GEMINI_API_URL") or GEMINI_API_URL
-
-    if not gemini_key or not gemini_url:
-        raise SystemExit("Missing GEMINI_API_KEY or GEMINI_API_URL")
-
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }],
-        "generationConfig": {
-            "responseMimeType": "application/json"
-        }
-    }
-
-    req = urllib.request.Request(
-        gemini_url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "bouncebhai/1.0",
-            "x-goog-api-key": gemini_key,
-        },
-        method="POST"
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=180) as response:
-            body = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        details = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Gemini HTTP {exc.code}: {details[:1000]}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Gemini connection failed: {exc}") from exc
-
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Gemini returned invalid JSON: {body[:1000]}") from exc
-
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise RuntimeError(f"Gemini response had no candidates: {body[:1000]}")
-
-    text = ""
-    first = candidates[0]
-    if isinstance(first, dict):
-        parts = first.get("content", {}).get("parts", [])
-        if parts:
-            text = parts[0].get("text", "")
-
-    if not isinstance(text, str) or not text.strip():
-        raise RuntimeError(f"Gemini response had no text: {body[:1000]}")
-
-    text = text.strip()
+def extract_json(raw_text):
+    text = (raw_text or "").strip()
     text = re.sub(r"^\s*```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```\s*$", "", text)
-
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -184,20 +133,146 @@ def post_story(prompt):
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
-        try:
-            parsed = json.loads(text[start:end + 1])
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
+        parsed = json.loads(text[start:end + 1])
+        if isinstance(parsed, dict):
+            return parsed
+    raise RuntimeError("Response was not a valid JSON object")
 
-    raise RuntimeError("Gemini result was not a valid story JSON object")
+
+def call_openai_compatible(url, api_key, model, prompt, provider_name):
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a 3D animated shorts writer. Always return strictly valid JSON matching the requested schema."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.7,
+        "max_tokens": 2048
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "bouncebhai/2.0"
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{provider_name} HTTP {exc.code}: {details[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"{provider_name} connection failed: {exc}") from exc
+
+    data = json.loads(body)
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"{provider_name} returned no choices")
+
+    content = choices[0].get("message", {}).get("content", "")
+    return extract_json(content)
+
+
+def call_gemini(api_key, url, prompt):
+    # Ensure deprecated/invalid model URLs are upgraded to gemini-2.5-flash
+    if "gemini-3.1-flash-lite:" in url:
+        url = url.replace("gemini-3.1-flash-lite:", "gemini-2.5-flash:")
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json"}
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "bouncebhai/2.0",
+            "x-goog-api-key": api_key,
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini HTTP {exc.code}: {details[:500]}") from exc
+
+    data = json.loads(body)
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError("Gemini returned no candidates")
+    parts = candidates[0].get("content", {}).get("parts", [])
+    text = parts[0].get("text", "") if parts else ""
+    return extract_json(text)
+
+
+def post_story(prompt):
+    """Try Groq -> GitHub Models -> Gemini in order."""
+    errors = []
+
+    groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
+    if groq_key:
+        try:
+            return call_openai_compatible(GROQ_API_URL, groq_key, GROQ_MODEL, prompt, "Groq")
+        except Exception as exc:
+            errors.append(str(exc))
+
+    gh_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
+    if gh_token:
+        try:
+            return call_openai_compatible(GITHUB_MODELS_URL, gh_token, GITHUB_MODEL, prompt, "GitHub Models")
+        except Exception as exc:
+            errors.append(str(exc))
+
+    gemini_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if gemini_key:
+        try:
+            return call_gemini(gemini_key, GEMINI_API_URL, prompt)
+        except Exception as exc:
+            errors.append(str(exc))
+
+    if not errors:
+        raise SystemExit("No API keys found (set GROQ_API_KEY, GITHUB_TOKEN, or GEMINI_API_KEY)")
+
+    raise RuntimeError(" | ".join(errors))
 
 
 def validate_with_reason(story):
-    """Return (True, None) if story is valid, otherwise (False, reason string)."""
+    """Validate and auto-repair minor LLM schema drift."""
     if not isinstance(story, dict):
         return False, "Story is not a JSON object"
+
+    cast = story.get("cast")
+    if not cast or not isinstance(cast, list):
+        story["cast"] = [{"name": "Ravi", "type": SP.CHAR_TYPES[0], "color": SP.COLORS[0]}]
+    else:
+        valid_cast = []
+        for idx, c in enumerate(cast[:3]):
+            if isinstance(c, dict):
+                name = str(c.get("name") or f"Char{idx+1}").strip()
+                ctype = c.get("type") if c.get("type") in SP.CHAR_TYPES else SP.CHAR_TYPES[0]
+                ccolor = c.get("color") if c.get("color") in SP.COLORS else SP.COLORS[0]
+                valid_cast.append({"name": name, "type": ctype, "color": ccolor})
+        if not valid_cast:
+            valid_cast = [{"name": "Ravi", "type": SP.CHAR_TYPES[0], "color": SP.COLORS[0]}]
+        story["cast"] = valid_cast
 
     sentences = story.get("sentences") or []
     if not (7 <= len(sentences) <= 9):
@@ -210,14 +285,15 @@ def validate_with_reason(story):
             if not sentence.get(k):
                 return False, f"Sentence {i} missing field '{k}'"
 
-    payoff = str(story.get("payoff_word", "")).strip("!.,? ").lower()
-    if not payoff:
-        return False, "Missing payoff_word"
-
     last_sentence = sentences[-1].get("hi", "")
     words = re.findall(r"\w+", last_sentence.lower())
-    if payoff not in words:
-        return False, f"payoff_word '{payoff}' not found in last sentence"
+    if not words:
+        return False, "Last sentence 'hi' has no words"
+
+    payoff = str(story.get("payoff_word", "")).strip("!.,? ").lower()
+    if not payoff or payoff not in words:
+        # Auto-fix payoff_word to the last word of the final Hinglish sentence
+        story["payoff_word"] = words[-1]
 
     return True, None
 
@@ -241,9 +317,10 @@ def main(out):
     last_error = None
     story = None
 
-    for attempt in range(8):
+    for attempt in range(6):
+        genre = random.choice(GENRES)
         prompt = PROMPT.format(
-            genre=random.choice(GENRES),
+            genre=genre,
             past=past,
             types=", ".join(SP.CHAR_TYPES),
             colors=", ".join(SP.COLORS),
@@ -263,32 +340,19 @@ def main(out):
                 story = candidate
                 break
 
-            if not ok:
-                last_error = reason
-                print(
-                    f"Story attempt {attempt + 1}/8 failed validation: {reason}; title: {candidate['title']}",
-                    flush=True
-                )
-            else:
-                last_error = "Reused previous title"
-                print(
-                    f"Story attempt {attempt + 1}/8 failed: reused previous title: {candidate['title']}",
-                    flush=True
-                )
+            last_error = reason or "Reused previous title"
+            print(f"Attempt {attempt + 1}/6 failed validation: {last_error}", flush=True)
 
         except Exception as exc:
             last_error = str(exc)
-            print(
-                f"Gemini API attempt {attempt + 1}/8 failed: {exc}",
-                flush=True
-            )
+            print(f"API attempt {attempt + 1}/6 failed: {exc}", flush=True)
 
-        if attempt < 7:
-            time.sleep(3)
+        if attempt < 5:
+            time.sleep(2)
 
     if story is None:
         raise SystemExit(
-            f"Story generation failed after 8 attempts: {last_error}"
+            f"Story generation failed after 6 attempts: {last_error}"
         )
 
     SP.normalize(story)
