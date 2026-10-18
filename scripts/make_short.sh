@@ -1,42 +1,78 @@
 #!/usr/bin/env bash
-# Full pipeline: story -> voice -> Blender 3D story render -> audio/subtitles -> (upload)
-set -x
+# Bounce Bhai pipeline split into two stages for GitHub Actions:
+#   bash scripts/make_short.sh prepare  -> build story/audio and cache Sketchfab actors in Blender
+#   bash scripts/make_short.sh publish  -> animate/render, compose, and post the Short
 set -Eeuo pipefail
-trap 'echo "::error::Failed at line $LINENO: $BASH_COMMAND"' ERR
+trap 'echo "::error::Pipeline failed at line $LINENO: $BASH_COMMAND"' ERR
 cd "$(dirname "$0")/.."
-NAME="short_$(date -u +%Y%m%d_%H%M)"
-mkdir -p out
-python scripts/write_story.py "out/$NAME.json"
-# fetch any external models referenced by the story (fills cast[].model_path)
-python scripts/fetch_models.py "out/$NAME.json"
-python - "$NAME" <<'PY'
-import json, sys
+
+prepare_models() {
+  NAME="short_$(date -u +%Y%m%d_%H%M)"
+  mkdir -p out models/blender_cache
+  printf '%s\n' "$NAME" > out/current_name.txt
+  printf 'Preparing %s\n' "$NAME"
+
+  python scripts/write_story.py "out/$NAME.json"
+  python scripts/fetch_models.py "out/$NAME.json"
+  python scripts/voice.py "out/$NAME.json" voice/ref.wav
+  "${BLENDER:-blender}" -b --factory-startup --python engine/setup_models.py -- "out/$NAME.json"
+
+  python - "$NAME" <<'PY'
+import json, os, sys
 name = sys.argv[1]
 path = f"out/{name}.json"
-with open(path, encoding="utf-8") as fh:
-    story = json.load(fh)
-missing = [
-    i for i, member in enumerate(story.get("cast") or [])
-    if not isinstance(member, dict) or not str(member.get("model_path", "")).strip()
-]
+with open(path, encoding="utf-8") as stream:
+    story = json.load(stream)
+cast = story.get("cast") or []
+missing = [i for i, c in enumerate(cast) if not isinstance(c, dict) or
+           not str(c.get("model_path", "")).endswith(".blend") or
+           not os.path.isfile(c["model_path"])]
 if missing:
-    raise SystemExit(
-        "Sketchfab-only mode is enforced. Missing model_path for cast indexes "
-        f"{missing}."
-    )
-print(f"Sketchfab model validation passed for {len(story.get('cast') or [])} cast entries")
+    raise SystemExit(f"Blender model setup failed for cast indexes {missing}")
+print(f"Blender setup validated for {len(cast)} actors")
 PY
-python scripts/voice.py "out/$NAME.json" voice/ref.wav
-"${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
-python scripts/finish.py "out/$NAME.json"
-ffmpeg -v error -y -i "out/${NAME}_final.mp4" -af volumedetect -f null - 2>&1 | grep max_volume || true
-python scripts/upload.py "out/$NAME.json"
-python - "$NAME" <<'EOF'
+
+  echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+  echo "Setup complete: out/$NAME.json"
+}
+
+animate_and_post() {
+  NAME="${NAME:-$(cat out/current_name.txt 2>/dev/null || true)}"
+  if [ -z "$NAME" ] || [ ! -f "out/$NAME.json" ]; then
+    echo "No prepared story found. Run the 'Setup the models in Blender' step first." >&2
+    exit 1
+  fi
+
+  "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
+  python scripts/finish.py "out/$NAME.json"
+  ffmpeg -v error -y -i "out/${NAME}_final.mp4" -af volumedetect -f null - 2>&1 | grep max_volume || true
+  python scripts/upload.py "out/$NAME.json"
+
+  python - "$NAME" <<'PY'
 import json, sys, datetime
-n = sys.argv[1]; c = json.load(open(f"out/{n}.json"))
-h = json.load(open("data/history.json"))
-h.append({"date": datetime.datetime.utcnow().isoformat() + "Z", "title": c["title"], "hook": c["hook"],
-          "video_id": c.get("video_id"), "seed": c["seed"]})
-json.dump(h, open("data/history.json", "w"), ensure_ascii=False, indent=1)
-EOF
-echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+name = sys.argv[1]
+with open(f"out/{name}.json", encoding="utf-8") as stream:
+    story = json.load(stream)
+history_path = "data/history.json"
+try:
+    with open(history_path, encoding="utf-8") as stream:
+        history = json.load(stream)
+except FileNotFoundError:
+    history = []
+history.append({"date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "title": story.get("title", name), "hook": story.get("hook", ""),
+                "video_id": story.get("video_id"), "seed": story.get("seed")})
+with open(history_path, "w", encoding="utf-8") as stream:
+    json.dump(history, stream, ensure_ascii=False, indent=1)
+    stream.write("\n")
+PY
+
+  echo "Short rendered and upload step completed: out/${NAME}_final.mp4"
+}
+
+case "${1:-all}" in
+  prepare) prepare_models ;;
+  publish|animate) animate_and_post ;;
+  all) prepare_models; animate_and_post ;;
+  *) echo "Usage: bash scripts/make_short.sh [prepare|publish|all]" >&2; exit 2 ;;
+esac
