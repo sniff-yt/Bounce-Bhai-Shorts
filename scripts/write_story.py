@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a Bounce Bhai story using NaraRouter, Groq, GitHub Models, or Gemini fallback."""
+"""Generate a Bounce Bhai story using NaraRouter, NVIDIA NIM, Groq, GitHub Models, or Gemini fallback."""
 
 import json
 import os
@@ -268,7 +268,7 @@ def call_gemini(api_key, url, prompt):
 
 
 def post_story(prompt):
-    """Try NaraRouter (laguna -> nemotron) -> Groq -> GitHub Models -> Gemini in order."""
+    """Try NaraRouter (laguna -> nemotron) -> NVIDIA NIM -> Groq -> GitHub Models -> Gemini."""
     errors = []
 
     nara_key = (os.environ.get("NARA_API_KEY") or "").strip()
@@ -283,6 +283,18 @@ def post_story(prompt):
             except Exception as exc:
                 errors.append(str(exc))
                 print(f"NaraRouter model {model} failed: {exc}", flush=True)
+
+    nvidia_key = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+    if nvidia_key:
+        for model in NVIDIA_MODELS:
+            try:
+                return call_openai_compatible(
+                    NVIDIA_API_URL, nvidia_key, model, prompt, f"NVIDIA({model})",
+                    max_tokens=4096, timeout=90,
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+                print(f"NVIDIA model {model} failed: {exc}", flush=True)
 
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
     if groq_key:
@@ -306,7 +318,7 @@ def post_story(prompt):
             errors.append(str(exc))
 
     if not errors:
-        raise SystemExit("No API keys found (set NARA_API_KEY, GROQ_API_KEY, GITHUB_TOKEN, or GEMINI_API_KEY)")
+        raise SystemExit("No API keys found (set NARA_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY, GITHUB_TOKEN, or GEMINI_API_KEY)")
 
     raise RuntimeError(" | ".join(errors))
 
