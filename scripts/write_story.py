@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a Bounce Bhai story using Groq, GitHub Models, or Gemini fallback."""
+"""Generate a Bounce Bhai story using NaraRouter, Groq, GitHub Models, or Gemini fallback."""
 
 import json
 import os
@@ -15,6 +15,18 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 import scene_spec as SP
 
 HIST = os.path.join(ROOT, "data", "history.json")
+
+# NaraRouter (OpenAI-compatible). Free tier: 15 req/min, 7M tokens/day.
+NARA_API_URL = os.environ.get("NARA_API_URL", "https://router.bynara.id/v1/chat/completions")
+# Comma-separated, tried in order. Override with NARA_MODELS if the aliases differ
+# (check GET https://router.bynara.id/v1/models with your key).
+NARA_MODELS = [
+    m.strip()
+    for m in os.environ.get("NARA_MODELS", "laguna-s-2.1,nemotron-3.5-lightning-free").split(",")
+    if m.strip()
+]
+# none/minimal/low/medium/high/xhigh/max. Ignored by non-reasoning models.
+NARA_REASONING = os.environ.get("NARA_REASONING", "none")
 
 GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -121,6 +133,8 @@ def make_unique_title(title, used_titles):
 
 def extract_json(raw_text):
     text = (raw_text or "").strip()
+    # Some reasoning models leak <think>...</think> blocks into content.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     text = re.sub(r"^\s*```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```\s*$", "", text)
     try:
@@ -139,7 +153,19 @@ def extract_json(raw_text):
     raise RuntimeError("Response was not a valid JSON object")
 
 
-def call_openai_compatible(url, api_key, model, prompt, provider_name):
+def _post_json(url, headers, payload, timeout):
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def call_openai_compatible(url, api_key, model, prompt, provider_name,
+                           max_tokens=2048, timeout=60, extra=None):
     payload = {
         "model": model,
         "messages": [
@@ -154,23 +180,27 @@ def call_openai_compatible(url, api_key, model, prompt, provider_name):
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.7,
-        "max_tokens": 2048
+        "max_tokens": max_tokens
+    }
+    if extra:
+        payload.update(extra)
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "bouncebhai/2.0"
     }
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "bouncebhai/2.0"
-        },
-        method="POST"
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=60) as response:
-            body = response.read().decode("utf-8", errors="replace")
+        try:
+            body = _post_json(url, headers, payload, timeout)
+        except urllib.error.HTTPError as exc:
+            # Some gateways/models reject response_format; retry once without it.
+            if exc.code == 400 and "response_format" in payload:
+                payload.pop("response_format")
+                body = _post_json(url, headers, payload, timeout)
+            else:
+                raise
     except urllib.error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"{provider_name} HTTP {exc.code}: {details[:500]}") from exc
@@ -183,6 +213,8 @@ def call_openai_compatible(url, api_key, model, prompt, provider_name):
         raise RuntimeError(f"{provider_name} returned no choices")
 
     content = choices[0].get("message", {}).get("content", "")
+    if not (content or "").strip():
+        raise RuntimeError(f"{provider_name} returned empty content (reasoning ate the token budget?)")
     return extract_json(content)
 
 
@@ -224,8 +256,21 @@ def call_gemini(api_key, url, prompt):
 
 
 def post_story(prompt):
-    """Try Groq -> GitHub Models -> Gemini in order."""
+    """Try NaraRouter (laguna -> nemotron) -> Groq -> GitHub Models -> Gemini in order."""
     errors = []
+
+    nara_key = (os.environ.get("NARA_API_KEY") or "").strip()
+    if nara_key:
+        for model in NARA_MODELS:
+            try:
+                return call_openai_compatible(
+                    NARA_API_URL, nara_key, model, prompt, f"NaraRouter({model})",
+                    max_tokens=4096, timeout=90,
+                    extra={"reasoning_effort": NARA_REASONING},
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+                print(f"NaraRouter model {model} failed: {exc}", flush=True)
 
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
     if groq_key:
@@ -249,7 +294,7 @@ def post_story(prompt):
             errors.append(str(exc))
 
     if not errors:
-        raise SystemExit("No API keys found (set GROQ_API_KEY, GITHUB_TOKEN, or GEMINI_API_KEY)")
+        raise SystemExit("No API keys found (set NARA_API_KEY, GROQ_API_KEY, GITHUB_TOKEN, or GEMINI_API_KEY)")
 
     raise RuntimeError(" | ".join(errors))
 
