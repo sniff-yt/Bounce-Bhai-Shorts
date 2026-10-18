@@ -237,8 +237,12 @@ def main(story_path):
                 parsed = urlparse(direct_url)
                 if parsed.scheme not in ("http", "https"):
                     raise ValueError("model_url must use HTTP or HTTPS")
+                hostname = (parsed.hostname or "").lower()
                 if (
-                    "sketchfab.com" in (parsed.hostname or "").lower()
+                    (
+                        hostname == "sketchfab.com"
+                        or hostname.endswith(".sketchfab.com")
+                    )
                     and "/3d-models/" in parsed.path
                     and not parsed.path.lower().endswith(EXTENSIONS)
                 ):
