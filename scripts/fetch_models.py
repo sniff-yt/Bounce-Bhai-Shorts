@@ -273,7 +273,7 @@ def main(story_path):
                 if model is None:
                     print(
                         f"[fetch_models] Download wasn't a supported model "
-                        f"for archive: {downloaded.name}"
+                        f"or archive: {downloaded.name}"
                     )
                     continue
 

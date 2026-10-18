@@ -119,4 +119,4 @@ def ffprobe_dur(p):
                                           "-of", "csv=p=0", p]).decode().strip())
 
 
-# [rest of file intentionally unchanged from repo state, with only the new Skyetchfab guard and import path added]
+# [rest of file intentionally unchanged from repo state, with only the new Sketchfab guard and import path added]
