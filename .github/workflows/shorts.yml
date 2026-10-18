@@ -3,7 +3,7 @@ name: Bounce Bhai Shorts
 on:
   schedule:
     - cron: "5 * * * *"        # every hour at :05 UTC
-  workflow_dispatch: {}        # "Run workflow" button for a manual Short
+  workflow_dispatch: {}
 
 concurrency:
   group: bouncebhai-shorts
@@ -18,11 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      BLENDER_VERSION: "4.5.14"   # official LTS build (x64, includes OpenImageDenoise + Embree)
-      BB_BUDGET_MIN: "25"         # max minutes for the Blender render; it self-adjusts quality to fit
+      BLENDER_VERSION: "4.5.14"
+      BB_BUDGET_MIN: "25"
     steps:
       - name: Job clock
-        # the renderer must finish by start + 44 min, leaving time for mux, upload and the history commit
         run: echo "BB_DEADLINE=$(( $(date +%s) + 44*60 ))" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
@@ -45,13 +44,13 @@ jobs:
           path: ~/blender
           key: blender-${{ env.BLENDER_VERSION }}-linux-x64
 
-      - name: Install Blender (official LTS tarball)
+      - name: Install Blender (official tarball)
         if: steps.blender-cache.outputs.cache-hit != 'true'
         run: |
           base="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}"
           f="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          curl -fsSL --retry 3 -o "/tmp/$f" "$base/$f"
-          curl -fsSL --retry 3 "$base/blender-${BLENDER_VERSION}.sha256" | grep " $f" | (cd /tmp && sha256sum -c -)
+          curl -fsSL --retry 3 --retry-all-errors -o "/tmp/$f" "$base/$f"
+          curl -fsSL --retry 3 --retry-all-errors "$base/blender-${BLENDER_VERSION}.sha256" | grep " $f" | (cd /tmp && sha256sum -c -)
           mkdir -p ~/blender && tar -xJf "/tmp/$f" -C ~/blender --strip-components=1 && rm "/tmp/$f"
 
       - name: Blender ready
@@ -70,30 +69,38 @@ jobs:
           path: ~/.cache/huggingface
           key: hf-chatterbox-v1
 
-      - name: Unlock voice sample
+      - name: Unlock voice sample and encrypted keys
         env:
           VOICE_KEY: ${{ secrets.VOICE_KEY }}
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
-          # API keys are stored encrypted in the repo too (same VOICE_KEY); repo secrets override them
           if [ -f voice/keys.env.enc ]; then
             openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
-            while IFS='=' read -r k v; do [ -n "$k" ] && echo "::add-mask::$v" && echo "$k=$v" >> "$GITHUB_ENV"; done < /tmp/keys.env
-            rm /tmp/keys.env
+            while IFS='=' read -r k v; do
+              [ -n "$k" ] || continue
+              echo "::add-mask::$v"
+              echo "$k=$v" >> "$GITHUB_ENV"
+            done < /tmp/keys.env
+            rm -f /tmp/keys.env
           fi
 
-      - name: Make and upload the Short
+      - name: Setup the models in Blender
         env:
-          SKETCHFAB_TOKEB: ${{secrets.SKETCHFAB_TOKEB }}
+          SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent
           GEMINI_MODEL: gemini-3.1-flash-lite
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/make_short.sh prepare
+
+      - name: Animate and post the Short
+        env:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YT_PRIVACY: public
-        run: bash scripts/make_short.sh
+        run: bash scripts/make_short.sh publish
 
       - name: Save the video
         if: always()
@@ -107,6 +114,7 @@ jobs:
           retention-days: 14
 
       - name: Remember the story (no repeats)
+        if: success()
         run: |
           git config user.name "bouncebhai-bot"
           git config user.email "bot@users.noreply.github.com"
