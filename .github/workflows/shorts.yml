@@ -75,7 +75,7 @@ jobs:
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
           if [ -f voice/keys.env.enc ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY | tr -d '\r' > /tmp/keys.env
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
             while IFS='=' read -r k v; do
               [ -n "$k" ] || continue
               echo "::add-mask::$v"
@@ -88,14 +88,11 @@ jobs:
         env:
           SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_API_URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
-          GEMINI_MODEL: gemini-2.5-flash
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/make_short.sh prepare
 
       - name: Animate and post the Short
-          env:
+        env:
           SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
