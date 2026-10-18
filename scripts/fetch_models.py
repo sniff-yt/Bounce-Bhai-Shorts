@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """Fetch downloadable Sketchfab models and attach local paths to story JSON."""
 import json
@@ -163,7 +162,6 @@ def download_asset(session, url, folder):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
 
-    # Do not put the Sketchfab API token on signed asset/CDN requests.
     with session.get(url, stream=True, timeout=120) as response:
         response.raise_for_status()
         disposition = response.headers.get("content-disposition", "")
@@ -202,11 +200,13 @@ def main(story_path):
 
     token = os.environ.get("SKETCHFAB_TOKEB") or os.environ.get("SKETCHFAB_TOKEN")
     if not token:
-        print("[fetch_models] Sketchfab token missing; skipping models.")
-        return 0
+        raise SystemExit(
+            "[fetch_models] Missing required SKETCHFAB_TOKEB (or SKETCHFAB_TOKEN); "
+            "Sketchfab-only mode refuses to proceed without a Sketchfab API token."
+        )
 
     api = make_session(token)
-    assets = make_session()  # No API token sent to asset hosts.
+    assets = make_session()
 
     models_dir = Path("models")
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -302,6 +302,16 @@ def main(story_path):
                 f"[fetch_models] Failed cast[{index}]: "
                 f"{type(exc).__name__}: {exc}"
             )
+
+    missing_paths = [
+        i for i, member in enumerate(cast)
+        if not isinstance(member, dict) or not str(member.get("model_path", "")).strip()
+    ]
+    if missing_paths:
+        raise SystemExit(
+            "Sketchfab-only mode is enforced. Missing model_path for "
+            f"cast indexes {missing_paths}. The workflow cannot continue without Sketchfab models."
+        )
 
     if changed:
         with open(story_path, "w", encoding="utf-8") as file:

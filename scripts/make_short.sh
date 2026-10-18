@@ -9,6 +9,23 @@ mkdir -p out
 python scripts/write_story.py "out/$NAME.json"
 # fetch any external models referenced by the story (fills cast[].model_path)
 python scripts/fetch_models.py "out/$NAME.json"
+python - "$NAME" <<'PY'
+import json, sys
+name = sys.argv[1]
+path = f"out/{name}.json"
+with open(path, encoding="utf-8") as fh:
+    story = json.load(fh)
+missing = [
+    i for i, member in enumerate(story.get("cast") or [])
+    if not isinstance(member, dict) or not str(member.get("model_path", "")).strip()
+]
+if missing:
+    raise SystemExit(
+        "Sketchfab-only mode is enforced. Missing model_path for cast indexes "
+        f"{missing}."
+    )
+print(f"Sketchfab model validation passed for {len(story.get('cast') or [])} cast entries")
+PY
 python scripts/voice.py "out/$NAME.json" voice/ref.wav
 "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
 python scripts/finish.py "out/$NAME.json"
