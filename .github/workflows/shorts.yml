@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 55
     env:
       BLENDER_VERSION: "4.5.14"
-      BB_BUDGET_MIN: "25"
+      BB_BUDGET_MIN: "30"
       NARA_MODELS: "laguna-s-2.1,nemotron-3.5-lightning-free"
     steps:
       - name: Job clock
@@ -109,9 +109,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/make_short.sh prepare
 
-      - name: Apply render_blender model_path fix
-        run: python patch_render.py
-
       - name: Animate and post the Short
         env:
           SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
@@ -142,4 +139,4 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add data/history.json
           git commit -m "log: $NAME" || exit 0
-          git pull --rebase && git push
+          git pull --rebase --autostash && git push
