@@ -16,9 +16,9 @@ prepare_models() {
   python scripts/voice.py "out/$NAME.json" voice/ref.wav
 
   # Sketchfab actors are opt-in: search hits are random rigid meshes (cars etc.) that wreck the framing.
-  # Default = the built-in cartoon characters (faces, lip-sync, moving arms and legs).
+  # Default = rigged CC0 Quaternius characters with baked skeletal clips, lip-sync and gesture layers.
   case "${BB_USE_SKETCHFAB:-0}" in 1|true|yes) ;; *)
-    echo "Using built-in cartoon characters (set BB_USE_SKETCHFAB=1 for Sketchfab models)"
+    echo "Using the rigged Quaternius cast (assets/characters/cast.blend; BB_USE_SKETCHFAB=1 for Sketchfab models)"
     echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
     echo "Setup complete: out/$NAME.json"
     return 0 ;;

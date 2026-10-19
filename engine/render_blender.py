@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Bounce Bhai 3D story renderer using prepared Sketchfab characters (Blender, headless, CPU).
+"""Bounce Bhai 3D story renderer (Blender, headless, CPU).
+Cast: rigged CC0 Quaternius characters with baked skeletal clips (engine/quat_cast.py, assets/characters/cast.blend).
 Scene environments, camera moves, animation tracks, captions, and audio composition are generated here.
 
 usage:  blender -b --factory-startup --python engine/render_blender.py -- out/story.json [options]
 options: --frames A-B     render only frames A..B (testing)          --no-compose   stop after Blender frames
-         --samples N      Cycles samples (default 14, OIDN denoise)  --res-pct P    render size % of 720x1280
-env:     BB_BUDGET_MIN    minutes allowed for the Blender render (default 24); the renderer measures itself
-                          and lowers samples, then resolution, if the projection would go over.
+         --samples N      Cycles samples (default 8, OIDN denoise)   --res-pct P    local previews only (default 100)
+env:     BB_BUDGET_MIN    minutes allowed for the Blender render (default 24); the renderer measures itself and
+                          moves the sample count (up to BB_MAX_SAMPLES=16, down to 2) to fit. Resolution stays 100%.
+         BB_CHARACTERS    quaternius (default) | procedural (old primitive puppets)
          BB_PYTHON        python with numpy+Pillow for the caption/audio/mux step (default: python3 on PATH)
 
 Stage 2 (runs automatically, or by hand):  python3 engine/render_blender.py --compose out/story.json FRAMES_DIR
@@ -21,6 +23,7 @@ import scene_spec as SP
 
 FPS = 24
 RES = (720, 1280)
+MAX_SAMPLES = int(os.environ.get("BB_MAX_SAMPLES", "16"))
 LEAD, GAP, TAIL = 0.4, 0.22, 1.0      # same voice timeline as render3d/finish; TAIL = seconds rendered after last line
 OUT_W, OUT_H = 1080, 1920
 
@@ -88,9 +91,10 @@ def voice_env(path, n, fps):
 # ================================================================= BLENDER STAGE
 def blender_main(argv):
     import bpy
+    import quat_cast as QC
 
     story_path = argv[0]
-    opt = {"frames": None, "compose": True, "samples": 5, "res_pct": 100}
+    opt = {"frames": None, "compose": True, "samples": int(os.environ.get("BB_SAMPLES", "8")), "res_pct": 100}
     i = 1
     while i < len(argv):
         a = argv[i]
@@ -592,8 +596,18 @@ def blender_main(argv):
 
     def build_prop(S, kind, ci):
         """Held props hang from the right hand; lightbulb/clock float above the head."""
+        if "rig" in S:
+            return QC.attach_prop(S, kind, lambda p: prop_geo(p, kind), empty, CLIPS)
         if kind in ("lightbulb", "clock"):
             p = empty(f"c{ci}_{kind}", (0.0, 0.0, 0.85), S["neck"])
+        else:
+            p = empty(f"c{ci}_{kind}", (0, -0.06, -0.52), S["shR"])
+        prop_geo(p, kind)
+        S["props"][kind] = p
+        return p
+
+    def prop_geo(p, kind):
+        if kind in ("lightbulb", "clock"):
             if kind == "lightbulb":
                 prim("sphere", (0, 0, 0.12), (0.17,) * 3, m=mat((1, 0.9, 0.3), emit=4), parent=p, seg=16)
                 prim("cyl", (0, 0, -0.08), (0.08, 0.08, 0.12), m=mat((0.6, 0.6, 0.6), 0.3), parent=p, seg=10)
@@ -603,7 +617,6 @@ def blender_main(argv):
                 prim("cube", (0, -0.03, 0.05), (0.02, 0.01, 0.12), m=mat((0.05, 0.05, 0.05)), parent=p)
                 prim("cube", (0.04, -0.03, 0), (0.09, 0.01, 0.02), m=mat((0.05, 0.05, 0.05)), parent=p)
         else:
-            p = empty(f"c{ci}_{kind}", (0, -0.06, -0.52), S["shR"])
             if kind == "book":
                 prim("cube", (0, 0, 0), (0.06, 0.3, 0.38), m=mat((0.8, 0.1, 0.1)), parent=p)
                 prim("cube", (0.005, 0, 0), (0.055, 0.28, 0.36), m=mat((0.97, 0.95, 0.88)), parent=p)
@@ -625,10 +638,18 @@ def blender_main(argv):
                 prim("cube", (0, 0.015, 0.13), (0.34, 0.01, 0.22), (-0.2, 0, 0), m=mat((0.3, 0.7, 1.0), emit=2), parent=p)
             elif kind == "ball":
                 prim("sphere", (0, -0.1, 0.05), (0.15,) * 3, m=mat((0.95, 0.4, 0.05), 0.5), parent=p, smooth=True)
-        S["props"][kind] = p
-        return p
 
-    CH = [build_char(c, ci) for ci, c in enumerate(story["cast"])]
+    # Default cast: rigged CC0 Quaternius characters with their own skeletal clips (assets/characters/cast.blend).
+    # BB_CHARACTERS=procedural keeps the old primitive puppets; BB_USE_SKETCHFAB=1 keeps the Sketchfab path.
+    CLIPS = {}
+    if QC.available() and not use_sketchfab():
+        CLIPS = QC.load_clips()
+        qkeys = QC.pick_keys(story["cast"], story.get("seed", 0))
+        qctx = {"mat": mat, "empty": empty, "prim": prim, "coll": coll, "SP": SP}
+        CH = [QC.build(c, ci, qkeys[ci], qctx) for ci, c in enumerate(story["cast"])]
+        print("cast:", ", ".join(f"{c['type']}->{k}" for c, k in zip(story["cast"], qkeys)), flush=True)
+    else:
+        CH = [build_char(c, ci) for ci, c in enumerate(story["cast"])]
     for j, s in enumerate(story["sentences"]):
         pr = s["scene"]["prop"]
         lead = s["scene"]["characters"][0]
@@ -661,12 +682,150 @@ def blender_main(argv):
         b = int(t * FPS); blink_at.update({b, b + 1, b + 2}); t += rng.uniform(2.2, 4.5)
 
     def slots(n):
-        return {1: [0.0], 2: [-0.75, 0.75], 3: [-1.25, 0.0, 1.25]}[n]
+        return {1: [0.0], 2: [-0.62, 0.62], 3: [-1.05, 0.0, 1.05]}[n]
 
     def ease(x):
         x = min(1, max(0, x)); return x * x * (3 - 2 * x)
 
     OFF = (0, 0, -60)
+    # ---- rigged characters: per-frame clip plan, baked after the sentence loop
+    QF = {ci: [None] * N for ci, S in enumerate(CH) if "rig" in S}
+    QLAST = {}
+    ANIM = {ci: QC.Animator(S, CLIPS) for ci, S in enumerate(CH) if "rig" in S}
+    LISTEN_MAP = {"walk": "walk", "run": "run", "celebrate": "celebrate", "jump": "celebrate",
+                  "shocked": "shocked", "fall": "shocked"}
+
+    def beat_action(jj, ci):
+        if jj < 0 or jj >= len(story["sentences"]):
+            return None
+        sc2 = story["sentences"][jj]["scene"]
+        if ci not in sc2["characters"]:
+            return None
+        r = sc2["characters"].index(ci)
+        return sc2["action"] if r == 0 else LISTEN_MAP.get(sc2["action"], "listen")
+
+    def env_at(j, k, w=2):
+        e = envs[j]
+        lo, hi = max(0, k - w), min(len(e), k + w + 1)
+        return sum(e[lo:hi]) / max(1, hi - lo)
+
+    def rig_beat(S, ci, j, role, sc_, act, ids, n, xs, f0, f1, dur, dist):
+        anim = ANIM[ci]
+        O = ORIG[sc_["setting"]]
+        mouth = S.get("mouth")
+        if role is None:
+            for f in range(f0, f1 + 1):
+                put(S["root"], "location", f, OFF)
+                put(S["stool"], "scale", f, (0.0,) * 3)
+                for kind, p in S["props"].items():
+                    put(p, "scale", f, (0.0,) * 3)
+            QLAST.pop(ci, None)
+            return
+        a = beat_action(j, ci)
+        fam = S["family"]
+        clip = anim.clip_name(a)
+        prev_a, next_a = beat_action(j - 1, ci), beat_action(j + 1, ci)
+        x0 = xs[role]; y0 = 0.15 * abs(x0) * 0.4
+        rz = (-0.35 if x0 > 0 else 0.35) if n > 1 else 0.0
+        ph = role * 0.37
+        lead_x = xs[0]
+        rate = 1.0
+        if a in ("walk", "run"):
+            nat = QC.NATURAL_SPEED.get((fam, clip), 1.2) * S["scale"]
+            rate = min(1.6, max(0.6, (dist / max(dur, 0.1)) / nat))
+        prev = QLAST.get(ci)
+        oneshot = clip in QC.ONESHOT
+        base = prev[1] if (prev and prev[0] == clip and not oneshot) else (0.0 if oneshot else role * 9 + ci * 5)
+        robot = fam == "R"
+        for f in range(f0, f1 + 1):
+            k_ = f - f0
+            tt = k_ / FPS; u = tt / dur
+            loc = [x0, y0, 0.0]; rot = [0.0, 0.0, rz]
+            env = env_at(j, k_) if role == 0 else 0.0
+            k_in = 1.0 if prev_a == a else QC.ease(tt / 0.3)
+            k_out = 1.0 if next_a == a else QC.ease((dur - tt) / 0.25)
+            k = min(k_in, k_out)
+            ctime = base + k_ * rate
+            over = {}
+            mo = 0.0            # mouth opening 0..1
+            stool = 0.0
+            if a in ("walk", "run"):
+                loc[0] = x0 - dist / 2 + dist * u
+                rot[2] = 1.25
+                mo = 0.4 * env
+            elif a == "talk":
+                over = {"gesture": k * min(1.0, 0.3 + 1.1 * env) * (0.75 + 0.25 * math.sin(2 * math.pi * 0.4 * tt)),
+                        "nod": k * (0.025 + 0.06 * env * math.sin(2 * math.pi * 1.3 * tt)),
+                        "lean": 0.04 * k, "turn": 0.0}
+                rot[2] += 0.04 * math.sin(2 * math.pi * 0.3 * tt + ph)
+                mo = env
+            elif a == "listen":
+                side = 1.0 if lead_x > x0 else -1.0
+                over = {"nod": k * 0.07 * max(0.0, math.sin(2 * math.pi * 0.45 * tt + ph * 6)) ** 2,
+                        "turn": k * 0.22 * side, "tilt": k * 0.05 * side}
+            elif a == "point":
+                tgt = 1.0 if (n == 1 or x0 <= 0) else -1.0
+                over = {"pose": "point", "side": tgt, "k": QC.ease(tt / 0.3) * k_out, "nod": -0.03 * k,
+                        "lean": 0.04 * k, "turn": 0.15 * tgt * k}
+                mo = env
+            elif a == "jump":
+                per = 0.85; ph2 = (tt % per) / per
+                if ph2 >= 0.25:
+                    loc[2] = 0.55 * math.sin(math.pi * (ph2 - 0.25) / 0.75)
+                over = {"pose": "jump", "k": min(1.0, loc[2] / 0.3) * k_out}
+                mo = 0.6
+                if robot:
+                    ctime = (tt % per) / per * 17
+            elif a == "fall":
+                tf = 0.25 * dur
+                ctime = max(0.0, tt - tf) * FPS
+                mo = 0.8 if tt > tf else 0.0
+            elif a == "sit":
+                if not robot:
+                    over = {"sit": k_in, "gesture": 0.6 * k * min(1.0, 0.2 + env), "nod": 0.03 * k}
+                    loc[2] -= S["sit_drop"] * k_in
+                    stool = 1.0
+                mo = env
+            elif a == "celebrate":
+                loc[2] = (0.10 if robot else 0.22) * abs(math.sin(math.pi * (tt + ph) / 0.55))
+                rot[2] += 0.22 * math.sin(2 * math.pi * 0.9 * tt + ph)
+                over = {"pose": "celebrate", "k": k, "pump": math.sin(2 * math.pi * 2.4 * tt + ph * 5)}
+                mo = 0.85
+            elif a == "shocked":
+                ks = QC.ease(tt / 0.25)
+                loc[1] = y0 + 0.25 * ks
+                if tt < 0.35:
+                    loc[2] = 0.15 * math.sin(math.pi * tt / 0.35)
+                over = {"pose": "shocked", "k": min(ks, k_out), "nod": -0.08 * ks}
+                mo = 0.9 * ks
+            elif a == "wave":
+                mo = env
+                over = {"nod": 0.03 * k}
+            elif a == "think":
+                over = {"pose": "think", "k": k, "tilt": 0.12 * k, "nod": -0.06 * k}
+                rot[2] += 0.05 * math.sin(2 * math.pi * 0.25 * tt)
+            fr = {"clip": clip, "t": ctime, "over": over}
+            if prev and k_ < QC.XFADE and prev[0] != clip:
+                w = QC.ease((k_ + 1) / (QC.XFADE + 1))
+                fr = {"clip": prev[0], "t": prev[1] + k_ * prev[2], "clip2": clip, "t2": ctime, "w2": w, "over": over}
+            QF[ci][f] = fr
+            put(S["root"], "location", f, (O[0] + loc[0], O[1] + loc[1], O[2] + loc[2]))
+            put(S["root"], "rotation_euler", f, tuple(rot))
+            put(S["stool"], "scale", f, (stool,) * 3)
+            if mouth is not None:
+                bx, by, bz = S["mouth_scale"]
+                o = min(1.0, max(0.0, mo))
+                put(mouth, "scale", f, (bx * (1.0 + 0.2 * o), by, bz * (0.4 + 2.0 * o)))
+            for kind, p in S["props"].items():
+                show = role == 0 and sc_["prop"] == kind
+                sz = 0.0
+                if show:
+                    sz = QC.ease(tt / 0.2)
+                    if kind == "lightbulb":
+                        sz *= 1 + 0.08 * math.sin(2 * math.pi * 2 * tt)
+                put(p, "scale", f, (sz,) * 3)
+        QLAST[ci] = (clip, base + (f1 - f0 + 1) * rate, rate)
+
     cam_keys = []   # (frame, cam_loc, aim_loc)
     world_keys, sun_keys = [], []
     payoff_j = len(story["sentences"]) - 1
@@ -683,6 +842,9 @@ def blender_main(argv):
         sun_keys.append((f0, (0.6, 0.7, 1.0) if night else (1.0, 0.95, 0.88), 1.5 if night else 2.4))
         for ci, S in enumerate(CH):
             role = ids.index(ci) if ci in ids else None
+            if "rig" in S:
+                rig_beat(S, ci, j, role, sc_, act, ids, n, xs, f0, f1, dur, dist)
+                continue
             for f in range(f0, f1 + 1):
                 if role is None:
                     put(S["root"], "location", f, OFF); continue
@@ -861,7 +1023,7 @@ def blender_main(argv):
         H = 1.75 * (0.8 if lead["type"] in ("boy", "girl") else 1.0)
         if act in ("celebrate", "jump", "shocked", "wave"): H += 0.5
         if sc_["prop"] in ("lightbulb", "clock"): H += 0.45
-        W = {1: 1.5, 2: 2.9, 3: 3.9}[n]
+        W = {1: 1.5, 2: 2.5, 3: 3.4}[n]
         if act == "fall": W = max(W, 2.6)
         # Semantic shot plan: frame each story beat intentionally.
         if moving:
@@ -987,6 +1149,10 @@ def blender_main(argv):
 
     # bulk-write the per-frame character channels
     t_k = time.time()
+    for ci, anim in ANIM.items():
+        anim.bake(QF[ci])
+    if ANIM:
+        print(f"skeletal bake: {len(ANIM)} rigs x {N} frames in {time.time() - t_k:.1f}s", flush=True)
     for key, (obj, vals) in track.items():
         attr = key[1]
         last = None
@@ -1000,7 +1166,7 @@ def blender_main(argv):
     r = sc.render
     r.engine = "CYCLES"
     r.resolution_x, r.resolution_y = RES
-    r.resolution_percentage = opt["res_pct"]
+    r.resolution_percentage = opt["res_pct"]   # 100 in production (CI never passes --res-pct); never lowered
     r.fps = FPS
     r.use_persistent_data = True
     r.image_settings.file_format = "PNG"; r.image_settings.color_mode = "RGB"; r.image_settings.compression = 15
@@ -1020,7 +1186,7 @@ def blender_main(argv):
     cy.use_denoising = False
     try:
         cy.denoiser = "OPENIMAGEDENOISE"; cy.use_denoising = True
-        cy.denoising_input_passes = "RGB_ALBEDO_NORMAL"; cy.denoising_prefilter = "FAST"
+        cy.denoising_input_passes = "RGB_ALBEDO_NORMAL"; cy.denoising_prefilter = os.environ.get("BB_DENOISE_PREFILTER", "ACCURATE")
     except Exception as e:
         print("no OpenImageDenoise in this Blender build: rendering without denoise", flush=True)
     try:
@@ -1063,15 +1229,17 @@ def blender_main(argv):
         left = len(todo[k::step])
         proj = el + per * left
         print(f"  {done} frames  {per:.2f}s/frame  elapsed {el / 60:.1f}m  projected {proj / 60:.1f}m", flush=True)
-        if left and proj > budget:
+        if left and proj < 0.62 * budget and cy.samples < MAX_SAMPLES and step == 1:
+            cy.samples += 1   # comfortably inside the budget: spend it on cleaner frames
+            print("  under budget -> samples", cy.samples, flush=True)
+        elif left and proj > budget:
             # over budget: trade quality for time - samples, then resolution, then animate "on twos"
             # keep motion smooth (every frame) as long as possible; OIDN hides the low sample count
+            # resolution is locked at 100%: only the sample count gives way (OIDN cleans the result)
             if cy.samples > 2:
-                cy.samples -= 1; print("  over budget -> samples", cy.samples, flush=True)
-            elif r.resolution_percentage > 85:
-                r.resolution_percentage = 85; print("  over budget -> resolution 85%", flush=True)
-            elif r.resolution_percentage > 75:
-                r.resolution_percentage = 75; print("  over budget -> resolution 75%", flush=True)
+                fit = int(cy.samples * (budget - el) / max(1e-3, per * left) * 0.92)
+                cy.samples = max(2, min(cy.samples - 1, fit))
+                print("  over budget -> samples", cy.samples, flush=True)
             elif step == 1 and opt["frames"] is None:
                 step = 2; print("  over budget -> rendering every 2nd frame (held)", flush=True)
         chunk = 24
@@ -1179,9 +1347,9 @@ def compose(story_path, frames_dir):
         dr = ImageDraw.Draw(img)
         if t < 2.4 and cfg.get("hook"):
             # big two-line hook instead of one long line squeezed tiny
-            words = cfg["hook"].split()
+            hook_words = cfg["hook"].split()   # own name: `words` is the caption word list used below
             lines, cur = [], ""
-            for w_ in words:
+            for w_ in hook_words:
                 trial = (cur + " " + w_).strip()
                 if cur and dr.textlength(trial, font=R.font(84)) > 960:
                     lines.append(cur); cur = w_
