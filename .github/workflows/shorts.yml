@@ -130,6 +130,7 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YT_PRIVACY: public
+          YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw   # Bounce Bhai (@bouncebhaiofficial): refuse to post anywhere else
         run: bash scripts/make_short.sh publish
 
       - name: Save the video
