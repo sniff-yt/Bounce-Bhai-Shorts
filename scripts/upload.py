@@ -22,6 +22,16 @@ need = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")
 if not all(os.environ.get(k) for k in need):
     print("YouTube secrets not set: skipping upload (video kept as a workflow artifact)."); sys.exit(0)
 
+# A Bounce Bhai token made with the phone-friendly "YouTube sign-in" workflow wins over the repo secret.
+_enc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "secrets", "yt_token.enc")
+if os.path.exists(_enc) and os.environ.get("MY_VOICE_KEY"):
+    import subprocess as _sp
+    _r = _sp.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-in", _enc, "-pass", "env:MY_VOICE_KEY"],
+                 capture_output=True)
+    if _r.returncode == 0 and _r.stdout.strip():
+        os.environ["YT_REFRESH_TOKEN"] = _r.stdout.decode().strip()
+        print("YouTube: using secrets/yt_token.enc")
+
 c = json.load(open(sys.argv[1]))
 final = c["out"].replace(".mp4", "_final.mp4")
 creds = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"], token_uri="https://oauth2.googleapis.com/token",

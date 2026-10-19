@@ -1,0 +1,69 @@
+name: YouTube sign-in (phone friendly)
+# Step 1: run with no code -> the run's notice holds a Google sign-in link (base64, so GitHub doesn't mask it).
+#         Open it, sign in, PICK THE BOUNCE BHAI CHANNEL, allow. The browser lands on a "localhost" page that won't load:
+#         copy that whole address (it contains ?code=...).
+# Step 2: run again with that address/code -> the new refresh token is checked against @bouncebhaiofficial,
+#         encrypted with MY_VOICE_KEY into secrets/yt_token.enc and committed. upload.py prefers it.
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "Leave empty for the sign-in link; then paste the localhost address (or just the code)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+jobs:
+  auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign-in link or token exchange
+        env:
+          CID: ${{ secrets.YT_CLIENT_ID }}
+          CSEC: ${{ secrets.YT_CLIENT_SECRET }}
+          KEY: ${{ secrets.MY_VOICE_KEY }}
+          CODE_IN: ${{ github.event.inputs.code }}
+          WANT: UCn8j185kE4GH44U8b6n7Qgw
+        run: |
+          python3 - <<'PY'
+          import os, json, base64, urllib.parse, urllib.request, subprocess, sys
+          cid, csec, code = os.environ["CID"], os.environ["CSEC"], os.environ["CODE_IN"].strip()
+          redirect = "http://localhost"
+          if not code:
+              url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({
+                  "client_id": cid, "redirect_uri": redirect, "response_type": "code",
+                  "scope": "https://www.googleapis.com/auth/youtube.force-ssl",
+                  "access_type": "offline", "prompt": "consent select_account"})
+              print("::notice title=signin_b64::" + base64.b64encode(url.encode()).decode())
+              sys.exit(0)
+          if "code=" in code:
+              code = urllib.parse.parse_qs(urllib.parse.urlparse(code).query)["code"][0]
+          data = urllib.parse.urlencode({"code": code, "client_id": cid, "client_secret": csec,
+                                         "redirect_uri": redirect, "grant_type": "authorization_code"}).encode()
+          try:
+              tok = json.load(urllib.request.urlopen("https://oauth2.googleapis.com/token", data))
+          except urllib.error.HTTPError as e:
+              print("::error title=exchange::" + e.read().decode()[:300]); sys.exit(1)
+          rt = tok.get("refresh_token")
+          if not rt:
+              print("::error title=exchange::no refresh_token returned"); sys.exit(1)
+          req = urllib.request.Request("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+                                       headers={"Authorization": "Bearer " + tok["access_token"]})
+          items = json.load(urllib.request.urlopen(req)).get("items", [])
+          chans = [(i["id"], i["snippet"]["title"]) for i in items]
+          print("::notice title=channels::" + "; ".join(f"{a} {b}" for a, b in chans))
+          if not any(a == os.environ["WANT"] for a, _ in chans):
+              print("::error title=wrong_channel::This sign-in is for " + ", ".join(b for _, b in chans) +
+                    " - run step 1 again and pick Bounce Bhai"); sys.exit(1)
+          os.makedirs("secrets", exist_ok=True)
+          subprocess.run(["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-out", "secrets/yt_token.enc",
+                          "-pass", "env:KEY"], input=rt.encode(), check=True)
+          print("::notice title=ok::Bounce Bhai token saved")
+          PY
+      - name: Commit token
+        if: github.event.inputs.code != ''
+        run: |
+          git config user.name "bounce-bhai-bot"; git config user.email "bot@users.noreply.github.com"
+          git add secrets/yt_token.enc && git commit -m "YouTube token for @bouncebhaiofficial (encrypted)" && \
+          git pull --rebase --autostash && git push
