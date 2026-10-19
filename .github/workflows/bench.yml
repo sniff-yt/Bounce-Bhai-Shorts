@@ -1,0 +1,50 @@
+name: Render benchmark
+on:
+  workflow_dispatch: {}
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg:
+          - {name: s8-accurate, samples: 8, prefilter: ACCURATE, cycles: ""}
+          - {name: s8-fast, samples: 8, prefilter: FAST, cycles: ""}
+          - {name: s8-none, samples: 8, prefilter: NONE, cycles: ""}
+          - {name: s8-nodenoise, samples: 8, prefilter: FAST, cycles: "use_denoising=0"}
+          - {name: s4-fast, samples: 4, prefilter: FAST, cycles: ""}
+          - {name: s16-fast, samples: 16, prefilter: FAST, cycles: ""}
+    env:
+      BLENDER_VERSION: "4.5.14"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Blender
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+      - name: Install Blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          base="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}"
+          f="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          curl -fsSL --retry 3 -o "/tmp/$f" "$base/$f"
+          mkdir -p ~/blender && tar -xJf "/tmp/$f" -C ~/blender --strip-components=1
+      - name: Render 24 frames
+        env:
+          BB_MAX_SAMPLES: ${{ matrix.cfg.samples }}
+          BB_DENOISE_PREFILTER: ${{ matrix.cfg.prefilter }}
+          BB_CYCLES: ${{ matrix.cfg.cycles }}
+        run: |
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libice6 libgl1 libegl1 >/dev/null
+          mkdir -p out
+          T=$SECONDS
+          ~/blender/blender -b --factory-startup --python engine/render_blender.py -- bench/story.json \
+            --frames $(seq -s, 100 123) --no-compose --samples ${{ matrix.cfg.samples }} > log.txt 2>&1 || true
+          echo "::notice title=${{ matrix.cfg.name }}::nproc $(nproc) total $((SECONDS - T))s | $(grep -E 'frames  |bake' log.txt | tr '\n' ' ') | $(cat out/bench.mp4.render.json 2>/dev/null) | $(grep -iE 'error|denoise' log.txt | head -3 | tr '\n' ' ')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.cfg.name }}
+          path: out/bench_frames/f00111.png

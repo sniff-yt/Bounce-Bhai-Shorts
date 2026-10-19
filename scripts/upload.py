@@ -8,6 +8,11 @@ This modified upload script checks which channels the provided credentials have 
 and validates an optional YT_CHANNEL_ID environment variable to prevent uploading to the
 wrong channel when the same Google account controls multiple channels/brand accounts.
 """
+import sys as _sys, traceback as _tb
+def _gh_error(t, e, tb):
+    _tb.print_exception(t, e, tb)
+    print("::error title=upload::" + (type(e).__name__ + ": " + str(e)).replace("\n", " ")[:900], flush=True)
+_sys.excepthook = _gh_error
 import json, os, sys
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

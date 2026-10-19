@@ -1,0 +1,172 @@
+{
+ "out": "out/bench.mp4",
+ "seed": 3,
+ "title": "test",
+ "hook": "Ravi ka jugaad!",
+ "cast": [
+  {
+   "name": "Ravi",
+   "type": "man",
+   "color": "orange"
+  },
+  {
+   "name": "Priya",
+   "type": "woman",
+   "color": "teal"
+  },
+  {
+   "name": "Chintu",
+   "type": "robot",
+   "color": "gray"
+  }
+ ],
+ "sentences": [
+  {
+   "hi": "Ravi ne socha ek naya idea.",
+   "en": "Ravi ne socha ek naya idea.",
+   "scene": {
+    "setting": "home",
+    "characters": [
+     0
+    ],
+    "action": "think",
+    "prop": "lightbulb"
+   },
+   "hd": "Ravi ne socha ek naya idea.",
+   "te": "Ravi ne socha ek naya idea."
+  },
+  {
+   "hi": "Priya boli yeh kya hai bhai.",
+   "en": "Priya boli yeh kya hai bhai.",
+   "scene": {
+    "setting": "home",
+    "characters": [
+     1,
+     0
+    ],
+    "action": "talk",
+    "prop": "none"
+   },
+   "hd": "Priya boli yeh kya hai bhai.",
+   "te": "Priya boli yeh kya hai bhai."
+  },
+  {
+   "hi": "Ravi ne phone dikhaya.",
+   "en": "Ravi ne phone dikhaya.",
+   "scene": {
+    "setting": "office",
+    "characters": [
+     0,
+     1
+    ],
+    "action": "point",
+    "prop": "phone"
+   },
+   "hd": "Ravi ne phone dikhaya.",
+   "te": "Ravi ne phone dikhaya."
+  },
+  {
+   "hi": "Dono market chal pade jaldi.",
+   "en": "Dono market chal pade jaldi.",
+   "scene": {
+    "setting": "street",
+    "characters": [
+     0,
+     1
+    ],
+    "action": "walk",
+    "prop": "none"
+   },
+   "hd": "Dono market chal pade jaldi.",
+   "te": "Dono market chal pade jaldi."
+  },
+  {
+   "hi": "Priya shocked ho gayi!",
+   "en": "Priya shocked ho gayi!",
+   "scene": {
+    "setting": "shop",
+    "characters": [
+     1,
+     0
+    ],
+    "action": "shocked",
+    "prop": "none"
+   },
+   "hd": "Priya shocked ho gayi!",
+   "te": "Priya shocked ho gayi!"
+  },
+  {
+   "hi": "Ravi baith ke samjhaya sab.",
+   "en": "Ravi baith ke samjhaya sab.",
+   "scene": {
+    "setting": "school",
+    "characters": [
+     0
+    ],
+    "action": "sit",
+    "prop": "book"
+   },
+   "hd": "Ravi baith ke samjhaya sab.",
+   "te": "Ravi baith ke samjhaya sab."
+  },
+  {
+   "hi": "Robot ne haath hilaya.",
+   "en": "Robot ne haath hilaya.",
+   "scene": {
+    "setting": "lab",
+    "characters": [
+     2,
+     0
+    ],
+    "action": "wave",
+    "prop": "none"
+   },
+   "hd": "Robot ne haath hilaya.",
+   "te": "Robot ne haath hilaya."
+  },
+  {
+   "hi": "Ravi gir gaya dhadaam.",
+   "en": "Ravi gir gaya dhadaam.",
+   "scene": {
+    "setting": "park",
+    "characters": [
+     0
+    ],
+    "action": "fall",
+    "prop": "none"
+   },
+   "hd": "Ravi gir gaya dhadaam.",
+   "te": "Ravi gir gaya dhadaam."
+  },
+  {
+   "hi": "Sab ne milke jashn manaya!",
+   "en": "Sab ne milke jashn manaya!",
+   "scene": {
+    "setting": "park",
+    "characters": [
+     0,
+     1,
+     2
+    ],
+    "action": "celebrate",
+    "prop": "trophy"
+   },
+   "hd": "Sab ne milke jashn manaya!",
+   "te": "Sab ne milke jashn manaya!"
+  },
+  {
+   "hi": "Ravi kooda khushi se.",
+   "en": "Ravi kooda khushi se.",
+   "scene": {
+    "setting": "street",
+    "characters": [
+     0
+    ],
+    "action": "jump",
+    "prop": "none"
+   },
+   "hd": "Ravi kooda khushi se.",
+   "te": "Ravi kooda khushi se."
+  }
+ ]
+}
