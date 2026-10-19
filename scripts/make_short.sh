@@ -13,8 +13,17 @@ prepare_models() {
   printf 'Preparing %s\n' "$NAME"
 
   python scripts/write_story.py "out/$NAME.json"
-  python scripts/fetch_models.py "out/$NAME.json"
   python scripts/voice.py "out/$NAME.json" voice/ref.wav
+
+  # Sketchfab actors are opt-in: search hits are random rigid meshes (cars etc.) that wreck the framing.
+  # Default = the built-in cartoon characters (faces, lip-sync, moving arms and legs).
+  case "${BB_USE_SKETCHFAB:-0}" in 1|true|yes) ;; *)
+    echo "Using built-in cartoon characters (set BB_USE_SKETCHFAB=1 for Sketchfab models)"
+    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+    echo "Setup complete: out/$NAME.json"
+    return 0 ;;
+  esac
+  python scripts/fetch_models.py "out/$NAME.json"
   "${BLENDER:-blender}" -b --factory-startup --python engine/setup_models.py -- "out/$NAME.json"
 
   python - "$NAME" <<'PY'
