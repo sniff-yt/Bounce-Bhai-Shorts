@@ -56,8 +56,12 @@ animate_and_post() {
   fi
 
   T=$SECONDS
-  "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
-  echo "::notice title=timing::blender+compose $((SECONDS - T))s; render $(cat "out/$NAME.mp4.render.json" 2>/dev/null)"
+  if [ "${BB_ENGINE:-2d}" = "blender" ]; then
+    "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
+  else
+    python engine/render2d.py "out/$NAME.json"     # 2D vector cartoon (default): sharp 1080x1920 @ 30 fps
+  fi
+  echo "::notice title=timing::render ${BB_ENGINE:-2d} $((SECONDS - T))s; $(cat "out/$NAME.mp4.render.json" 2>/dev/null)"
   T=$SECONDS
   python scripts/finish.py "out/$NAME.json"
   echo "::notice title=timing::finish $((SECONDS - T))s"

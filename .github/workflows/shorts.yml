@@ -16,7 +16,7 @@ permissions:
 jobs:
   short:
     runs-on: ubuntu-latest
-    timeout-minutes: 95
+    timeout-minutes: 60
     env:
       BLENDER_VERSION: "4.5.14"
       BB_BUDGET_MIN: "45"
@@ -77,7 +77,9 @@ jobs:
           ~/venv/bin/pip install -r requirements.txt
 
       - name: Use cached venv
-        run: echo "$HOME/venv/bin" >> "$GITHUB_PATH"
+        run: |
+          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
+          ~/venv/bin/pip install -q skia-python==144.0.post2   # 2D cartoon engine (engine/render2d.py)
 
       - name: Cache voice model
         uses: actions/cache@v4

@@ -67,7 +67,7 @@ Rules:
 - Never reuse these past stories: {past}
 - Never write about scams, politics, religion, violence, or real private people. Never use the story "Ismaeel's Silent Journey".
 - payoff_word: one single word appearing in the LAST sentence's "hi" text.
-- The video is a 3D cartoon. Give a cast of 1-3 characters.
+- The video is a 2D cartoon. Give a cast of 1-3 characters.
 - Character type must be one of: {types}.
 - Character clothing color must be one of: {colors}.
 - Every sentence needs an animatable scene:
