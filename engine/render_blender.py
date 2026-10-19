@@ -651,6 +651,8 @@ def blender_main(argv):
     else:
         CH = [build_char(c, ci) for ci, c in enumerate(story["cast"])]
     for j, s in enumerate(story["sentences"]):
+        if os.environ.get("BB_PROPS", "0") not in ("1", "true", "yes"):
+            s["scene"]["prop"] = "none"   # hand props looked random: off unless BB_PROPS=1
         pr = s["scene"]["prop"]
         lead = s["scene"]["characters"][0]
         if pr != "none" and pr not in CH[lead]["props"]:

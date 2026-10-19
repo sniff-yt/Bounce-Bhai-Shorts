@@ -1,8 +1,8 @@
 name: Bounce Bhai Shorts
 
 on:
-  schedule:
-    - cron: "5 * * * *"        # every hour at :05 UTC
+#  schedule:
+#    - cron: "5 * * * *"        # PAUSED 2026-10-19 while the new engine is built (re-enable to post hourly)
   workflow_dispatch: {}
 
 concurrency:
