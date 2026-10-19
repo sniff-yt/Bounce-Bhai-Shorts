@@ -30,6 +30,7 @@ Only **one** repo secret is needed (Settings → Secrets and variables → Actio
 
 | Secret | What |
 |---|---|
+| `MY_VOICE_KEY` | unlocks `voice/my_voice.wav.enc` (your own 20 s voice recording, cleaned). Optional: without it the original sample is used |
 | `VOICE_KEY` | unlocks `voice/ref.wav.enc` (your voice sample) and `voice/keys.env.enc` (YouTube API credentials) |
 
 Stories are written with free **GitHub Models** using the workflow's own token (no key needed).

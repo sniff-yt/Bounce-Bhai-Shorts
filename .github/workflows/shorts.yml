@@ -88,8 +88,17 @@ jobs:
       - name: Unlock voice sample and encrypted keys
         env:
           VOICE_KEY: ${{ secrets.VOICE_KEY }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
         run: |
-          openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
+          # Your own cloned voice (voice/my_voice.wav.enc, cleaned 20 s recording) wins when MY_VOICE_KEY is set;
+          # otherwise the original sample keeps working.
+          if [ -n "$MY_VOICE_KEY" ] && [ -f voice/my_voice.wav.enc ] && \
+             openssl enc -d -aes-256-cbc -pbkdf2 -in voice/my_voice.wav.enc -out voice/ref.wav -pass env:MY_VOICE_KEY; then
+            echo "voice: using my_voice.wav"
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
+            echo "voice: using ref.wav (set MY_VOICE_KEY to use your own recording)"
+          fi
           if [ -f voice/keys.env.enc ]; then
             openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
             while IFS='=' read -r k v; do
