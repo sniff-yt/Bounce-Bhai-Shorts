@@ -644,10 +644,10 @@ def blender_main(argv):
     CLIPS = {}
     if QC.available() and not use_sketchfab():
         CLIPS = QC.load_clips()
-        qkeys = QC.pick_keys(story["cast"], story.get("seed", 0))
+        qkeys = QC.pick_recipes(story["cast"], story.get("seed", 0))
         qctx = {"mat": mat, "empty": empty, "prim": prim, "coll": coll, "SP": SP}
         CH = [QC.build(c, ci, qkeys[ci], qctx) for ci, c in enumerate(story["cast"])]
-        print("cast:", ", ".join(f"{c['type']}->{k}" for c, k in zip(story["cast"], qkeys)), flush=True)
+        print("cast:", ", ".join(f"{c['type']}->{k['label']}" for c, k in zip(story["cast"], qkeys)), flush=True)
     else:
         CH = [build_char(c, ci) for ci, c in enumerate(story["cast"])]
     for j, s in enumerate(story["sentences"]):
@@ -1151,6 +1151,20 @@ def blender_main(argv):
     t_k = time.time()
     for ci, anim in ANIM.items():
         anim.bake(QF[ci])
+        sk = CH[ci].get("blink")
+        if sk is not None:   # natural, unsynchronised blinks: every 2.2-4.8 s, ~5 frames each
+            brng = random.Random(story.get("seed", 1) * 31 + ci * 7)
+            tb = brng.uniform(0.6, 2.0)
+            keys = {0: 0.0}
+            while tb * FPS < N - 6:
+                b = int(tb * FPS)
+                keys.update({b - 1: 0.0, b: 0.75, b + 1: 1.0, b + 2: 1.0, b + 3: 0.45, b + 4: 0.0})
+                if brng.random() < 0.18 and (b + 9) < N - 6:   # occasional double blink
+                    keys.update({b + 6: 0.8, b + 7: 1.0, b + 8: 0.4, b + 9: 0.0})
+                tb += brng.uniform(2.2, 4.8)
+            for fb in sorted(keys):
+                sk.value = keys[fb]
+                sk.keyframe_insert("value", frame=fb)
     if ANIM:
         print(f"skeletal bake: {len(ANIM)} rigs x {N} frames in {time.time() - t_k:.1f}s", flush=True)
     for key, (obj, vals) in track.items():

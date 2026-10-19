@@ -17,17 +17,43 @@ from mathutils import Matrix, Quaternion, Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(HERE, "..", "assets", "characters", "cast.blend")
 
-# story cast type -> candidate library characters (picked deterministically, never the same twice per story)
-ROSTER = {
-    "man": ["M_Casual_Hoodie", "M_Casual_2", "M_Punk", "M_Worker", "M_Adventurer", "M_Suit"],
-    "woman": ["W_Casual", "W_Formal", "W_Punk", "W_Adventurer", "W_Worker", "W_Suit"],
-    "boy": ["M_Beach", "M_Casual_2", "M_Casual_Hoodie"],
-    "girl": ["W_Casual", "W_Adventurer", "W_Punk"],
-    "grandpa": ["M_Farmer", "M_King"],
-    "grandma": ["W_Medieval", "W_Formal"],
-    "scientist": ["M_Suit", "W_SciFi", "M_Spacesuit"],
-    "robot": ["R_Robot"],
+# Every outfit in a family shares one skeleton and is split into Head / Body / Legs / Feet meshes, so a character
+# is a RECIPE: one part from each pool below (+ skin tone + hair colour + the story's shirt colour). The pools are
+# curated per cast type so combinations stay believable. Men: 8^4 = 4,096 outfit combos, women 8x6x6x6 = 1,728, and
+# x6 skin tones x4 hair colours x12 shirt colours on top - thousands of distinct, deterministic characters.
+_MEN = ["Casual_Hoodie", "Casual_2", "Beach", "Suit", "Punk", "Worker", "Adventurer", "Farmer"]
+_WOMEN = ["Casual", "Formal", "Punk", "Adventurer", "Suit", "Worker"]
+POOLS = {
+    "man": ("M", {"Head": _MEN, "Body": _MEN, "Legs": _MEN, "Feet": _MEN}),
+    "woman": ("W", {"Head": _WOMEN + ["SciFi", "Medieval"], "Body": _WOMEN, "Legs": _WOMEN, "Feet": _WOMEN}),
+    "boy": ("M", {"Head": ["Beach", "Casual_Hoodie", "Casual_2", "Punk"],
+                  "Body": ["Casual_Hoodie", "Casual_2", "Beach", "Punk"],
+                  "Legs": ["Casual_Hoodie", "Casual_2", "Beach", "Punk"],
+                  "Feet": ["Casual_Hoodie", "Casual_2", "Beach", "Punk"]}),
+    "girl": ("W", {"Head": ["Casual", "Punk", "Adventurer", "Formal"],
+                   "Body": ["Casual", "Punk", "Adventurer", "Formal"],
+                   "Legs": ["Casual", "Punk", "Adventurer", "Formal"],
+                   "Feet": ["Casual", "Punk", "Adventurer", "Formal"]}),
+    "grandpa": ("M", {"Head": ["Farmer", "King", "Suit", "Casual_2"],
+                      "Body": ["Farmer", "Suit", "King", "Casual_2"],
+                      "Legs": ["Farmer", "Suit", "Casual_2", "King"],
+                      "Feet": ["Farmer", "Suit", "Casual_2", "King"]}),
+    "grandma": ("W", {"Head": ["Medieval", "Formal", "Casual", "Suit"],
+                      "Body": ["Medieval", "Formal", "Suit", "Casual"],
+                      "Legs": ["Medieval", "Formal", "Suit", "Casual"],
+                      "Feet": ["Medieval", "Formal", "Suit", "Casual"]}),
+    "scientist": ("M", {"Head": ["Suit", "Casual_2", "Casual_Hoodie", "Spacesuit"],
+                        "Body": ["Suit", "Spacesuit", "Worker"],
+                        "Legs": ["Suit", "Spacesuit", "Casual_2"],
+                        "Feet": ["Suit", "Spacesuit", "Worker"]}),
+    "scientist_w": ("W", {"Head": ["SciFi", "Suit", "Casual"], "Body": ["SciFi", "Suit", "Formal"],
+                          "Legs": ["SciFi", "Suit", "Formal"], "Feet": ["SciFi", "Suit", "Formal"]}),
 }
+SKINS = [(0.62, 0.42, 0.24), (0.55, 0.34, 0.19), (0.47, 0.27, 0.14), (0.38, 0.21, 0.10), (0.68, 0.48, 0.31),
+         (0.31, 0.17, 0.08)]
+HAIRS = [(0.018, 0.014, 0.012), (0.045, 0.026, 0.014), (0.11, 0.055, 0.022), (0.26, 0.18, 0.06)]
+ROSTER = POOLS   # backwards-compatible name
+
 # target standing height in metres (to the top of the hair) per cast type
 HEIGHT = {"man": 1.80, "woman": 1.72, "boy": 1.30, "girl": 1.26, "grandpa": 1.72, "grandma": 1.64,
           "scientist": 1.80, "robot": 1.45}
@@ -59,17 +85,73 @@ def load_clips():
     return {a.name: a for a in dst.actions if a is not None}
 
 
-def pick_keys(cast, seed):
-    used, outfits, keys = set(), set(), []
+def pick_recipes(cast, seed):
+    """Deterministic, never-repeating characters for a story: same seed -> same people."""
+    import random
+    out, seen = [], set()
     for ci, c in enumerate(cast):
-        opts = ROSTER.get(c["type"], ROSTER["man"])
-        start = (seed + ci * 7) % len(opts)
-        ring = [opts[(start + k) % len(opts)] for k in range(len(opts))]
-        key = next((k for k in ring if k not in used and k[2:] not in outfits),
-                   next((k for k in ring if k not in used), ring[0]))
-        used.add(key); outfits.add(key[2:])
-        keys.append(key)
-    return keys
+        t = c["type"]
+        rng = random.Random(f"{seed}:{ci}:{t}")
+        if t == "robot":
+            out.append({"family": "R", "base": "Robot", "parts": {}, "skin": 0, "hair": None, "label": "Robot"})
+            continue
+        pool_key = "scientist_w" if (t == "scientist" and rng.random() < 0.35) else t
+        fam, pools = POOLS.get(pool_key, POOLS["man"])
+        for _ in range(50):
+            parts = {k: rng.choice(v) for k, v in pools.items()}
+            sig = (fam,) + tuple(parts[k] for k in ("Head", "Body", "Legs", "Feet"))
+            if sig not in seen and (ci == 0 or parts["Body"] not in [o["parts"].get("Body") for o in out]):
+                break
+        seen.add(sig)
+        if t in ("grandpa", "grandma"):
+            hair = (0.78, 0.78, 0.76)
+        else:
+            hair = HAIRS[rng.choices(range(4), weights=[5, 4, 2, 1])[0]]
+        out.append({"family": fam, "base": parts["Body"], "parts": parts, "skin": rng.randrange(len(SKINS)),
+                    "hair": hair, "label": f"{fam}:" + "/".join(parts[k] for k in ("Head", "Body", "Legs", "Feet"))})
+    return out
+
+
+def _load_collection(name):
+    with bpy.data.libraries.load(LIB, link=False) as (src, dst):
+        dst.collections = [name]
+    return dst.collections[0]
+
+
+def assemble(recipe, ci, coll):
+    """Base outfit's rig + meshes, then swap in the other outfits' parts (same skeleton, same bone names)."""
+    fam = recipe["family"]
+    col = _load_collection(f"Q_{fam}_{recipe['base']}")
+    col.name = f"c{ci}_{fam}_{recipe['base']}"
+    coll.children.link(col)
+    rig = next(o for o in col.objects if o.type == "ARMATURE")
+    for part, outfit in recipe["parts"].items():
+        if outfit == recipe["base"]:
+            continue
+        donor = _load_collection(f"Q_{fam}_{outfit}")
+        new = next((o for o in donor.objects if o.type == "MESH" and _part(o) == part), None)
+        old = next((o for o in col.objects if o.type == "MESH" and _part(o) == part), None)
+        if new is not None:
+            col.objects.link(new)
+            new.parent = rig
+            for mod in new.modifiers:
+                if mod.type == "ARMATURE":
+                    mod.object = rig
+            if old is not None:
+                bpy.data.objects.remove(old, do_unlink=True)
+        for o in list(donor.objects):
+            if o is not new:
+                bpy.data.objects.remove(o, do_unlink=True)
+        bpy.data.collections.remove(donor)
+    for o in list(col.objects):   # the packs ship pistols and swords: never in a family Short
+        if o.type == "MESH" and _part(o) in ("Pistol", "Sword"):
+            bpy.data.objects.remove(o, do_unlink=True)
+    return col, rig
+
+
+def _part(o):
+    suf = o.name.split(".")[0].rsplit("_", 1)[-1]
+    return "Legs" if suf == "Pants" else suf
 
 
 def _base_color(m):
@@ -82,24 +164,35 @@ def _base_color(m):
         return (c[0], c[1], c[2])
 
 
-def build(c, ci, key, ctx):
-    """Load one character, restyle its materials to the scene's toon shading, scale it, parent it to a fresh
-    root empty and return the dict render_blender uses (root, rig, family, props, stool, mouth ...)."""
+def build(c, ci, recipe, ctx):
+    """Assemble one character from its recipe, restyle its materials to the scene's toon shading, scale it,
+    parent it to a fresh root empty and return the dict render_blender uses (root, rig, family, props, mouth...)."""
     mat, empty, prim, coll, SP = ctx["mat"], ctx["empty"], ctx["prim"], ctx["coll"], ctx["SP"]
-    with bpy.data.libraries.load(LIB, link=False) as (src, dst):
-        dst.collections = [f"Q_{key}"]
-    col = dst.collections[0]
-    col.name = f"c{ci}_{key}"
-    coll.children.link(col)
-    rig = next(o for o in col.objects if o.type == "ARMATURE")
+    col, rig = assemble(recipe, ci, coll)
+    key = recipe["label"]
     meshes = [o for o in col.objects if o.type == "MESH"]
     fam = rig["bb_family"]
     t = c["type"]
 
-    # --- materials: same diffuse+ambient toon shading as the sets; shirt takes the story colour
+    # --- blink: a shape key that squashes each eye island to a thin line (read before materials are swapped)
+    blink = None
+    head0 = next((o for o in meshes if o.name.split(".")[0].endswith("Head")), None)
+    if head0 is not None and fam != "R" and recipe["parts"].get("Head") != "Spacesuit":
+        try:
+            blink = _blink_key(head0)
+        except Exception as exc:   # cosmetic: never fail a render over it
+            print(f"[cast] no blink for {key}: {exc}", flush=True)
+
+
+    # --- materials: same diffuse+ambient toon shading as the sets; shirt takes the story colour,
+    #     skin tone and hair colour come from the recipe
     shirt = SP.COLORS[c["color"]]
-    body = next((o for o in meshes if o.name.endswith("Body") or o.name.endswith("Torso")), None)
+    body = next((o for o in meshes if o.name.split(".")[0].endswith("Body") or o.name.endswith("Torso")), None)
     tint_slot = None
+    if fam == "R":   # robot: its main paint takes the story colour
+        body = next((o for o in meshes if o.name.startswith("Torso")), None)
+        if body is not None:
+            tint_slot = next((i for i, m in enumerate(body.data.materials) if m and m.name.startswith("Main")), None)
     if body is not None and fam != "R":
         counts = {}
         for p in body.data.polygons:
@@ -118,9 +211,16 @@ def build(c, ci, key, ctx):
             low = m.name.lower()
             if o is body and i == tint_slot:
                 rgb = shirt
-            elif t in ("grandpa", "grandma") and "hair" in low:
-                rgb = (0.78, 0.78, 0.76)
-            o.data.materials[i] = mat(rgb, 0.6, name=f"c{ci}_{m.name.split('.')[0]}")
+            elif fam == "R" and low.startswith("main"):
+                rgb = shirt
+            elif fam != "R" and "skin" in low:
+                tone = SKINS[recipe["skin"]]
+                k = sum(rgb) / max(1e-4, sum(SKINS[0]))   # keep darker/lighter skin variants relative
+                rgb = tuple(min(1.0, v * k) for v in tone)
+            elif recipe.get("hair") and ("hair" in low or "eyebrow" in low or "moustache" in low):
+                hk = 1.0 if "hair" in low else 0.6
+                rgb = tuple(v * hk for v in recipe["hair"]) if "hair" in low or recipe["hair"][0] > 0.5 else rgb
+            o.data.materials[i] = mat(rgb, 0.45 if "hair" in low else 0.6, name=f"c{ci}_{m.name.split('.')[0]}")
         # smooth shading, hard creases kept (shoes, collars, helmet rims)
         o.data.polygons.foreach_set("use_smooth", [True] * len(o.data.polygons))
         try:
@@ -140,7 +240,7 @@ def build(c, ci, key, ctx):
         zs = [(e.matrix_world @ v.co).z for v in me.vertices]
         top = max(top, max(zs) if zs else 0)
         e.to_mesh_clear()
-        if o.name.endswith("Head"):
+        if o.name.split(".")[0].endswith("Head"):
             head_mesh = o
     s = HEIGHT.get(t, 1.75) / max(0.3, top)
     root = empty(f"c{ci}_root")
@@ -184,9 +284,56 @@ def build(c, ci, key, ctx):
     prim("cyl", (0, 0, (seat - 0.06) / 2), (0.05, 0.05, max(0.05, seat - 0.06)), m=mat((0.2, 0.2, 0.2), 0.4),
          parent=stool, seg=10)
     S["stool"] = stool
+    S["blink"] = blink
     S["hand_bone"] = "Wrist.R" if fam != "R" else "LowerArm.R"
     S["head_bone"] = "Head"
     return S
+
+
+def _blink_key(o):
+    """Add shape key 'Blink' to the head mesh: every eye island is squashed vertically to 12% around its centre.
+    Men's eyes have their own 'Eye' material; women's eyes share a dark brown with the brows, so islands are
+    used and only the ones at eye height (below the brows) are taken. Coordinates are the rest pose, scale 1."""
+    me = o.data
+    mw = o.matrix_world
+    names = [(m.name.lower() if m else "") for m in me.materials]
+    eye_mats = {i for i, n in enumerate(names) if n.startswith("eye") and not n.startswith("eyebrow")}
+    strict = not eye_mats
+    if strict:   # dark, non-hair materials that have vertices in the eye band
+        for i, m in enumerate(me.materials):
+            if m is None or "hair" in names[i] or "eyebrow" in names[i]:
+                continue
+            r, g, b = _base_color(m)
+            if 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.06:
+                eye_mats.add(i)
+    sel = set()
+    for p in me.polygons:
+        if p.material_index in eye_mats:
+            sel.update(p.vertices)
+    sides = {1: [], -1: []}
+    for v in sel:
+        w = mw @ me.vertices[v].co
+        if 0.015 < abs(w.x) < 0.085 and w.y < -0.12 and 1.672 < w.z < (1.706 if strict else 1.712):
+            sides[1 if w.x > 0 else -1].append(v)
+    picked = []
+    for vs in sides.values():
+        if len(vs) < 6:
+            continue
+        zs = [(mw @ me.vertices[v].co).z for v in vs]
+        picked.append((vs, (min(zs) + max(zs)) / 2))
+    if len(picked) < 2:
+        raise RuntimeError(f"found {len(picked)} eyes")
+    if me.shape_keys is None:
+        o.shape_key_add(name="Basis", from_mix=False)
+    sk = o.shape_key_add(name="Blink", from_mix=False)
+    inv = mw.inverted()
+    for vs, cz in picked:
+        for v in vs:
+            w = mw @ me.vertices[v].co
+            w.z = cz + (w.z - cz) * 0.12
+            sk.data[v].co = inv @ w
+    sk.value = 0.0
+    return sk
 
 
 def attach_prop(S, kind, build_geo, empty, clips):
