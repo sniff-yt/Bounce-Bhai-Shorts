@@ -106,7 +106,9 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/make_short.sh prepare
-
+      - name: Apply render_blender model_path fix
+        run: python patch_render.py
+        
       - name: Animate and post the Short
         env:
           SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
