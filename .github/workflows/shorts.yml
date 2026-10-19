@@ -16,14 +16,14 @@ permissions:
 jobs:
   short:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 95
     env:
       BLENDER_VERSION: "4.5.14"
-      BB_BUDGET_MIN: "30"
+      BB_BUDGET_MIN: "45"
       NARA_MODELS: "laguna-s-2.1,nemotron-3.5-lightning-free"
     steps:
       - name: Job clock
-        run: echo "BB_DEADLINE=$(( $(date +%s) + 44*60 ))" >> "$GITHUB_ENV"
+        run: echo "BB_DEADLINE=$(( $(date +%s) + 72*60 ))" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
 

@@ -12,8 +12,11 @@ prepare_models() {
   printf '%s\n' "$NAME" > out/current_name.txt
   printf 'Preparing %s\n' "$NAME"
 
+  T=$SECONDS
   python scripts/write_story.py "out/$NAME.json"
+  echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
   python scripts/voice.py "out/$NAME.json" voice/ref.wav
+  echo "::notice title=timing::voice $((SECONDS - T))s"
 
   # Sketchfab actors are opt-in: search hits are random rigid meshes (cars etc.) that wreck the framing.
   # Default = rigged CC0 Quaternius characters with baked skeletal clips, lip-sync and gesture layers.
@@ -52,8 +55,12 @@ animate_and_post() {
     exit 1
   fi
 
+  T=$SECONDS
   "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
+  echo "::notice title=timing::blender+compose $((SECONDS - T))s; render $(cat "out/$NAME.mp4.render.json" 2>/dev/null)"
+  T=$SECONDS
   python scripts/finish.py "out/$NAME.json"
+  echo "::notice title=timing::finish $((SECONDS - T))s"
   ffmpeg -v error -y -i "out/${NAME}_final.mp4" -af volumedetect -f null - 2>&1 | grep max_volume || true
   python scripts/upload.py "out/$NAME.json"
 
