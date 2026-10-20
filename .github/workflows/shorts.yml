@@ -12,6 +12,7 @@ concurrency:
 permissions:
   contents: write
   models: read
+  actions: read
 
 jobs:
   short:
@@ -26,6 +27,15 @@ jobs:
         run: echo "BB_DEADLINE=$(( $(date +%s) + 72*60 ))" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
+
+      - name: Start the dashboard live feed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf out/live
+          python3 scripts/live.py stage "Starting up the studio" --pct 1
+          python3 scripts/live.py set trigger=${{ github.event_name }} started=$(date +%s)
+          nohup bash scripts/live_push.sh loop >/dev/null 2>&1 &
 
       - uses: actions/setup-python@v5
         id: py
@@ -144,6 +154,15 @@ jobs:
             out/*.srt
             out/*.json
           retention-days: 14
+
+      - name: Finish the dashboard live feed
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pkill -f "live_push.sh loop" || true
+          python3 scripts/live.py done ${{ job.status == 'success' && 'ok' || 'failed' }}
+          bash scripts/live_push.sh once
 
       - name: Remember the story (no repeats)
         if: success()

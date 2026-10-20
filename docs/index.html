@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bounce Bhai · Studio</title>
+<meta name="theme-color" content="#F5F1EA">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F5F1EA; --card:#FFFFFF; --ink:#1C1A17; --muted:#7A746B; --line:#ECE6DC;
+  --accent:#FF6A3D; --accent-soft:#FFE9E0; --green:#1F9D61; --green-soft:#E3F5EC;
+  --red:#D93A2B; --red-soft:#FCE6E3; --amber:#C98500; --amber-soft:#FFF3D6;
+  --r:22px; --shadow:0 1px 2px rgba(28,26,23,.04),0 8px 28px rgba(28,26,23,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{padding:max(18px,env(safe-area-inset-top)) 16px 60px}
+.wrap{max-width:1180px;margin:0 auto}
+a{color:inherit}
+button{font:inherit;cursor:pointer;border:0}
+.serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400;letter-spacing:-.01em}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;margin:6px 2px 22px}
+.avatar{width:46px;height:46px;border-radius:50%;background:var(--accent-soft) center/cover;flex:none;border:2px solid #fff;box-shadow:var(--shadow)}
+header h1{font-size:30px;line-height:1}
+header .sub{color:var(--muted);font-size:13px;margin-top:4px}
+.grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;font-size:13px;font-weight:600;background:var(--card);box-shadow:var(--shadow);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--green);box-shadow:0 0 0 4px var(--green-soft)}
+.dot.off{background:var(--red);box-shadow:0 0 0 4px var(--red-soft)}
+.dot.live{background:var(--accent);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,106,61,.5)}100%{box-shadow:0 0 0 10px rgba(255,106,61,0)}}
+.iconbtn{width:40px;height:40px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;font-size:18px}
+
+/* grid */
+.grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;min-width:0}
+.span3{grid-column:span 3}.span4{grid-column:span 4}.span5{grid-column:span 5}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}.span6{grid-column:span 6}
+@media(max-width:900px){.span3,.span4,.span5,.span6,.span7,.span8{grid-column:span 12}.stat.span4{grid-column:span 6}.stat.span4:last-child{grid-column:span 12}}
+.label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.h2{font-size:26px;margin-bottom:4px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+
+/* stats */
+.stat .num{font-size:40px;font-weight:800;letter-spacing:-.03em;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.stat .delta{font-size:13px;font-weight:600;color:var(--green)}
+.spark{width:100%;height:38px;margin-top:10px}
+
+/* studio */
+.studio{display:grid;grid-template-columns:260px 1fr;gap:22px;align-items:start}
+@media(max-width:700px){.studio{grid-template-columns:1fr}}
+.phone{width:100%;max-width:260px;aspect-ratio:9/16;border-radius:26px;background:#14120f;overflow:hidden;position:relative;margin:0 auto;box-shadow:0 12px 30px rgba(0,0,0,.18);border:6px solid #14120f}
+.phone img{width:100%;height:100%;object-fit:cover;display:block}
+.phone .ph{position:absolute;inset:0;display:grid;place-items:center;color:#8b857b;font-size:13px;text-align:center;padding:20px}
+.phone .badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px;display:flex;gap:6px;align-items:center;backdrop-filter:blur(6px)}
+.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:12px 0 4px}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#FFA260);border-radius:99px;transition:width .8s ease}
+.steps{list-style:none;margin-top:14px;display:flex;flex-direction:column;gap:2px}
+.steps li{display:flex;gap:10px;align-items:center;padding:7px 0;font-size:14px;border-bottom:1px dashed var(--line)}
+.steps li:last-child{border:0}
+.ico{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800;background:var(--line);color:var(--muted)}
+.ico.ok{background:var(--green-soft);color:var(--green)}
+.ico.run{background:var(--accent-soft);color:var(--accent)}
+.ico.run::after{content:"";width:10px;height:10px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.ico.bad{background:var(--red-soft);color:var(--red)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.feed{margin-top:14px;max-height:220px;overflow:auto;background:#FBF9F5;border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.5}
+.feed div{display:flex;gap:10px}
+.feed time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.thought{font-family:"Instrument Serif",serif;font-size:22px;line-height:1.2;margin-top:6px}
+
+/* buttons / forms */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;padding:0 18px;border-radius:14px;font-weight:700;font-size:15px;background:var(--ink);color:#fff;transition:transform .1s, opacity .2s}
+.btn:active{transform:scale(.98)}
+.btn.accent{background:var(--accent)}
+.btn.ghost{background:var(--bg);color:var(--ink)}
+.btn.danger{background:var(--red-soft);color:var(--red)}
+.btn.good{background:var(--green-soft);color:var(--green)}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,textarea,select{width:100%;font:inherit;font-size:15px;padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:#FBF9F5;color:var(--ink);outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);background:#fff}
+textarea{min-height:76px;resize:vertical}
+.field{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.field>span{font-size:13px;font-weight:600;color:var(--muted)}
+.drop{border:2px dashed var(--line);border-radius:18px;padding:22px;text-align:center;background:#FBF9F5;cursor:pointer;transition:.2s}
+.drop.has{border-color:var(--accent);background:var(--accent-soft)}
+.drop video{max-height:220px;border-radius:12px;margin-top:10px;max-width:100%}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.note{font-size:13px;padding:10px 12px;border-radius:12px;background:var(--bg);margin-top:12px}
+.note.ok{background:var(--green-soft);color:#13693f}.note.bad{background:var(--red-soft);color:#9b2418}.note.warn{background:var(--amber-soft);color:#7a5100}
+
+/* lists */
+.list{display:flex;flex-direction:column;margin-top:10px}
+.item{display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px;text-decoration:none}
+.item:last-child{border:0}
+.item .t{flex:1;min-width:0}
+.item .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .t span{font-size:12px;color:var(--muted)}
+.vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
+.vid{text-decoration:none}
+.vid .th{aspect-ratio:16/9;border-radius:14px;background:var(--line) center/cover}
+.vid b{display:block;font-size:13px;font-weight:600;margin-top:7px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vid span{font-size:12px;color:var(--muted)}
+.agentbox{background:linear-gradient(135deg,#1C1A17,#2b2620);color:#F5F1EA;border-radius:18px;padding:16px;margin-top:12px}
+.agentbox .muted{color:#b8b0a3}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+.chip.ok{background:var(--green-soft);color:var(--green)}.chip.bad{background:var(--red-soft);color:var(--red)}.chip.run{background:var(--accent-soft);color:var(--accent)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(28,26,23,.35);display:none;align-items:flex-end;justify-content:center;z-index:20;backdrop-filter:blur(3px)}
+.modal.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:26px 26px 0 0;padding:24px 20px max(24px,env(safe-area-inset-bottom))}
+@media(min-width:700px){.modal{align-items:center}.sheet{border-radius:26px}}
+.sheet ol{margin:10px 0 0 18px;font-size:14px;line-height:1.6}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(120px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:14px;font-size:14px;font-weight:600;transition:.3s;z-index:30;max-width:90vw}
+.toast.show{transform:translateX(-50%) translateY(0)}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="avatar" id="avatar"></div>
+    <div class="grow">
+      <h1 class="serif">Bounce Bhai</h1>
+      <div class="sub" id="handle">@bouncebhaiofficial · Studio</div>
+    </div>
+    <span class="pill" id="autoPill"><span class="dot" id="autoDot"></span><span id="autoTxt">Auto posts</span></span>
+    <button class="iconbtn" id="gear" title="Settings">⚙︎</button>
+  </header>
+
+  <div class="note warn" id="tokenNote" style="display:none;margin:0 0 16px">Add your GitHub key in settings (⚙︎) to unlock Post, Stop and the live studio.</div>
+
+  <div class="grid">
+    <!-- stats -->
+    <div class="card stat span4"><div class="label">Subscribers</div><div class="num" id="subs">—</div><div class="delta" id="subsD"></div><svg class="spark" id="subsS"></svg></div>
+    <div class="card stat span4"><div class="label">Total views</div><div class="num" id="views">—</div><div class="delta" id="viewsD"></div><svg class="spark" id="viewsS"></svg></div>
+    <div class="card stat span4"><div class="label">Videos</div><div class="num" id="vcount">—</div><div class="small muted" id="statsAt">Waiting for numbers…</div></div>
+
+    <!-- studio -->
+    <div class="card span8">
+      <div class="row"><div class="grow"><div class="label">Studio</div><div class="h2 serif" id="studioTitle">Watching the studio…</div></div>
+        <span class="pill" id="livePill" style="display:none"><span class="dot live"></span>LIVE</span></div>
+      <div class="studio" style="margin-top:12px">
+        <div class="phone" id="phone"><div class="ph" id="phonePh">The next Short appears here while it's being drawn.</div></div>
+        <div>
+          <div class="thought" id="thought">Idle. Next Short at —</div>
+          <div class="bar"><i id="prog"></i></div>
+          <div class="small muted" id="progTxt"></div>
+          <ul class="steps" id="steps"></ul>
+          <div class="feed" id="feed" style="display:none"></div>
+          <div class="row" style="margin-top:14px">
+            <button class="btn accent" id="makeNow">✦ Make a Short now</button>
+            <a class="btn ghost" id="runLink" target="_blank" style="display:none;text-decoration:none">Open run ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- auto posting + fixer -->
+    <div class="card span4">
+      <div class="label">Auto posting</div>
+      <div class="h2 serif" id="autoTitle">—</div>
+      <div class="small muted" id="autoSub">Posts a new Short every hour.</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn danger" id="stopBtn">■ Stop auto posts</button>
+        <button class="btn good" id="startBtn" style="display:none">▶ Start auto posts</button>
+      </div>
+      <div style="height:22px"></div>
+      <div class="label">Fixer agent</div>
+      <div class="agentbox">
+        <div style="font-weight:700" id="fixHead">Standing by</div>
+        <div class="small muted" id="fixSub" style="margin-top:4px">If a run breaks, I read the logs, patch the code and try again.</div>
+      </div>
+      <div class="list" id="fixList"></div>
+      <button class="btn ghost" id="fixNow" style="margin-top:10px;width:100%">Ask the agent to fix the last failure</button>
+    </div>
+
+    <!-- post -->
+    <div class="card span5">
+      <div class="label">Post your own video</div>
+      <div class="h2 serif">Upload to Bounce Bhai</div>
+      <label class="drop" id="drop" style="display:block;margin-top:12px">
+        <input type="file" id="file" accept="video/*" hidden>
+        <div id="dropTxt"><b>Choose a video</b><div class="small muted">MP4, vertical 9:16 for Shorts · up to 95 MB</div></div>
+        <video id="preview" muted playsinline controls style="display:none"></video>
+      </label>
+      <div class="field"><span>Title</span><input id="ptitle" maxlength="100" placeholder="Kya aap jaante ho…? #shorts"></div>
+      <div class="field"><span>Description</span><textarea id="pdesc" placeholder="Optional"></textarea></div>
+      <div class="field"><span>Tags</span><input id="ptags" value="shorts,bouncebhai,hindi"></div>
+      <div class="two">
+        <div class="field"><span>Visibility</span><select id="ppriv"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></div>
+        <div class="field"><span>Schedule (optional)</span><input type="datetime-local" id="pwhen"></div>
+      </div>
+      <button class="btn accent" id="postBtn" style="width:100%;margin-top:16px">Post</button>
+      <div class="note" id="postNote" style="display:none"></div>
+    </div>
+
+    <!-- recent videos -->
+    <div class="card span7">
+      <div class="label">Latest on the channel</div>
+      <div class="vids" id="vids"><div class="small muted">Loading…</div></div>
+    </div>
+
+    <!-- runs -->
+    <div class="card span12">
+      <div class="label">Recent runs</div>
+      <div class="list" id="runs"></div>
+    </div>
+  </div>
+  <footer>Bounce Bhai Studio · runs on GitHub Actions · numbers from YouTube</footer>
+</div>
+
+<div class="modal" id="modal"><div class="sheet">
+  <div class="h2 serif">Connect GitHub</div>
+  <div class="small muted">Your key stays on this phone only (saved in this browser) and lets the buttons control your repo.</div>
+  <ol>
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank"><b>new fine-grained token</b></a></li>
+    <li>Repository access → <b>Only select</b> → <b>Bounce-Bhai-Shorts</b></li>
+    <li>Permissions → <b>Actions: Read and write</b>, <b>Contents: Read and write</b></li>
+    <li>Generate, copy, paste below</li>
+  </ol>
+  <div class="field"><span>GitHub key</span><input id="tok" type="password" placeholder="github_pat_…" autocomplete="off"></div>
+  <div class="row" style="margin-top:16px"><button class="btn accent grow" id="saveTok">Save</button><button class="btn ghost" id="clearTok">Remove</button><button class="btn ghost" id="closeM">Close</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const REPO = "sniff-yt/Bounce-Bhai-Shorts";
+const API = "https://api.github.com/repos/" + REPO;
+const $ = id => document.getElementById(id);
+let TOKEN = localStorage.getItem("bb_token") || "";
+let liveRun = null, lastFailed = null, timer = null, lastFrameSha = "";
+
+function toast(t){ const e=$("toast"); e.textContent=t; e.classList.add("show"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("show"),3200); }
+const fmt = n => n==null ? "—" : n>=1e6 ? (n/1e6).toFixed(n>=1e7?0:1)+"M" : n>=1e4 ? (n/1e3).toFixed(n>=1e5?0:1)+"K" : n.toLocaleString("en-IN");
+const ago = ts => { const s=(Date.now()-new Date(ts).getTime())/1000; if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+" min ago"; if(s<86400) return Math.floor(s/3600)+" h ago"; return Math.floor(s/86400)+" d ago"; };
+const ist = d => new Date(d).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
+
+async function gh(path, opts={}){
+  const h = {"Accept":"application/vnd.github+json", ...(opts.headers||{})};
+  if (TOKEN) h.Authorization = "Bearer " + TOKEN;
+  const r = await fetch(path.startsWith("http") ? path : API + path, {...opts, headers:h, cache:"no-store"});
+  if (!r.ok && r.status !== 204) { let m = r.status+""; try{ m += " " + (await r.json()).message }catch(e){} throw new Error(m); }
+  if (opts.raw) return r;
+  return r.status === 204 ? null : r.json();
+}
+function needToken(){ if(!TOKEN){ $("modal").classList.add("open"); toast("Add your GitHub key first"); return true;} return false; }
+
+/* ---------- stats ---------- */
+function spark(svg, pts){
+  if (!pts || pts.length < 2) { svg.innerHTML=""; return; }
+  const w=300,h=38, mn=Math.min(...pts), mx=Math.max(...pts), k=(mx-mn)||1;
+  const d = pts.map((v,i)=>`${(i/(pts.length-1)*w).toFixed(1)},${(h-3-(v-mn)/k*(h-6)).toFixed(1)}`).join(" ");
+  svg.setAttribute("viewBox",`0 0 ${w} ${h}`); svg.setAttribute("preserveAspectRatio","none");
+  svg.innerHTML = `<polyline points="${d}" fill="none" stroke="#FF6A3D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+}
+async function loadStats(){
+  try{
+    let s;
+    if (TOKEN) { const r = await gh("/contents/stats.json?ref=data",{raw:true,headers:{Accept:"application/vnd.github.raw"}}); s = await r.json(); }
+    else s = await (await fetch(`https://raw.githubusercontent.com/${REPO}/data/stats.json?t=${Date.now()}`)).json();
+    const c = s.channel;
+    $("subs").textContent = c.hidden_subs ? "Hidden" : fmt(c.subscribers);
+    $("views").textContent = fmt(c.views); $("vcount").textContent = fmt(c.videos);
+    if (c.avatar) $("avatar").style.backgroundImage = `url(${c.avatar})`;
+    if (c.handle) $("handle").textContent = c.handle + " · Studio";
+    $("statsAt").textContent = "Updated " + ago(s.updated*1000) + " · refreshes hourly";
+    const H = (s.history||[]).filter(x => x.t*1000 > Date.now()-7*864e5);
+    spark($("subsS"), H.map(x=>x.subs)); spark($("viewsS"), H.map(x=>x.views));
+    const day = (s.history||[]).filter(x => x.t*1000 > Date.now()-864e5);
+    if (day.length>1){ const ds=day.at(-1).subs-day[0].subs, dv=day.at(-1).views-day[0].views;
+      $("subsD").textContent = (ds>=0?"+":"")+fmt(ds)+" in 24 h"; $("viewsD").textContent = (dv>=0?"+":"")+fmt(dv)+" in 24 h"; }
+    $("vids").innerHTML = (s.recent||[]).slice(0,8).map(v=>`<a class="vid" href="https://youtube.com/shorts/${v.id}" target="_blank">
+      <div class="th" style="background-image:url(${v.thumb||""})"></div><b>${esc(v.title)}</b><span>${fmt(v.views)} views · ${ago(v.published)}${v.privacy!=="public"?" · "+v.privacy:""}</span></a>`).join("") || `<div class="small muted">No videos yet.</div>`;
+  }catch(e){ $("statsAt").textContent = "Numbers arrive after the first stats run (hourly)."; $("vids").innerHTML=`<div class="small muted">Waiting for the first stats run.</div>`; }
+}
+const esc = s => String(s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- auto posting ---------- */
+async function loadAuto(){
+  try{
+    const w = await gh("/actions/workflows/shorts.yml");
+    const on = w.state === "active";
+    $("autoDot").className = "dot " + (on?"on":"off"); $("autoTxt").textContent = on ? "Auto posts on" : "Auto posts off";
+    $("autoTitle").textContent = on ? "On · every hour" : "Stopped";
+    $("autoSub").textContent = on ? "A fresh Short is made at 5 past every hour (UTC)." : "No automatic posts until you start it again.";
+    $("stopBtn").style.display = on ? "" : "none"; $("startBtn").style.display = on ? "none" : "";
+    return on;
+  }catch(e){ $("autoTxt").textContent = "Auto posts"; }
+}
+async function setAuto(on){
+  if (needToken()) return;
+  try{ await gh(`/actions/workflows/shorts.yml/${on?"enable":"disable"}`,{method:"PUT"});
+    toast(on ? "Auto posts are back on" : "Auto posts stopped"); await loadAuto(); }
+  catch(e){ toast("Couldn't change it: "+e.message); }
+}
+function nextPost(){ const d=new Date(); d.setUTCMinutes(5,0,0); if(d<=new Date()) d.setUTCHours(d.getUTCHours()+1); return d; }
+
+/* ---------- studio ---------- */
+const STEP_NAMES = {"Start the dashboard live feed":"Opening the studio","Setup the models in Blender":"Writing the story and recording the voice",
+  "Animate and post the Short":"Animating, polishing and uploading","Unlock voice sample and encrypted keys":"Unlocking your voice",
+  "Python packages (only on cache miss)":"Installing tools","Use cached venv":"Loading tools","System packages":"Getting ffmpeg ready",
+  "Remember the story (no repeats)":"Saving to memory","Finish the dashboard live feed":"Closing the studio","Save the video":"Saving a copy"};
+const HIDE = /^(Set up job|Job clock|Post |Complete job|Run actions\/|Cache |Blender ready|Install Blender|Cache voice)/;
+async function loadStudio(){
+  let runs;
+  try{ runs = (await gh("/actions/workflows/shorts.yml/runs?per_page=8")).workflow_runs; }catch(e){ return; }
+  const live = runs.find(r => r.status==="in_progress" || r.status==="queued");
+  lastFailed = runs.find(r => r.conclusion==="failure") || lastFailed;
+  renderRuns(runs);
+  liveRun = live || null;
+  $("livePill").style.display = live ? "" : "none";
+  $("runLink").style.display = live ? "" : "none";
+  if (live) $("runLink").href = live.html_url;
+  $("makeNow").disabled = !!live;
+  let status = null;
+  try{
+    const r = await gh("/contents/status.json?ref=live",{raw:true,headers:{Accept:"application/vnd.github.raw"}});
+    status = await r.json();
+  }catch(e){}
+  const mine = status && live && String(status.run_id) === String(live.id);
+  if (live){
+    $("studioTitle").textContent = mine && status.stage ? status.stage : (live.status==="queued" ? "Waiting for a computer…" : "Getting started…");
+    const pct = mine ? (status.pct||0) : 2;
+    $("prog").style.width = pct + "%";
+    let extra = "";
+    if (mine && status.frame && status.nframes) extra = ` · frame ${status.frame}/${status.nframes}`;
+    $("progTxt").textContent = `${Math.round(pct)}%${extra} · started ${ago(live.run_started_at||live.created_at)}`;
+    const ev = mine ? (status.events||[]) : [];
+    $("thought").textContent = ev.length ? ev.at(-1).text : "Setting up the studio…";
+    $("feed").style.display = ev.length ? "" : "none";
+    $("feed").innerHTML = ev.slice().reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
+    if (mine) await loadFrame();
+    try{
+      const jobs = (await gh(`/actions/runs/${live.id}/jobs`)).jobs;
+      const steps = (jobs[0]?.steps||[]).filter(s=>!HIDE.test(s.name));
+      $("steps").innerHTML = steps.map(s=>{
+        const c = s.conclusion==="success"?"ok": s.conclusion==="failure"?"bad": s.status==="in_progress"?"run":"";
+        const t = s.conclusion==="success"?"✓": s.conclusion==="failure"?"!":"";
+        return `<li><span class="ico ${c}">${t}</span>${esc(STEP_NAMES[s.name]||s.name)}</li>`; }).join("");
+    }catch(e){}
+  } else {
+    const last = runs[0];
+    $("studioTitle").textContent = "Studio is resting";
+    $("prog").style.width = "0%";
+    const on = $("autoDot").classList.contains("on");
+    $("thought").textContent = on ? `Next Short at about ${ist(nextPost())}.` : "Auto posts are stopped.";
+    $("progTxt").textContent = last ? `Last run ${last.conclusion==="success"?"posted":"ended: "+last.conclusion} · ${ago(last.updated_at)}` : "";
+    $("steps").innerHTML = "";
+    if (status && status.events && status.events.length){
+      $("feed").style.display = "";
+      $("feed").innerHTML = status.events.slice(-8).reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
+    } else $("feed").style.display = "none";
+    if (!lastFrameSha) await loadFrame(true);
+  }
+}
+const linkify = s => s.replace(/(https:\/\/youtube\.com\/shorts\/[\w-]+)/g,'<a href="$1" target="_blank">$1</a>');
+async function loadFrame(idle){
+  try{
+    const meta = await gh("/contents/frame.jpg?ref=live");
+    if (meta.sha === lastFrameSha) return;
+    lastFrameSha = meta.sha;
+    const r = await gh("/contents/frame.jpg?ref=live",{raw:true,headers:{Accept:"application/vnd.github.raw"}});
+    const url = URL.createObjectURL(await r.blob());
+    $("phone").innerHTML = `<img src="${url}" alt="frame"><span class="badge">${idle?"LAST FRAME":'<span class="dot live" style="width:6px;height:6px"></span>DRAWING'}</span>`;
+  }catch(e){}
+}
+async function makeNow(){
+  if (needToken()) return;
+  try{ await gh("/actions/workflows/shorts.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main"})});
+    toast("Starting a new Short…"); setTimeout(tick, 4000); }
+  catch(e){ toast("Couldn't start: "+e.message); }
+}
+function renderRuns(runs){
+  $("runs").innerHTML = runs.slice(0,6).map(r=>{
+    const c = r.status!=="completed" ? "run" : r.conclusion==="success" ? "ok" : "bad";
+    const t = r.status!=="completed" ? (r.status==="queued"?"queued":"running") : r.conclusion==="success" ? "posted" : r.conclusion;
+    return `<a class="item" href="${r.html_url}" target="_blank"><div class="t"><b>${r.event==="schedule"?"Hourly Short":"Manual Short"} #${r.run_number}</b><span>${ago(r.created_at)}</span></div><span class="chip ${c}">${t}</span></a>`;
+  }).join("");
+}
+
+/* ---------- fixer ---------- */
+async function loadFixer(){
+  try{
+    const [runs, commits] = await Promise.all([
+      gh("/actions/workflows/autofix.yml/runs?per_page=5").then(x=>x.workflow_runs).catch(()=>[]),
+      gh("/commits?sha=main&per_page=40").catch(()=>[])]);
+    const fixes = commits.filter(c=>c.commit.message.startsWith("autofix:")).slice(0,4);
+    const active = runs.find(r=>r.status!=="completed");
+    if (active){ $("fixHead").textContent = "Working on a fix…"; $("fixSub").textContent = "Reading the logs of the failed run."; }
+    else if (fixes[0]){ $("fixHead").textContent = "Last fix: " + fixes[0].commit.message.split("\n")[0].replace("autofix: ","");
+      $("fixSub").textContent = (fixes[0].commit.message.split("\n\n")[1]||"").slice(0,220) + " · " + ago(fixes[0].commit.author.date); }
+    else { $("fixHead").textContent = "Standing by"; }
+    $("fixList").innerHTML = runs.slice(0,3).map(r=>{
+      const c = r.status!=="completed"?"run": r.conclusion==="success"?"ok":"bad";
+      return `<a class="item" href="${r.html_url}" target="_blank"><div class="t"><b>Fixer run #${r.run_number}</b><span>${ago(r.created_at)}</span></div><span class="chip ${c}">${r.status!=="completed"?"working":r.conclusion==="success"?"done":r.conclusion}</span></a>`;
+    }).join("");
+  }catch(e){}
+}
+async function fixNow(){
+  if (needToken()) return;
+  if (!lastFailed){ toast("No failed run to fix 🎉"); return; }
+  try{ await gh("/actions/workflows/autofix.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{run_id:String(lastFailed.id)}})});
+    toast("Fixer agent is on it"); setTimeout(loadFixer,5000); }
+  catch(e){ toast("Couldn't start the fixer: "+e.message); }
+}
+
+/* ---------- post own video ---------- */
+let file = null;
+$("file").onchange = e => {
+  file = e.target.files[0]; if (!file) return;
+  $("drop").classList.add("has");
+  $("dropTxt").innerHTML = `<b>${esc(file.name)}</b><div class="small muted">${(file.size/1048576).toFixed(1)} MB</div>`;
+  const v=$("preview"); v.src=URL.createObjectURL(file); v.style.display="";
+  if (!$("ptitle").value) $("ptitle").value = file.name.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ") + " #shorts";
+};
+function postNote(t, cls){ const n=$("postNote"); n.style.display=""; n.className="note "+(cls||""); n.innerHTML=t; }
+const b64 = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
+async function post(){
+  if (needToken()) return;
+  if (!file) return toast("Choose a video first");
+  if (file.size > 95*1048576) return postNote("That file is over 95 MB. Export it smaller (1080×1920, ~10 Mbps) and try again.","bad");
+  const title = $("ptitle").value.trim(); if (!title) return toast("Add a title");
+  $("postBtn").disabled = true;
+  try{
+    postNote("Reading the video…");
+    const content = await b64(file);
+    postNote("Sending it to your studio… (big files take a minute)");
+    const blob = await gh("/git/blobs",{method:"POST",body:JSON.stringify({content,encoding:"base64"})});
+    const tree = await gh("/git/trees",{method:"POST",body:JSON.stringify({tree:[{path:"video.mp4",mode:"100644",type:"blob",sha:blob.sha}]})});
+    const commit = await gh("/git/commits",{method:"POST",body:JSON.stringify({message:"inbox: "+title,tree:tree.sha,parents:[]})});
+    const branch = "inbox-" + Date.now();
+    await gh("/git/refs",{method:"POST",body:JSON.stringify({ref:"refs/heads/"+branch,sha:commit.sha})});
+    const when = $("pwhen").value ? new Date($("pwhen").value).toISOString().replace(/\.\d+Z$/,"Z") : "";
+    await gh("/actions/workflows/post-own.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{
+      branch, title, description:$("pdesc").value, tags:$("ptags").value, privacy:$("ppriv").value, publish_at:when}})});
+    postNote(when ? `Scheduled for ${new Date(when).toLocaleString("en-IN")}. Uploading to YouTube now…` : "Uploading to YouTube now… this takes about a minute.","ok");
+    watchPost();
+  }catch(e){ postNote("Couldn't post: "+esc(e.message),"bad"); }
+  $("postBtn").disabled = false;
+}
+async function watchPost(){
+  const t0 = Date.now();
+  for (let i=0;i<60;i++){
+    await new Promise(r=>setTimeout(r,8000));
+    try{
+      const run = (await gh("/actions/workflows/post-own.yml/runs?per_page=1")).workflow_runs[0];
+      if (!run || new Date(run.created_at) < t0-60000) continue;
+      if (run.status==="completed"){
+        if (run.conclusion==="success"){
+          let link=""; try{ const j=(await gh(`/actions/runs/${run.id}/jobs`)).jobs[0];
+            const a=await gh(`/check-runs/${j.id}/annotations`); const n=a.find(x=>x.title==="posted"); if(n) link=n.message; }catch(e){}
+          postNote(link ? `Posted! <a href="${link}" target="_blank">${link}</a>` : "Posted to Bounce Bhai!","ok");
+          file=null; $("file").value=""; $("preview").style.display="none"; $("drop").classList.remove("has");
+          $("dropTxt").innerHTML='<b>Choose a video</b><div class="small muted">MP4, vertical 9:16 for Shorts · up to 95 MB</div>';
+        } else postNote(`Upload failed. <a href="${run.html_url}" target="_blank">See what happened</a> · the fixer agent will take a look.`,"bad");
+        return;
+      }
+    }catch(e){}
+  }
+}
+
+/* ---------- settings + loop ---------- */
+$("gear").onclick = () => { $("tok").value = TOKEN; $("modal").classList.add("open"); };
+$("closeM").onclick = () => $("modal").classList.remove("open");
+$("saveTok").onclick = async () => {
+  TOKEN = $("tok").value.trim(); localStorage.setItem("bb_token", TOKEN);
+  try{ await gh(""); toast("Connected ✓"); $("modal").classList.remove("open"); }catch(e){ toast("That key didn't work: "+e.message); }
+  init();
+};
+$("clearTok").onclick = () => { TOKEN=""; localStorage.removeItem("bb_token"); $("tok").value=""; toast("Key removed"); init(); };
+$("stopBtn").onclick = () => setAuto(false);
+$("startBtn").onclick = () => setAuto(true);
+$("makeNow").onclick = makeNow; $("fixNow").onclick = fixNow; $("postBtn").onclick = post;
+
+async function tick(){
+  await loadStudio();
+  clearTimeout(timer);
+  timer = setTimeout(tick, liveRun && TOKEN ? 5000 : TOKEN ? 30000 : 120000);
+}
+async function init(){
+  $("tokenNote").style.display = TOKEN ? "none" : "";
+  await loadAuto(); loadStats(); loadFixer(); tick();
+}
+setInterval(()=>{ loadStats(); loadFixer(); loadAuto(); }, 120000);
+init();
+</script>
+</body>
+</html>

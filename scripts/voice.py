@@ -15,6 +15,11 @@ try:
 except Exception:
     nr = None
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import live as _live
+except Exception:
+    _live = None
 
 story_path, ref = sys.argv[1], sys.argv[2]
 s = json.load(open(story_path))
@@ -74,5 +79,8 @@ for i, sent in enumerate(s["sentences"]):
 
     paths.append(os.path.abspath(p))
     print(i, round(best.shape[-1] / m.sr, 2), "s", flush=True)
+    if _live:
+        _live.event(f"Voice line {i + 1}/{len(s['sentences'])}: {sent.get('hi', '')[:80]}",
+                    pct=round(10 + 28 * (i + 1) / len(s["sentences"]), 1))
 s["voice_lines"] = paths
 json.dump(s, open(story_path, "w"), ensure_ascii=False, indent=1)

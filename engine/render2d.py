@@ -388,6 +388,13 @@ def draw_scene(cv, st, j, t):
     cv.restore()
 
 
+try:  # dashboard live view (scripts/live.py); optional
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+    import live as _live
+except Exception:
+    _live = None
+
+
 def render(story_path, frames=None, stills=None):
     sys.argv = [sys.argv[0]]
     import render3d as R
@@ -470,6 +477,8 @@ def render(story_path, frames=None, stills=None):
         if t >= starts[0] - 0.1:
             R.draw_caption(dr, words, cid, cur if t >= starts[0] else -1)
         ff.stdin.write(img.tobytes())
+        if _live:
+            _live.frame(img, i, st.N)
         if i % 150 == 0:
             print(f"  frame {i}/{st.N}  {time.time() - t0:.0f}s", flush=True)
     ff.stdin.close()

@@ -1,0 +1,73 @@
+name: Post my video
+
+# Started by the dashboard's Post button: the video is first committed as video.mp4 on a temporary inbox-<time> branch.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Temporary inbox-* branch holding video.mp4"
+        required: true
+      title:
+        description: "YouTube title"
+        required: true
+      description:
+        description: "Description"
+        required: false
+        default: ""
+      tags:
+        description: "Comma-separated tags"
+        required: false
+        default: "shorts,bouncebhai"
+      privacy:
+        description: "public, unlisted or private"
+        required: false
+        default: "public"
+      publish_at:
+        description: "Schedule (ISO 8601 UTC, e.g. 2026-10-21T12:30:00Z); empty = now"
+        required: false
+        default: ""
+
+concurrency:
+  group: bouncebhai-post-own
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -q google-api-python-client google-auth
+      - name: Get the video
+        env:
+          BR: ${{ inputs.branch }}
+        run: |
+          case "$BR" in inbox-*) ;; *) echo "::error::branch must start with inbox-"; exit 1 ;; esac
+          git fetch -q origin "$BR"
+          git show "origin/$BR:video.mp4" > /tmp/video.mp4
+          ls -la /tmp/video.mp4
+          ffprobe -v error -show_entries format=duration:stream=width,height -of default=nw=1 /tmp/video.mp4 || true
+      - name: Upload to Bounce Bhai
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw
+          TITLE: ${{ inputs.title }}
+          DESCRIPTION: ${{ inputs.description }}
+          TAGS: ${{ inputs.tags }}
+          PRIVACY: ${{ inputs.privacy }}
+          PUBLISH_AT: ${{ inputs.publish_at }}
+        run: cd scripts && python upload_own.py /tmp/video.mp4
+      - name: Clean up the inbox
+        if: always()
+        env:
+          BR: ${{ inputs.branch }}
+        run: case "$BR" in inbox-*) git push -q origin --delete "$BR" || true ;; esac

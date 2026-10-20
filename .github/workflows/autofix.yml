@@ -1,0 +1,60 @@
+name: Fixer agent
+
+# When a pipeline run fails, an LLM reads the logs, patches the code (never workflows/secrets),
+# pushes the fix to main and starts a fresh run. Capped at 3 fixes per 6 hours.
+on:
+  workflow_run:
+    workflows: ["Bounce Bhai Shorts", "Post my video", "Dashboard stats"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Failed run id to fix"
+        required: true
+
+concurrency:
+  group: bouncebhai-fixer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  checks: read
+  models: read
+
+jobs:
+  fix:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unlock LLM keys
+        env:
+          VOICE_KEY: ${{ secrets.VOICE_KEY }}
+          S_NARA: ${{ secrets.NARA_API_KEY }}
+          S_NVIDIA: ${{ secrets.NVIDIA_API_KEY }}
+          S_GROQ: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -n "$S_NARA" ]; then echo "NARA_API_KEY=$S_NARA" >> "$GITHUB_ENV"; fi
+          if [ -n "$S_NVIDIA" ]; then echo "NVIDIA_API_KEY=$S_NVIDIA" >> "$GITHUB_ENV"; fi
+          if [ -n "$S_GROQ" ]; then echo "GROQ_API_KEY=$S_GROQ" >> "$GITHUB_ENV"; fi
+          if [ -f voice/keys.env.enc ] && [ -n "$VOICE_KEY" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env || exit 0
+            while IFS='=' read -r k v; do
+              [ -n "$k" ] || continue
+              echo "::add-mask::$v"
+              echo "$k=$v" >> "$GITHUB_ENV"
+            done < /tmp/keys.env
+            rm -f /tmp/keys.env
+          fi
+      - name: Diagnose and fix
+        env:
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/autofix.py

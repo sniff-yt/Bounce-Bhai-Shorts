@@ -5,6 +5,7 @@
 set -Eeuo pipefail
 trap 'echo "::error::Pipeline failed at line $LINENO: $BASH_COMMAND"' ERR
 cd "$(dirname "$0")/.."
+live() { python scripts/live.py "$@" >/dev/null 2>&1 || true; }   # dashboard live feed (never fails the run)
 
 prepare_models() {
   NAME="short_$(date -u +%Y%m%d_%H%M)"
@@ -13,8 +14,11 @@ prepare_models() {
   printf 'Preparing %s\n' "$NAME"
 
   T=$SECONDS
+  live stage "Writing a new story" --pct 3
   python scripts/write_story.py "out/$NAME.json"
+  live event "Story: $(python -c 'import json,sys;print(json.load(open(sys.argv[1]))["title"])' "out/$NAME.json" 2>/dev/null)"
   echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
+  live stage "Recording the voice (your cloned voice)" --pct 10
   python scripts/voice.py "out/$NAME.json" voice/ref.wav
   echo "::notice title=timing::voice $((SECONDS - T))s"
 
@@ -56,6 +60,7 @@ animate_and_post() {
   fi
 
   T=$SECONDS
+  live stage "Animating the cartoon" --pct 40
   if [ "${BB_ENGINE:-2d}" = "blender" ]; then
     "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
   else
@@ -63,10 +68,13 @@ animate_and_post() {
   fi
   echo "::notice title=timing::render ${BB_ENGINE:-2d} $((SECONDS - T))s; $(cat "out/$NAME.mp4.render.json" 2>/dev/null)"
   T=$SECONDS
+  live stage "Adding captions, music and polish" --pct 86
   python scripts/finish.py "out/$NAME.json"
   echo "::notice title=timing::finish $((SECONDS - T))s"
   ffmpeg -v error -y -i "out/${NAME}_final.mp4" -af volumedetect -f null - 2>&1 | grep max_volume || true
+  live stage "Uploading to YouTube" --pct 93
   python scripts/upload.py "out/$NAME.json"
+  live event "Posted: https://youtube.com/shorts/$(python -c 'import json,sys;print(json.load(open(sys.argv[1])).get("video_id") or "")' "out/$NAME.json" 2>/dev/null)"
 
   python - "$NAME" <<'PY'
 import json, sys, datetime

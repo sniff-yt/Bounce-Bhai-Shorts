@@ -18,10 +18,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-need = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")
-if not all(os.environ.get(k) for k in need):
-    print("YouTube secrets not set: skipping upload (video kept as a workflow artifact)."); sys.exit(0)
-
 # A Bounce Bhai token made with the phone-friendly "YouTube sign-in" workflow wins over the repo secret.
 _enc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "secrets", "yt_token.enc")
 if os.path.exists(_enc) and os.environ.get("MY_VOICE_KEY"):
@@ -31,6 +27,10 @@ if os.path.exists(_enc) and os.environ.get("MY_VOICE_KEY"):
     if _r.returncode == 0 and _r.stdout.strip():
         os.environ["YT_REFRESH_TOKEN"] = _r.stdout.decode().strip()
         print("YouTube: using secrets/yt_token.enc")
+
+need = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")
+if not all(os.environ.get(k) for k in need):
+    print("YouTube secrets not set: skipping upload (video kept as a workflow artifact)."); sys.exit(0)
 
 c = json.load(open(sys.argv[1]))
 final = c["out"].replace(".mp4", "_final.mp4")
@@ -104,4 +104,6 @@ except Exception as e:
     print("Could not post comment:", e)
 
 print("Uploaded video id:", resp.get("id"))
+c["video_id"] = resp.get("id")
+json.dump(c, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print("Done.")
