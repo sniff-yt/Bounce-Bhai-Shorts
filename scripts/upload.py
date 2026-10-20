@@ -87,11 +87,28 @@ body = {
     "localizations": {"en": {"title": yt_t["en"][:95], "description": desc("en")},
                       "te": {"title": yt_t["te"][:95], "description": desc("te")}},
 }
+try:  # studio desktop (dashboard live view): show what is being posted
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import live as _live
+    _live.update(upload={"title": body["snippet"]["title"], "description": body["snippet"]["description"],
+                         "tags": body["snippet"].get("tags", []), "privacy": body["status"].get("privacyStatus", ""), "pct": 0})
+except Exception:
+    _live = None
 req = yt.videos().insert(part="snippet,status,localizations", body=body,
-                         media_body=MediaFileUpload(final, mimetype="video/mp4", resumable=True))
+                         media_body=MediaFileUpload(final, mimetype="video/mp4", resumable=True, chunksize=1024 * 1024))
 resp = None
 while resp is None:
-    _, resp = req.next_chunk()
+    _st, resp = req.next_chunk()
+    if _live and _st is not None:
+        try:
+            u = _live._load().get("upload") or {}; u["pct"] = round(_st.progress() * 100); _live.update(upload=u)
+        except Exception:
+            pass
+if _live:
+    try:
+        u = _live._load().get("upload") or {}; u["pct"] = 100; u["id"] = resp.get("id"); _live.update(upload=u)
+    except Exception:
+        pass
 
 # Optionally post a comment (if credentials allow)
 try:

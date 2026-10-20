@@ -1,15 +1,25 @@
-"""Drives the real studio desktop (see desktop.sh): opens Chrome, types URLs like an agent as the job moves
-through its stages, renders a local studio page (story + frames), and screenshots the screen for the dashboard."""
-import html, json, os, glob, shutil, subprocess, time
+"""Runs the studio desktop (see desktop.sh) like an operator: switches between the terminal, Chrome, the AI Chat,
+Voice Studio, Video Editor and YouTube Upload apps, the file manager and the text editor as the job moves through
+its stages; feeds the apps real data (out/live/desk/state.js); screenshots the screen for the dashboard."""
+import glob, json, os, shutil, subprocess, threading, time, wave
 
-os.environ["DISPLAY"] = ":99"
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 LIVE = os.path.join(ROOT, "out", "live")
 DESK = os.path.join(LIVE, "desk")
 REPO = os.environ.get("GITHUB_REPOSITORY", "sniff-yt/Bounce-Bhai-Shorts")
 RUN = os.environ.get("GITHUB_RUN_ID", "")
-CHROME = shutil.which("google-chrome") or shutil.which("google-chrome-stable") or shutil.which("chromium") or shutil.which("chromium-browser")
-STUDIO = "file://" + os.path.join(DESK, "studio.html")
+CHROME = next((shutil.which(c) for c in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser") if shutil.which(c)), None)
+os.environ["DISPLAY"] = ":99"
+try:
+    for line in open("/tmp/bb-desktop.env"):
+        k, _, v = line.strip().partition("="); os.environ[k] = v
+except Exception:
+    pass
+GEOM = {"terminal": (20, 40, 700, 640), "browser": (300, 30, 960, 700), "files": (380, 120, 760, 520),
+        "text": (240, 60, 820, 640), "chat": (180, 30, 900, 720), "voice": (240, 40, 820, 700),
+        "editor": (60, 30, 1160, 720), "upload": (140, 40, 1000, 700)}
+TITLE = {"terminal": "Terminal — bounce-bhai", "chat": "AI Chat — Bounce Bhai", "voice": "Voice Studio — Bounce Bhai",
+         "editor": "Video Editor — Bounce Bhai", "upload": "YouTube Upload — Bounce Bhai"}
 
 
 def sh(*a, timeout=20):
@@ -19,96 +29,149 @@ def sh(*a, timeout=20):
         return ""
 
 
-def status():
-    try:
-        with open(os.path.join(LIVE, "status.json"), encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+def find(name):
+    t = TITLE.get(name)
+    if name == "browser":
+        ids = sh("xdotool", "search", "--onlyvisible", "--name", "(Google Chrome|Chromium)$").split()
+    elif name == "files":
+        ids = sh("xdotool", "search", "--onlyvisible", "--class", "Thunar").split()
+    elif name == "text":
+        ids = sh("xdotool", "search", "--onlyvisible", "--class", "Mousepad").split()
+    else:
+        ids = sh("xdotool", "search", "--onlyvisible", "--name", t).split()
+    return ids[-1] if ids else ""
 
 
-def scene(s):
-    w, st = (s.get("window") or "").lower(), (s.get("stage") or "").lower()
-    ev = " ".join(e.get("text", "") for e in (s.get("events") or [])[-2:]).lower()
-    posted = next((e["text"].split("Posted: ", 1)[1] for e in reversed(s.get("events") or [])
-                   if e.get("text", "").startswith("Posted: https://youtube.com/shorts/") and len(e["text"]) > 44), None)
-    if posted:
-        return "posted", posted
-    if "upload" in st or "youtube" in st:
-        return "upload", "https://www.youtube.com/@bouncebhaiofficial/shorts"
-    if "make_short" in w or any(k in st for k in ("story", "voice", "anim", "render", "caption", "polish", "music")):
-        return "studio", STUDIO
-    if "skia" in w:
-        return "skia", "https://pypi.org/project/skia-python/"
-    if "torch" in w or "pip" in w:
-        return "pip", "https://pypi.org/project/chatterbox-tts/"
-    if "blender" in w or "blender" in ev:
-        return "blender", "https://download.blender.org/release/"
-    if "apt" in w:
-        return "apt", "https://packages.ubuntu.com/noble/ffmpeg"
-    return "run", f"https://github.com/{REPO}/actions/runs/{RUN}" if RUN else f"https://github.com/{REPO}/actions"
-
-
-def studio_page(s):
-    os.makedirs(DESK, exist_ok=True)
-    stories = sorted((p for p in glob.glob(os.path.join(ROOT, "out", "*.json")) if not p.endswith(".render.json")),
-                     key=os.path.getmtime)
-    story = {}
-    if stories:
-        try:
-            story = json.load(open(stories[-1], encoding="utf-8"))
-        except Exception:
-            story = {}
-    frame = os.path.join(LIVE, "frame.jpg")
-    has_frame = os.path.exists(frame) and s.get("frame")
-    if has_frame:
-        shutil.copyfile(frame, os.path.join(DESK, "frame.jpg"))
-    stage = html.escape(s.get("stage") or "Starting")
-    lines = "".join(
-        f"<li><b>{html.escape(x.get('hi',''))}</b><span>{html.escape(x.get('en',''))}</span></li>"
-        for x in (story.get("sentences") or []) if isinstance(x, dict))
-    title = html.escape(story.get("title") or story.get("hook") or "Writing today's story…")
-    pct = s.get("pct") or 0
-    right = (f"<img src='frame.jpg?{int(time.time())}'><p>Frame {s.get('frame')} of {s.get('nframes')}</p>" if has_frame
-             else "<div class='ph'>The cartoon appears here once animation starts</div>")
-    page = f"""<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=2><title>Bounce Bhai Studio — {stage}</title>
-<style>body{{margin:0;font:14px/1.45 'DejaVu Sans',sans-serif;background:#FBF7F1;color:#1c1a17;display:flex;gap:16px;padding:16px;height:100vh;box-sizing:border-box}}
-.l{{flex:1;overflow:hidden}}h1{{font-size:18px;margin:0 0 4px}}.st{{color:#FF6A3D;font-weight:700;margin-bottom:8px}}
-.bar{{height:6px;background:#eadfd2;border-radius:9px;margin-bottom:12px}}.bar i{{display:block;height:100%;width:{pct}%;background:#FF6A3D;border-radius:9px}}
-ol{{padding-left:18px;margin:0}}li{{margin:0 0 8px}}li b{{display:block}}li span{{color:#7a7368;font-size:12px}}
-.r{{width:230px;flex:none;text-align:center}}.r img{{width:230px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.2)}}
-.ph{{width:230px;aspect-ratio:9/16;border-radius:12px;background:#14120f;color:#8b857b;display:grid;place-items:center;padding:20px;box-sizing:border-box}}
-.r p{{color:#7a7368;font-size:12px}}</style>
-<div class=l><div class=st>{stage}</div><div class=bar><i></i></div><h1>{title}</h1><ol>{lines}</ol></div><div class=r>{right}</div>"""
-    tmp = os.path.join(DESK, "studio.tmp.html")
-    open(tmp, "w", encoding="utf-8").write(page)
-    os.replace(tmp, os.path.join(DESK, "studio.html"))
-
-
-def chrome_win():
-    out = sh("xdotool", "search", "--onlyvisible", "--class", "google-chrome") or sh("xdotool", "search", "--onlyvisible", "--class", "chromium")
-    return out.splitlines()[-1] if out else ""
-
-
-def go(url, new_tab=True):
-    w = chrome_win()
-    if not w:
-        if not CHROME:
-            return
+def chrome(*args):
+    if CHROME:
         subprocess.Popen([CHROME, "--user-data-dir=/tmp/bb-chrome", "--no-first-run", "--no-default-browser-check",
                           "--disable-gpu", "--disable-dev-shm-usage", "--password-store=basic", "--disable-sync",
                           "--disable-features=Translate,MediaRouter,OptimizationHints", "--autoplay-policy=user-gesture-required",
-                          "--allow-file-access-from-files", "--window-position=500,8", "--window-size=772,750", url],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return
-    sh("xdotool", "windowactivate", "--sync", w)
-    if new_tab:
-        sh("xdotool", "key", "--window", w, "ctrl+t")
+                          "--allow-file-access-from-files", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def launch(name, arg=None):
+    x, y, w, h = GEOM[name]
+    if name in ("chat", "voice", "editor", "upload"):
+        chrome(f"--app=file://{DESK}/app.html?v={name}", f"--window-position={x},{y}", f"--window-size={w},{h}")
+    elif name == "browser":
+        chrome("--new-window", f"--window-position={x},{y}", f"--window-size={w},{h}", arg or "about:blank")
+    elif name == "files":
+        subprocess.Popen(["thunar", arg or os.path.join(ROOT, "out")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif name == "text" and arg:
+        subprocess.Popen(["mousepad", arg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(30):
         time.sleep(0.4)
-    sh("xdotool", "key", "--window", w, "ctrl+l")
-    time.sleep(0.2)
-    sh("xdotool", "type", "--delay", "35", url, timeout=60)
-    sh("xdotool", "key", "Return")
+        wid = find(name)
+        if wid:
+            sh("xdotool", "windowsize", wid, str(w), str(h)); sh("xdotool", "windowmove", wid, str(x), str(y))
+            return wid
+    return ""
+
+
+def focus(name, arg=None):
+    """Bring an app to the front (opening it the first time), like clicking it in the taskbar."""
+    wid = find(name) or launch(name, arg)
+    if wid:
+        sh("xdotool", "windowactivate", "--sync", wid, timeout=5); sh("xdotool", "windowraise", wid)
+    return wid
+
+
+def browse(url):
+    wid = find("browser")
+    if not wid:
+        launch("browser", url); return
+    focus("browser")
+    sh("xdotool", "key", "--window", wid, "ctrl+t"); time.sleep(0.5)
+    sh("xdotool", "key", "--window", wid, "ctrl+l"); time.sleep(0.2)
+    sh("xdotool", "type", "--delay", "35", url, timeout=60); sh("xdotool", "key", "Return")
+
+
+# ---------- real data for the apps ----------
+_wave_done, _thumb_at, _last_frame = {}, [], None
+
+
+def story_path():
+    c = [p for p in glob.glob(os.path.join(ROOT, "out", "*.json")) if not p.endswith(".render.json")]
+    return max(c, key=os.path.getmtime) if c else None
+
+
+def load(p, default):
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def write_state(s):
+    global _last_frame
+    sp = story_path(); story = load(sp, {}) if sp else {}
+    voice = []
+    for i, x in enumerate(story.get("sentences") or []):
+        if not isinstance(x, dict):
+            continue
+        v = {"hi": x.get("hi", ""), "en": x.get("en", "")}
+        wav = f"{sp[:-5]}_line{i}.wav"
+        if os.path.exists(wav):
+            png = os.path.join(DESK, f"wave{i}.png")
+            if _wave_done.get(i) != os.path.getmtime(wav):
+                sh("ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-filter_complex",
+                   "showwavespic=s=600x60:colors=0xffffff", "-frames:v", "1", png, timeout=20)
+                _wave_done[i] = os.path.getmtime(wav)
+            if os.path.exists(png):
+                v["wave"] = f"wave{i}.png?{int(_wave_done[i])}"
+            try:
+                with wave.open(wav) as w:
+                    v["dur"] = round(w.getnframes() / w.getframerate(), 2)
+            except Exception:
+                pass
+        voice.append(v)
+    frame = os.path.join(LIVE, "frame.jpg"); fr = None
+    if os.path.exists(frame):
+        m = os.path.getmtime(frame)
+        if m != _last_frame:
+            _last_frame = m
+            shutil.copyfile(frame, os.path.join(DESK, "frame.jpg"))
+            n, f = float(s.get("nframes") or 0), float(s.get("frame") or 0)
+            if n and (not _thumb_at or f - _thumb_at[-1] >= n / 14) and len(_thumb_at) < 16:
+                shutil.copyfile(frame, os.path.join(DESK, f"th{len(_thumb_at)}.jpg")); _thumb_at.append(f)
+        fr = f"frame.jpg?{int(m * 10)}"
+    posted = next((e["text"].split("Posted: ", 1)[1] for e in reversed(s.get("events") or [])
+                   if e.get("text", "").startswith("Posted: https://youtube.com/shorts/") and len(e["text"]) > 44), None)
+    st = {"status": {k: s.get(k) for k in ("stage", "pct", "frame", "nframes", "window", "state")},
+          "llm": load(os.path.join(LIVE, "llm.json"), []), "story": {"title": story.get("title"), "hook": story.get("hook")},
+          "voice": voice, "frame": fr, "thumbs": [f"th{k}.jpg" for k in range(len(_thumb_at))],
+          "upload": s.get("upload") or {}, "posted": posted}
+    tmp = os.path.join(DESK, "state.tmp.js")
+    open(tmp, "w", encoding="utf-8").write("STATE(" + json.dumps(st, ensure_ascii=False) + ");")
+    os.replace(tmp, os.path.join(DESK, "state.js"))
+    return sp, posted
+
+
+def status():
+    return load(os.path.join(LIVE, "status.json"), {})
+
+
+def scene(s, posted):
+    w, st = (s.get("window") or "").lower(), (s.get("stage") or "").lower()
+    if posted:
+        return "posted"
+    for key, words in (("upload", ("upload", "youtube")), ("polish", ("caption", "polish", "music")),
+                       ("animate", ("anim", "render", "cartoon")), ("voice", ("voice",)), ("story", ("story",))):
+        if any(k in st for k in words) and ("make_short" in w or key != "story" or "story" in st):
+            if key == "voice" and "unlock" in st:
+                continue
+            return key
+    if "skia" in w: return "skia"
+    if "torch" in w or "pip" in w: return "pip"
+    if "blender" in w: return "blender"
+    if "apt" in w: return "apt"
+    return "start"
+
+
+URL = {"start": f"https://github.com/{REPO}/actions/runs/{RUN}" if RUN else f"https://github.com/{REPO}",
+       "apt": "https://packages.ubuntu.com/noble/ffmpeg", "blender": "https://download.blender.org/release/",
+       "pip": "https://pypi.org/project/chatterbox-tts/", "skia": "https://pypi.org/project/skia-python/"}
 
 
 def shoot():
@@ -118,26 +181,61 @@ def shoot():
         os.replace(tmp, os.path.join(LIVE, "screen.jpg"))
 
 
-def main():
-    cur, last_shot, last_page = None, 0, 0
+SHARED = {"sp": None, "posted": None, "s": {}}
+
+
+def feeder():
+    """Real data for the apps every second, a screenshot every 2.5 s, never blocked by window switching."""
+    last_shot = 0
     while True:
         try:
             s = status()
-            if s.get("state") in ("ok", "failed") and cur == "posted":
-                pass
+            SHARED["s"] = s
+            SHARED["sp"], SHARED["posted"] = write_state(s)
+            if time.time() - last_shot > 2.5:
+                last_shot = time.time(); shoot()
+        except Exception as e:
+            print("feeder:", e, flush=True)
+        time.sleep(1)
+
+
+def main():
+    threading.Thread(target=feeder, daemon=True).start()
+    time.sleep(1.5)
+    cur, since, story_seen, glance = None, 0, None, 0
+    while True:
+        try:
+            s, sp, posted = SHARED["s"], SHARED["sp"], SHARED["posted"]
             now = time.time()
-            if now - last_page > 2:
-                last_page = now
-                studio_page(s)
-            name, url = scene(s)
-            if name != cur:
-                same_tab = cur == "studio" and name == "studio"
-                cur = name
-                go(url, new_tab=not same_tab)
-                time.sleep(1.5)
-            if now - last_shot > 2.5:
-                last_shot = now
-                shoot()
+            sc = scene(s, posted)
+            if sc != cur:
+                cur, since, glance = sc, now, 0
+                if sc in URL:
+                    browse(URL[sc]); time.sleep(4); focus("terminal")
+                elif sc == "story":
+                    focus("chat")
+                elif sc == "voice":
+                    focus("voice")
+                elif sc in ("animate", "polish"):
+                    focus("editor")
+                elif sc == "upload":
+                    focus("upload")
+                elif sc == "posted":
+                    focus("upload"); time.sleep(4); browse(posted)
+            t = now - since
+            # the script just came back from the AI: open it in the text editor, then the project folder
+            if sc in ("story", "voice") and sp and sp != story_seen and t > 3:
+                story_seen = sp
+                time.sleep(10 if sc == "story" else 2); focus("text", sp); time.sleep(7); focus("files", os.path.join(ROOT, "out")); time.sleep(4)
+                focus("voice" if sc == "voice" else "chat")
+            # keep switching apps the way a person would
+            elif t > 30 and now - glance > 30:
+                glance = now
+                peek = {"voice": "files", "animate": "terminal", "polish": "terminal", "apt": "browser", "pip": "browser",
+                        "blender": "browser", "skia": "browser", "start": "browser", "story": "terminal"}.get(sc)
+                back = {"voice": "voice", "animate": "editor", "polish": "editor", "story": "chat"}.get(sc, "terminal")
+                if peek:
+                    focus(peek); time.sleep(5); focus(back)
         except Exception as e:
             print("director:", e, flush=True)
         time.sleep(0.5)

@@ -1,0 +1,161 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Bounce Bhai</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:13px/1.45 "DejaVu Sans",sans-serif;background:#FBF7F1;color:#1c1a17;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #eadfd2;background:#fff}
+header .logo{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px}
+header b{font-size:14px}header small{color:#8a8276;margin-left:auto;font-size:11.5px}
+main{flex:1;overflow:hidden;position:relative}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#28c840;margin-right:5px}
+/* chat */
+.chat{height:100%;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:88%;padding:10px 12px;border-radius:14px;white-space:pre-wrap;word-break:break-word}
+.msg.sys{align-self:center;background:#f1ebe2;color:#6d665b;font-size:11.5px;border-radius:10px;max-width:96%}
+.msg.user{align-self:flex-end;background:#1c1a17;color:#f4efe7;font-size:11.5px;max-height:260px;overflow:hidden;position:relative}
+.msg.user::after{content:"";position:absolute;left:0;right:0;bottom:0;height:40px;background:linear-gradient(transparent,#1c1a17)}
+.msg.ai{align-self:flex-start;background:#fff;border:1px solid #eadfd2;font:11.5px/1.5 "DejaVu Sans Mono",monospace}
+.msg.err{align-self:flex-start;background:#fde8e4;color:#a33b2a;font-size:12px}
+.who{font-size:10.5px;font-weight:700;color:#8a8276;margin-bottom:-8px}
+.who.r{align-self:flex-end}
+.typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:#FF6A3D;margin-right:4px;animation:b 1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes b{50%{transform:translateY(-4px);opacity:.5}}
+.cur::after{content:"▌";color:#FF6A3D;animation:k 1s steps(1) infinite}@keyframes k{50%{opacity:0}}
+/* voice */
+.list{height:100%;overflow:auto;padding:12px 14px}
+.line{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:10px;border-radius:12px;margin-bottom:8px;background:#fff;border:1px solid #eadfd2}
+.line.now{border-color:#FF6A3D;box-shadow:0 0 0 3px #ffe1d4}.line.todo{opacity:.55}
+.line .n{width:26px;height:26px;border-radius:50%;background:#f1ebe2;display:grid;place-items:center;font-weight:700;font-size:12px}
+.line.done .n{background:#28c840;color:#fff}.line.now .n{background:#FF6A3D;color:#fff}
+.line .hi{font-weight:700}.line .en{color:#8a8276;font-size:11.5px}
+.line img{width:100%;height:34px;margin-top:6px;display:block;background:#1c1a17;border-radius:6px;padding:3px 6px}
+.rec{height:34px;margin-top:6px;display:flex;align-items:center;gap:2px}.rec i{flex:1;background:#FF6A3D;border-radius:2px;animation:w .6s infinite alternate}
+@keyframes w{from{height:15%}to{height:95%}}
+/* editor */
+.ed{height:100%;display:grid;grid-template-rows:1fr 168px;background:#1b1916;color:#ddd5c8}
+.ed .top{display:grid;grid-template-columns:1fr 210px;gap:10px;padding:10px;min-height:0}
+.ed .mon{background:#000;border-radius:8px;display:grid;place-items:center;overflow:hidden;min-height:0}
+.ed .mon img{height:100%;max-width:100%;object-fit:contain}
+.ed .insp{background:#24221e;border-radius:8px;padding:10px;font-size:11.5px;overflow:hidden}
+.ed .insp h4{margin:0 0 6px;font-size:12px;color:#fff}.ed .insp div{margin-bottom:4px;color:#b9b1a4}
+.tl{background:#24221e;border-top:1px solid #34312b;padding:8px 10px 8px 70px;position:relative;overflow:hidden}
+.tr{height:34px;margin-bottom:6px;position:relative;display:flex;gap:2px;border-radius:5px;overflow:hidden;background:#2d2a25}
+.tr::before{content:attr(data-n);position:absolute;left:-62px;top:9px;font-size:10.5px;color:#9a9285;width:56px}
+.tr{overflow:visible}.tr img{height:34px;width:auto;flex:none;border-radius:3px}
+.cap{position:absolute;top:2px;bottom:2px;background:#FF6A3D;border-radius:4px;color:#fff;font-size:9.5px;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aud{position:absolute;top:2px;bottom:2px;background:#2f6f55;border-radius:4px;overflow:hidden}.aud img{height:100%;width:100%;object-fit:fill;opacity:.9}
+.mus{position:absolute;left:0;right:0;top:2px;bottom:2px;background:repeating-linear-gradient(90deg,#4b3f7a 0 6px,#5a4c90 6px 9px);border-radius:4px;opacity:.85}
+.ph{position:absolute;top:0;bottom:0;width:2px;background:#ff4b3a;z-index:3}
+.ph::before{content:"";position:absolute;top:0;left:-5px;border:6px solid transparent;border-top-color:#ff4b3a}
+/* upload */
+.up{height:100%;display:grid;grid-template-columns:1fr 200px;gap:16px;padding:16px;overflow:hidden}
+.field{margin-bottom:12px}.field label{display:block;font-size:11px;font-weight:700;color:#8a8276;margin-bottom:4px}
+.field .in{border:1px solid #d9cfc2;border-radius:8px;padding:8px 10px;background:#fff;min-height:34px;white-space:pre-wrap;word-break:break-word}
+.chips span{display:inline-block;background:#f1ebe2;border-radius:999px;padding:2px 8px;margin:0 4px 4px 0;font-size:11px}
+.up .vid{background:#000;border-radius:10px;aspect-ratio:9/16;overflow:hidden}.up .vid img{width:100%;height:100%;object-fit:cover}
+.pb{height:8px;background:#eadfd2;border-radius:9px;margin-top:10px;overflow:hidden}.pb i{display:block;height:100%;background:#FF0033;width:0;transition:width .6s}
+.big{font-size:13px;font-weight:700;margin-top:8px}
+.btn{display:inline-block;margin-top:10px;background:#FF0033;color:#fff;border-radius:999px;padding:7px 16px;font-weight:700}
+</style></head><body>
+<header><div class="logo" id="logo"></div><b id="name"></b><small id="sub"></small></header>
+<main id="main"></main>
+<script>
+const V = new URLSearchParams(location.search).get("v") || "chat";
+const APP = {chat:["AI Chat","#7c5cff","✦"], voice:["Voice Studio","#FF6A3D","🎙"], editor:["Video Editor","#2b8a6e","▶"], upload:["YouTube Upload","#FF0033","▶"]}[V];
+document.title = APP[0] + " — Bounce Bhai";
+logo.textContent = APP[2]; logo.style.background = APP[1]; name.textContent = APP[0];
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let S = {}, shown = {}, scrolled = 0;
+function pull(){ const sc = document.createElement("script"); sc.src = "state.js?" + Date.now(); sc.onload = sc.onerror = () => sc.remove(); document.head.appendChild(sc); }
+window.STATE = s => { S = s || {}; draw(); };
+setInterval(pull, 1000); pull();
+setInterval(() => { if (V === "chat") typeTick(); }, 40);
+
+/* ---- AI chat: real prompt in, real answer out (typed onto the screen as it arrives) ---- */
+function draw(){ ({chat:drawChat, voice:drawVoice, editor:drawEditor, upload:drawUpload})[V](); }
+function drawChat(){
+  const calls = S.llm || [];
+  const c = calls.at(-1);
+  sub.innerHTML = c ? `<span class="dot"></span>${esc(c.provider)} · ${esc(c.model)}` : "waiting for the writer";
+  const key = calls.map(x => x.t + x.state).join("|");
+  if (key === shown.key) return;
+  shown.key = key;
+  let h = "";
+  calls.slice(-3).forEach((x, k, arr) => {
+    const last = k === arr.length - 1;
+    h += `<div class="msg sys">System · ${esc(x.system || "You are a shorts writer.")}</div>`;
+    h += `<div class="who r">Bounce Bhai studio</div><div class="msg user">${esc(x.prompt)}</div>`;
+    h += `<div class="who">${esc(x.model)}</div>`;
+    if (x.state === "thinking") h += `<div class="msg ai typing"><span></span><span></span><span></span></div>`;
+    else if (x.state === "failed") h += `<div class="msg err">✕ ${esc(x.error || "failed")} — trying the next model…</div>`;
+    else h += `<div class="msg ai ${last ? "live" : ""}" data-full="${esc(pretty(x.response))}">${last ? "" : esc(pretty(x.response))}</div>`;
+  });
+  main.innerHTML = `<div class="chat" id="chat">${h}</div>`;
+  shown.typed = 0;
+  chat.scrollTop = chat.scrollHeight;
+}
+function pretty(r){ try{ const m = String(r).match(/\{[\s\S]*\}/); return JSON.stringify(JSON.parse(m ? m[0] : r), null, 1); }catch(e){ return r || ""; } }
+function typeTick(){
+  const el = document.querySelector(".msg.ai.live"); if (!el) return;
+  const full = el.dataset.full.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+  if (shown.typed >= full.length){ el.classList.remove("cur"); return; }
+  shown.typed = Math.min(full.length, shown.typed + 9);
+  el.textContent = full.slice(0, shown.typed); el.classList.add("cur");
+  const ch = document.getElementById("chat"); ch.scrollTop = ch.scrollHeight;
+}
+
+/* ---- Voice studio: each line recorded in the cloned voice, with its real waveform ---- */
+function drawVoice(){
+  const L = S.voice || [];
+  const done = L.filter(x => x.wave).length;
+  sub.innerHTML = `<span class="dot"></span>Chatterbox · your cloned voice · ${done}/${L.length} lines`;
+  const now = L.findIndex(x => !x.wave);
+  main.innerHTML = `<div class="list" id="lst">` + L.map((x, i) => {
+    const st = x.wave ? "done" : i === now ? "now" : "todo";
+    const media = x.wave ? `<img src="${x.wave}">` : i === now ? `<div class="rec">${"<i></i>".repeat(40).replace(/<i><\/i>/g,(m,o)=>`<i style="animation-delay:${(o*37%600)}ms"></i>`)}</div>` : "";
+    return `<div class="line ${st}"><div class="n">${x.wave ? "✓" : i + 1}</div><div><div class="hi">${esc(x.hi)}</div><div class="en">${esc(x.en)}</div>${media}</div></div>`; }).join("") + `</div>`;
+  const cur = document.querySelector(".line.now"); if (cur) cur.scrollIntoView({block:"center"});
+}
+
+/* ---- Editor: monitor, timeline (video thumbs, voice clips, captions, music), playhead ---- */
+function drawEditor(){
+  const st = S.status || {}, L = S.voice || [], th = S.thumbs || [];
+  const n = +st.nframes || 1, f = +st.frame || 0, p = Math.min(1, f / n);
+  const polishing = /caption|polish|music/i.test(st.stage || "");
+  sub.innerHTML = `<span class="dot"></span>${polishing ? "Adding captions + music" : f ? `Rendering frame ${f} / ${n}` : "Preparing timeline"}`;
+  const total = L.reduce((a, x) => a + (x.dur || 2.5), 0) || 1;
+  let acc = 0;
+  const aud = L.map(x => { const l = acc / total * 100, w = (x.dur || 2.5) / total * 100; acc += (x.dur || 2.5);
+    return `<div class="aud" style="left:${l}%;width:${w - .4}%">${x.wave ? `<img src="${x.wave}">` : ""}</div>`; }).join("");
+  acc = 0;
+  const caps = L.map(x => { const l = acc / total * 100, w = (x.dur || 2.5) / total * 100; acc += (x.dur || 2.5);
+    return `<div class="cap" style="left:${l}%;width:${w - .4}%;${polishing ? "" : "opacity:.35"}">${esc(x.hi)}</div>`; }).join("");
+  const ph = polishing ? 100 : p * 100;
+  main.innerHTML = `<div class="ed"><div class="top"><div class="mon">${S.frame ? `<img src="${S.frame}">` : ""}</div>
+    <div class="insp"><h4>${esc(S.story?.title || "Untitled")}</h4><div>1080 × 1920 · 30 fps</div><div>${L.length} voice clips</div>
+    <div>Frame ${f} of ${n}</div><div>${esc(st.stage || "")}</div></div></div>
+    <div class="tl"><div class="ph" style="left:calc(70px + (100% - 80px) * ${ph / 100})"></div>
+    <div class="tr" data-n="Video">${th.map(t => `<img src="${t}">`).join("")}</div>
+    <div class="tr" data-n="Voice">${aud}</div><div class="tr" data-n="Captions">${caps}</div>
+    <div class="tr" data-n="Music">${polishing ? `<div class="mus"></div>` : ""}</div></div></div>`;
+}
+
+/* ---- YouTube upload: the real title, description and tags being posted, real progress ---- */
+function drawUpload(){
+  const u = S.upload || {}, posted = S.posted;
+  sub.innerHTML = `<span class="dot"></span>Bounce Bhai · @bouncebhaiofficial`;
+  if (!shown.t0 && u.title) shown.t0 = Date.now();
+  const k = shown.t0 ? Math.floor((Date.now() - shown.t0) / 25) : 0;
+  const t = (u.title || "").slice(0, k), d = (u.description || "").slice(0, Math.max(0, k - (u.title || "").length));
+  const pct = posted ? 100 : (u.pct || 0);
+  main.innerHTML = `<div class="up"><div>
+    <div class="field"><label>Title</label><div class="in">${esc(t)}</div></div>
+    <div class="field"><label>Description</label><div class="in" style="min-height:90px">${esc(d)}</div></div>
+    <div class="field"><label>Tags</label><div class="chips">${(u.tags || []).map(x => `<span>${esc(x)}</span>`).join("")}</div></div>
+    <div class="field"><label>Visibility</label><div class="in">${esc(u.privacy || "public")}</div></div></div>
+    <div><div class="vid">${S.frame ? `<img src="${S.frame}">` : ""}</div>
+    <div class="pb"><i style="width:${pct}%"></i></div>
+    <div class="big">${posted ? "✓ Published" : pct ? `Uploading ${pct}%` : "Preparing upload…"}</div>
+    ${posted ? `<div class="btn">View on YouTube</div>` : ""}</div></div>`;
+}
+setInterval(() => { if (V === "upload") drawUpload(); }, 120);
+</script></body></html>

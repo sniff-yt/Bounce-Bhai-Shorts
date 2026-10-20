@@ -165,6 +165,28 @@ def extract_json(raw_text):
     raise RuntimeError("Response was not a valid JSON object")
 
 
+LLM_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "live", "llm.json")
+
+
+def llm_log(provider, model, system=None, prompt=None, **kw):
+    """Record each AI call (prompt in, answer out) for the studio desktop's AI Chat window."""
+    try:
+        os.makedirs(os.path.dirname(LLM_LOG), exist_ok=True)
+        try:
+            calls = json.load(open(LLM_LOG, encoding="utf-8"))
+        except Exception:
+            calls = []
+        if prompt is not None:
+            calls.append({"provider": provider, "model": model, "system": system or "", "prompt": prompt,
+                          "state": "thinking", "t": time.time()})
+        elif calls:
+            calls[-1].update(kw)
+        json.dump(calls[-8:], open(LLM_LOG + ".tmp", "w", encoding="utf-8"), ensure_ascii=False)
+        os.replace(LLM_LOG + ".tmp", LLM_LOG)
+    except Exception:
+        pass
+
+
 def _post_json(url, headers, payload, timeout):
     req = urllib.request.Request(
         url,
@@ -203,6 +225,7 @@ def call_openai_compatible(url, api_key, model, prompt, provider_name,
         "User-Agent": "bouncebhai/2.0"
     }
 
+    llm_log(provider_name, model, payload["messages"][0]["content"], prompt)
     try:
         try:
             body = _post_json(url, headers, payload, timeout)
@@ -215,8 +238,10 @@ def call_openai_compatible(url, api_key, model, prompt, provider_name,
                 raise
     except urllib.error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
+        llm_log(None, None, state="failed", error=f"HTTP {exc.code}: {details[:200]}", t2=time.time())
         raise RuntimeError(f"{provider_name} HTTP {exc.code}: {details[:500]}") from exc
     except urllib.error.URLError as exc:
+        llm_log(None, None, state="failed", error=f"connection failed: {exc}"[:200], t2=time.time())
         raise RuntimeError(f"{provider_name} connection failed: {exc}") from exc
 
     data = json.loads(body)
@@ -225,6 +250,8 @@ def call_openai_compatible(url, api_key, model, prompt, provider_name,
         raise RuntimeError(f"{provider_name} returned no choices")
 
     content = choices[0].get("message", {}).get("content", "")
+    llm_log(None, None, state="done", response=content or "", t2=time.time(),
+            usage=data.get("usage") or {})
     if not (content or "").strip():
         raise RuntimeError(f"{provider_name} returned empty content (reasoning ate the token budget?)")
     return extract_json(content)
@@ -251,6 +278,7 @@ def call_gemini(api_key, url, prompt):
         method="POST"
     )
 
+    llm_log("Gemini", url.split("/models/")[-1].split(":")[0], "", prompt)
     try:
         with urllib.request.urlopen(req, timeout=90) as response:
             body = response.read().decode("utf-8", errors="replace")
@@ -264,6 +292,7 @@ def call_gemini(api_key, url, prompt):
         raise RuntimeError("Gemini returned no candidates")
     parts = candidates[0].get("content", {}).get("parts", [])
     text = parts[0].get("text", "") if parts else ""
+    llm_log(None, None, state="done", response=text, t2=time.time())
     return extract_json(text)
 
 
