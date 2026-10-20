@@ -13,6 +13,7 @@ import urllib.error
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import scene_spec as SP
+import insights as INS
 
 HIST = os.path.join(ROOT, "data", "history.json")
 
@@ -65,6 +66,8 @@ Rules:
 - Strong hook first sentence, twist/payoff in the LAST sentence.
 - If TRUE, use only widely documented facts you are confident are correct.
 - Never reuse these past stories: {past}
+- FRESH SUBJECT ONLY. These subjects are already used, do not write about any of them: {used}
+{insights}
 - Never write about scams, politics, religion, violence, or real private people. Never use the story "Ismaeel's Silent Journey".
 - payoff_word: one single word appearing in the LAST sentence's "hi" text.
 - The video is a 2D cartoon. Give a cast of 1-3 characters.
@@ -79,10 +82,11 @@ Rules:
 Return ONLY valid JSON matching this schema:
 {{
   "title": "short English title",
+  "topic": "the real-world subject in 1-3 English words (e.g. 'bubble wrap')",
   "cast": [
     {{"name": "Ravi", "type": "man", "color": "blue"}}
   ],
-  "hook": "Hinglish hook, max 34 characters, ends with ...",
+  "hook": "Hinglish hook spoken TO the viewer: a challenge or question, max 34 characters (e.g. 'Tum guess kar paoge?')",
   "payoff_word": "word",
   "sentences": [
     {{
@@ -425,11 +429,24 @@ def main(out):
     last_error = None
     story = None
 
+    try:
+        insights = INS.prompt_block()
+        used = INS.used_subjects()
+        used_txt = ", ".join(sorted(used, key=lambda w: -used[w])[:60]) or "none"
+        gw = INS.genre_weights(GENRES)
+    except Exception as exc:
+        print("insights unavailable:", exc, flush=True)
+        insights, used_txt, gw = "", "none", {}
+    if insights:
+        print(insights, flush=True)
+
     for attempt in range(6):
-        genre = random.choice(GENRES)
+        genre = random.choices(GENRES, weights=[gw.get(g, 1.0) for g in GENRES])[0] if gw else random.choice(GENRES)
         prompt = PROMPT.format(
             genre=genre,
             past=past,
+            used=used_txt,
+            insights=insights,
             types=", ".join(SP.CHAR_TYPES),
             colors=", ".join(SP.COLORS),
             settings=", ".join(SP.SETTINGS),
@@ -443,6 +460,10 @@ def main(out):
             candidate["title"] = make_unique_title(title, used_titles)
 
             ok, reason = validate_with_reason(candidate)
+
+            rep = INS.repeats(candidate) if ok and attempt < 4 else set()
+            if rep:
+                ok, reason = False, f"Repeats a used subject: {', '.join(sorted(rep))}"
 
             if ok and title_key(candidate["title"]) not in used_titles:
                 story = candidate
@@ -464,6 +485,8 @@ def main(out):
         )
 
     SP.normalize(story)
+    story["genre"] = genre
+    story["format"] = "story"
 
     rng = random.Random()
     story.update({

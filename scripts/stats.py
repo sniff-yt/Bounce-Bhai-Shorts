@@ -7,7 +7,7 @@ yt = youtube(check_channel=False)
 ch = yt.channels().list(part="statistics,snippet,contentDetails", id=CHANNEL).execute()["items"][0]
 st = ch["statistics"]
 uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
-items = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=12).execute().get("items", [])
+items = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=50).execute().get("items", [])
 ids = [i["contentDetails"]["videoId"] for i in items]
 vids = []
 if ids:
@@ -22,7 +22,7 @@ out = {"channel": {"id": CHANNEL, "title": ch["snippet"]["title"], "handle": ch[
                    "avatar": ch["snippet"]["thumbnails"].get("default", {}).get("url"),
                    "subscribers": int(st.get("subscriberCount", 0)), "hidden_subs": st.get("hiddenSubscriberCount"),
                    "views": int(st.get("viewCount", 0)), "videos": int(st.get("videoCount", 0))},
-       "recent": vids, "updated": time.time(),
+       "recent": vids[:12], "videos": vids, "updated": time.time(),
        "updated_iso": datetime.datetime.now(datetime.timezone.utc).isoformat()}
 # keep a small history for the growth chart
 try:

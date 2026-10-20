@@ -15,6 +15,7 @@ concurrency:
 
 permissions:
   contents: write
+  models: read
 
 jobs:
   stats:
@@ -35,10 +36,31 @@ jobs:
         run: |
           mkdir -p /tmp/data
           git fetch -q origin data 2>/dev/null && git show origin/data:stats.json > /tmp/data/stats.json 2>/dev/null || true
+          git show origin/data:replied.json > /tmp/data/replied.json 2>/dev/null || true
           cd scripts && python stats.py /tmp/data/stats.json
+      - name: Reply to new comments (Hinglish, AI)
+        continue-on-error: true
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          VOICE_KEY: ${{ secrets.VOICE_KEY }}
+          NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NARA_MODELS: "laguna-s-2.1,nemotron-3.5-lightning-free"
+        run: |
+          if [ -f voice/keys.env.enc ] && [ -n "$VOICE_KEY" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env || true
+            while IFS='=' read -r k v; do [ -n "$k" ] && echo "::add-mask::$v" && export "$k=$v"; done < /tmp/keys.env
+            rm -f /tmp/keys.env
+          fi
+          cd scripts && python reply_comments.py /tmp/data/replied.json
       - name: Publish to the data branch
         run: |
           cd /tmp/data && git init -q -b data
-          git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json
+          git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json replied.json 2>/dev/null || git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json
           git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com commit -qm "stats $(date -u +%FT%TZ)"
           git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data:data

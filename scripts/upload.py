@@ -75,6 +75,11 @@ FOOT = {"hi_roman": "2D cartoon animation, code se banaya. No AI visuals.",
         "hi": "कोड से बना 2D कार्टून एनिमेशन। कोई AI विज़ुअल नहीं।",
         "en": "2D cartoon animation made with code. No AI visuals.",
         "te": "కోడ్‌తో తయారైన 2D కార్టూన్ యానిమేషన్. AI విజువల్స్ లేవు."}
+if c.get("format") == "sim":
+    FOOT = {"hi_roman": "Physics simulation, code se banaya. Asli physics, koi AI nahi.",
+            "hi": "कोड से बना फिज़िक्स सिमुलेशन। असली फिज़िक्स, कोई AI नहीं।",
+            "en": "Physics simulation made with code. Real physics, no AI.",
+            "te": "కోడ్‌తో తయారైన ఫిజిక్స్ సిమ్యులేషన్. నిజమైన ఫిజిక్స్, AI లేదు."}
 tags_line = f"#shorts #animation #story {c.get('genre_tag', '#facts')}"
 desc = lambda k: f"{c['question'][k]} 👇\n{FOOT[k]}\n{tags_line}"
 yt_t = c["yt_title"]
@@ -98,7 +103,16 @@ req = yt.videos().insert(part="snippet,status,localizations", body=body,
                          media_body=MediaFileUpload(final, mimetype="video/mp4", resumable=True, chunksize=1024 * 1024))
 resp = None
 while resp is None:
-    _st, resp = req.next_chunk()
+    try:
+        _st, resp = req.next_chunk()
+    except Exception as _e:
+        if "uploadLimitExceeded" in str(_e):
+            print("::warning title=upload::YouTube's daily upload limit for this channel is reached; "
+                  "video kept as a workflow artifact, next run will post.", flush=True)
+            c["upload_skipped"] = "uploadLimitExceeded"
+            json.dump(c, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
+            sys.exit(0)
+        raise
     if _live and _st is not None:
         try:
             u = _live._load().get("upload") or {}; u["pct"] = round(_st.progress() * 100); _live.update(upload=u)

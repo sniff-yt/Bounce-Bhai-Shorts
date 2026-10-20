@@ -13,6 +13,17 @@ prepare_models() {
   printf '%s\n' "$NAME" > out/current_name.txt
   printf 'Preparing %s\n' "$NAME"
 
+  FORMAT="$(python scripts/insights.py format 2>/dev/null || echo story)"
+  echo "Format picked from channel stats: $FORMAT"
+  echo "::notice title=format::$FORMAT"
+  if [ "$FORMAT" = "sim" ]; then
+    live stage "Setting up a ball-escape challenge" --pct 5
+    python scripts/make_sim.py "out/$NAME.json"
+    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+    echo "Setup complete: out/$NAME.json"
+    return 0
+  fi
+
   T=$SECONDS
   live stage "Writing a new story" --pct 3
   python scripts/write_story.py "out/$NAME.json"
@@ -60,6 +71,13 @@ animate_and_post() {
   fi
 
   T=$SECONDS
+  FORMAT="$(python -c 'import json,sys;print(json.load(open(sys.argv[1])).get("format","story"))' "out/$NAME.json")"
+  if [ "$FORMAT" = "sim" ]; then
+    live stage "Simulating the ball escape" --pct 40
+    python engine/sim_escape.py "out/$NAME.json"
+    cp "out/$NAME.mp4" "out/${NAME}_final.mp4"
+    echo "::notice title=timing::render sim $((SECONDS - T))s"
+  else
   live stage "Animating the cartoon" --pct 40
   if [ "${BB_ENGINE:-2d}" = "blender" ]; then
     "${BLENDER:-blender}" -b --factory-startup --python engine/render_blender.py -- "out/$NAME.json"
@@ -71,6 +89,7 @@ animate_and_post() {
   live stage "Adding captions, music and polish" --pct 86
   python scripts/finish.py "out/$NAME.json"
   echo "::notice title=timing::finish $((SECONDS - T))s"
+  fi
   ffmpeg -v error -y -i "out/${NAME}_final.mp4" -af volumedetect -f null - 2>&1 | grep max_volume || true
   live stage "Uploading to YouTube" --pct 93
   python scripts/upload.py "out/$NAME.json"
@@ -89,7 +108,8 @@ except FileNotFoundError:
     history = []
 history.append({"date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "title": story.get("title", name), "hook": story.get("hook", ""),
-                "video_id": story.get("video_id"), "seed": story.get("seed")})
+                "video_id": story.get("video_id"), "seed": story.get("seed"),
+                "format": story.get("format", "story"), "genre": story.get("genre"), "topic": story.get("topic")})
 with open(history_path, "w", encoding="utf-8") as stream:
     json.dump(history, stream, ensure_ascii=False, indent=1)
     stream.write("\n")

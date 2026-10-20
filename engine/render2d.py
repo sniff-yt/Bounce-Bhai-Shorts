@@ -455,23 +455,26 @@ def render(story_path, frames=None, stills=None):
                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "slow",
                            "-tune", "animation", "-c:a", "aac", "-b:a", "192k", "-shortest",
                            "-movflags", "+faststart", cfg["out"]], stdin=subprocess.PIPE)
+    hook_end = min(3.2, max(2.4, float(sst[1]) if len(sst) > 1 else 2.4))
     t0 = time.time()
     for i in fr:
         t = i / FPS
         img = frame_rgb(t)
         dr = ImageDraw.Draw(img)
-        if t < 2.4 and cfg.get("hook"):
+        if t < hook_end and cfg.get("hook"):
+            # on screen from frame 0 with a quick pop, so the first second already asks the viewer something
+            hs = int(84 * (1.25 - 0.25 * min(1.0, t / 0.18)))
             hook_words, lines, cur = cfg["hook"].split(), [], ""
             for w_ in hook_words:
                 trial = (cur + " " + w_).strip()
-                if cur and dr.textlength(trial, font=R.font(84)) > 960:
+                if cur and dr.textlength(trial, font=R.font(hs)) > 960:
                     lines.append(cur); cur = w_
                 else:
                     cur = trial
             if cur:
                 lines.append(cur)
             for li, line in enumerate(lines[:3]):
-                R.text_c(dr, 250 + li * 100, line, 84, stroke=7)
+                R.text_c(dr, 250 + li * int(hs * 1.19), line, hs, stroke=7)
         cur = max([k for k, s0 in enumerate(starts) if s0 <= t] or [0])
         cid = next((c for c in ch if cur in c), ch[0])
         if t >= starts[0] - 0.1:
