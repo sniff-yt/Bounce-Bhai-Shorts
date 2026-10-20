@@ -24,9 +24,14 @@ base = story_path.replace(".json", "")
 paths = []
 for i, sent in enumerate(s["sentences"]):
     best, best_err = None, 9e9
-    expect = 0.35 + 0.075 * len(sent["hd"])
+    text = sent["hd"]
+    letters = [ch for ch in text if ch.isalpha()]
+    if sum(0x0900 <= ord(ch) <= 0x097F for ch in letters) < 0.6 * max(1, len(letters)):
+        print(f"line {i}: 'hd' is not Devanagari, speaking the Hinglish line instead", flush=True)
+        text = sent["hi"]
+    expect = 0.35 + 0.075 * len(text)
     for attempt in range(3):  # regenerate lines that come out cut off or rambling
-        w = m.generate(sent["hd"], language_id="hi", audio_prompt_path=ref, exaggeration=0.6, cfg_weight=0.4)
+        w = m.generate(text, language_id="hi", audio_prompt_path=ref, exaggeration=0.6, cfg_weight=0.4)
         d = w.shape[-1] / m.sr
         err = abs(d / expect - 1)
         print(f"line {i} try {attempt}: {d:.2f}s (expected ~{expect:.2f}s)", flush=True)

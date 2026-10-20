@@ -87,7 +87,7 @@ Return ONLY valid JSON matching this schema:
   "sentences": [
     {{
       "hi": "Hinglish in Roman script",
-      "hd": "Same sentence in Devanagari Hindi; numbers written as Hindi words",
+      "hd": "Same sentence in Hindi written in DEVANAGARI script (like: एक चिड़िया का दिल), never Telugu script; numbers as Hindi words",
       "en": "Natural English",
       "te": "Natural Telugu",
       "scene": {{
@@ -353,6 +353,10 @@ def validate_with_reason(story):
         for k in ("hi", "hd", "en", "te"):
             if not sentence.get(k):
                 return False, f"Sentence {i} missing field '{k}'"
+        if _script_share(sentence["hd"], 0x0900, 0x097F) < 0.6:
+            return False, f"Sentence {i} 'hd' is not Devanagari Hindi (the voice would read the wrong language)"
+        if _script_share(sentence["te"], 0x0C00, 0x0C7F) < 0.6:
+            return False, f"Sentence {i} 'te' is not Telugu"
 
     last_sentence = sentences[-1].get("hi", "")
     words = re.findall(r"\w+", last_sentence.lower())
@@ -365,6 +369,12 @@ def validate_with_reason(story):
         story["payoff_word"] = words[-1]
 
     return True, None
+
+
+def _script_share(text, lo, hi):
+    """Share of letters in text that fall inside the Unicode block lo..hi."""
+    letters = [ch for ch in str(text) if ch.isalpha()]
+    return sum(lo <= ord(ch) <= hi for ch in letters) / max(1, len(letters))
 
 
 def main(out):
