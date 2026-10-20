@@ -56,6 +56,13 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .agentline{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
 .agentline .spin{width:16px;height:16px;border:2.5px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex:none}
 .agentline .spin.idle{animation:none;border-color:var(--line)}
+.fsbtn{position:absolute;right:10px;bottom:10px;z-index:6;width:36px;height:36px;border-radius:10px;border:0;background:rgba(0,0,0,.55);display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(6px)}
+.fsline{display:none}
+.pc.fs{border:0;border-radius:0;width:100vw;height:100vh;aspect-ratio:auto;background:#000;box-shadow:none}
+.pc.fs #screen{object-fit:contain}
+.pc.fs .fsline{display:flex;align-items:center;gap:10px;position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;background:rgba(20,18,15,.78);color:#fff;font:600 14px Inter,sans-serif;padding:9px 16px;border-radius:999px;max-width:80vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(8px)}
+.pc.fs .fsline::before{content:"";width:12px;height:12px;flex:none;border:2.5px solid #FF8A5C;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.pc.fs .fsbtn{bottom:16px;right:16px}
 .pc #screen{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2}
 .pc.asleep #screen{filter:saturate(.4) brightness(.55)}
 .pc{position:relative;width:100%;aspect-ratio:16/10;border-radius:18px;overflow:hidden;background:#14120f;box-shadow:0 14px 34px rgba(0,0,0,.18);border:7px solid #1c1a17}
@@ -206,6 +213,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
           <img id="pimg" alt="" style="display:none">
           <div class="idle" id="idle"><div id="idleTxt">The studio computer wakes up for the next Short.</div></div>
           <span class="badge" id="pbadge" style="display:none"></span>
+          <div class="fsline" id="fsline"></div>
+          <button class="fsbtn" id="fsBtn" title="Full screen" aria-label="Full screen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
         </div>
         <div>
           <div class="thought" id="thought">Idle. Next Short at —</div>
@@ -451,8 +460,20 @@ const SAY = [
   [/torch|chatterbox|pip install/i, "Downloading the AI voice tools"],
   [/upload|youtube|posted/i, "Uploading to Bounce Bhai on YouTube"],
 ];
+$("fsBtn").onclick = async () => {
+  const pc = $("pc");
+  if (document.fullscreenElement || pc.classList.contains("fs")) {
+    if (document.fullscreenElement) await document.exitFullscreen().catch(()=>{});
+    pc.classList.remove("fs"); return;
+  }
+  pc.classList.add("fs");
+  try { await (pc.requestFullscreen || pc.webkitRequestFullscreen).call(pc); } catch(e) {}
+  try { await screen.orientation.lock("landscape"); } catch(e) {}
+};
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) $("pc").classList.remove("fs"); });
 function showPhone(status, live){
   const pc = $("pc");
+  setTimeout(() => { $("fsline").textContent = $("aline").textContent; }, 0);
   $("aspin").className = "spin" + (live ? "" : " idle");
   if (live){
     pc.classList.remove("asleep");
