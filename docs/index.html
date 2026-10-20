@@ -56,6 +56,8 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .agentline{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
 .agentline .spin{width:16px;height:16px;border:2.5px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex:none}
 .agentline .spin.idle{animation:none;border-color:var(--line)}
+.pc #screen{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2}
+.pc.asleep #screen{filter:saturate(.4) brightness(.55)}
 .pc{position:relative;width:100%;aspect-ratio:16/10;border-radius:18px;overflow:hidden;background:#14120f;box-shadow:0 14px 34px rgba(0,0,0,.18);border:7px solid #1c1a17}
 .desk{position:absolute;inset:0;background:radial-gradient(120% 90% at 20% 10%,#FFB38A 0%,#FF6A3D 35%,#7a2f1a 75%,#2a130c 100%)}
 .desk .menubar{position:absolute;top:0;left:0;right:0;height:22px;background:rgba(20,18,15,.45);backdrop-filter:blur(8px);display:flex;align-items:center;gap:12px;padding:0 10px;color:#fff;font:600 10.5px Inter,sans-serif;z-index:3}
@@ -84,9 +86,9 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .cursor{position:absolute;width:18px;height:18px;z-index:6;left:50%;top:50%;transition:left .7s cubic-bezier(.4,0,.2,1),top .7s cubic-bezier(.4,0,.2,1);pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))}
 .cursor.click::after{content:"";position:absolute;left:-8px;top:-8px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;animation:ripple .5s ease-out}
 @keyframes ripple{from{transform:scale(.3);opacity:1}to{transform:scale(1.6);opacity:0}}
-.pc .idle{position:absolute;inset:30px 0 54px;display:grid;place-items:center;color:#fff;text-align:center;font:600 14px Inter,sans-serif;z-index:1;text-shadow:0 1px 8px rgba(0,0,0,.3)}
+.pc .idle{position:absolute;inset:0;z-index:3;display:grid;place-items:center;color:#fff;text-align:center;font:600 14px Inter,sans-serif;z-index:1;text-shadow:0 1px 8px rgba(0,0,0,.3)}
 .pc .idle img{max-height:100%;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
-.pc .badge{position:absolute;top:30px;right:10px;background:rgba(0,0,0,.55);color:#fff;font:700 10px Inter,sans-serif;padding:4px 8px;border-radius:999px;display:flex;gap:6px;align-items:center;z-index:5}
+.pc .badge{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font:700 10px Inter,sans-serif;padding:4px 8px;border-radius:999px;display:flex;gap:6px;align-items:center;z-index:5}
 .phone{width:100%;max-width:260px;aspect-ratio:9/16;border-radius:26px;background:#14120f;overflow:hidden;position:relative;margin:0 auto;box-shadow:0 12px 30px rgba(0,0,0,.18);border:6px solid #14120f}
 .phone img{width:100%;height:100%;object-fit:cover;display:block}
 .phone .ph{position:absolute;inset:0;display:grid;place-items:center;color:#8b857b;font-size:13px;text-align:center;padding:20px}
@@ -199,16 +201,10 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
       <div class="studio" style="margin-top:12px">
         <div class="agentline"><span class="spin idle" id="aspin"></span><span id="aline">Studio computer is asleep</span></div>
         <div class="pc" id="pc">
-          <div class="desk">
-            <div class="menubar"><span>🏀 Bounce Bhai Studio</span><span id="mbApp">Finder</span><span class="sp"></span><span id="mbClock"></span></div>
-          </div>
+          <div class="desk"></div>
+          <img id="screen" alt="studio computer screen" style="display:none">
+          <img id="pimg" alt="" style="display:none">
           <div class="idle" id="idle"><div id="idleTxt">The studio computer wakes up for the next Short.</div></div>
-          <div class="win" id="win" style="display:none">
-            <div class="tb"><i></i><i></i><i></i><b id="winTitle">Terminal</b></div>
-            <div class="body"><div class="shot"><img id="pimg" alt=""></div><div class="lines" id="termLines"></div></div>
-          </div>
-          <div class="dock" id="dock"></div>
-          <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M3 2l7 19 2.6-7.6L20 11z" fill="#fff" stroke="#1c1a17" stroke-width="1.6" stroke-linejoin="round"/></svg>
           <span class="badge" id="pbadge" style="display:none"></span>
         </div>
         <div>
@@ -399,7 +395,7 @@ async function loadStudio(){
     $("thought").textContent = ev.length ? ev.at(-1).text : "Setting up the studio…";
     $("feed").style.display = ev.length ? "" : "none";
     $("feed").innerHTML = ev.slice().reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
-    if (mine && status.frame) await loadFrame();
+    if (mine) await loadScreen();
     showPhone(mine ? status : null, true);
     try{
       const jobs = (await gh(`/actions/runs/${live.id}/jobs`)).jobs;
@@ -421,7 +417,7 @@ async function loadStudio(){
       $("feed").style.display = "";
       $("feed").innerHTML = status.events.slice(-8).reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
     } else $("feed").style.display = "none";
-    if (!lastFrameSha) await loadFrame();
+    if (!lastScreenSha) await loadScreen();
     showPhone(status, false);
   }
 }
@@ -436,63 +432,43 @@ async function loadFrame(){
     return true;
   }catch(e){ return false; }
 }
-const APPS = [
-  [/apt-get|graphics/i, "📦", "Package Manager", "Installing ffmpeg and graphics libraries"],
-  [/blender/i, "🧊", "Blender", "Opening the 3D toolkit"],
-  [/skia/i, "🎨", "Skia", "Installing the 2D drawing engine"],
-  [/torch|chatterbox|pip install|python tools/i, "🐍", "Python", "Downloading the AI and video tools"],
-  [/unlock|voice sample/i, "🔐", "Keychain", "Unlocking your voice sample"],
-  [/story/i, "✍️", "Story Writer", "Writing today's Hinglish story"],
-  [/voice/i, "🎙️", "Voice Studio", "Recording every line in your cloned voice"],
-  [/animat|render|cartoon/i, "🎬", "Animator", "Drawing every frame of the cartoon"],
-  [/caption|polish|music/i, "✨", "Editor", "Adding captions, music and polish"],
-  [/upload|youtube|posted/i, "🚀", "YouTube Studio", "Uploading to Bounce Bhai"],
-];
-$("dock").innerHTML = APPS.map((a,k)=>`<span id="dk${k}" title="${a[2]}">${a[1]}</span>`).join("");
-function appIdx(text){ for (let k=0;k<APPS.length;k++) if (APPS[k][0].test(text||"")) return k; return -1; }
-let curApp = -2, seenApps = new Set();
-function moveCursor(el){
-  const pc = $("pc").getBoundingClientRect(), r = el.getBoundingClientRect(), c = $("cursor");
-  c.style.left = (r.left - pc.left + r.width/2) + "px"; c.style.top = (r.top - pc.top + r.height/2) + "px";
-  setTimeout(()=>{ c.classList.remove("click"); void c.offsetWidth; c.classList.add("click"); }, 700);
+let lastScreenSha = "";
+async function loadScreen(){
+  try{
+    const meta = await gh("/contents/screen.jpg?ref=live");
+    if (meta.sha === lastScreenSha) return true;
+    lastScreenSha = meta.sha;
+    const r = await gh("/contents/screen.jpg?ref=live",{raw:true,headers:{Accept:"application/vnd.github.raw"}});
+    const old = $("screen").src; $("screen").src = URL.createObjectURL(await r.blob()); if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+    $("screen").style.display = "";
+    return true;
+  }catch(e){ return false; }
 }
-setInterval(()=>{ $("mbClock").textContent = new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"}); }, 1000);
+const SAY = [
+  [/apt-get|graphics/i, "Installing ffmpeg and graphics libraries"],
+  [/blender/i, "Opening Blender"],
+  [/skia/i, "Installing the 2D drawing engine"],
+  [/torch|chatterbox|pip install/i, "Downloading the AI voice tools"],
+  [/upload|youtube|posted/i, "Uploading to Bounce Bhai on YouTube"],
+];
 function showPhone(status, live){
-  const stage = status?.stage || "", win = status?.window || "";
-  const evs = status?.events || [], lastEv = evs.length ? evs.at(-1).text : "";
-  let k = appIdx(/make_short/.test(win) || !win ? (lastEv + " " + stage) : win);
-  if (/make_short/.test(win)) { const s2 = appIdx(stage); if (s2 >= 0) k = s2; }
-  const con = (status?.console || []).slice(-30);
-  $("termLines").innerHTML = con.map((l,i)=>{
-    let c = l.startsWith("$ ") ? "cmd" : /^(Get:|Downloading|Collecting|Fetching|\u21bb)/.test(l) ? "dl" : /^(\u2713|Setting up|Successfully|Uploaded|2d:|Posted)/.test(l) ? "okl" : /error|Traceback|failed/i.test(l) ? "err" : "";
-    if (i === con.length-1 && live) c += " cur";
-    return `<div class="${c}">${esc(l)}</div>`; }).join("");
+  const pc = $("pc");
   $("aspin").className = "spin" + (live ? "" : " idle");
   if (live){
-    $("idle").style.display = "none";
-    const w = $("win"); w.style.display = "flex";
-    if (k !== curApp){
-      if (curApp >= 0) { seenApps.add(curApp); $("dk"+curApp)?.classList.add("done"); }
-      curApp = k;
-      document.querySelectorAll(".dock span").forEach(e=>e.classList.remove("on"));
-      if (k >= 0){ const d = $("dk"+k); d.classList.add("on"); d.classList.remove("done"); moveCursor(d); }
-      w.classList.remove("opening"); setTimeout(()=>{ w.classList.add("opening"); }, 650);
-    }
-    const a = k >= 0 ? APPS[k] : [null,"⚙️","Terminal","Setting up the studio computer"];
-    $("winTitle").textContent = a[1] + "  " + a[2] + (win && !/make_short/.test(win) ? "  —  " + win : "");
-    $("mbApp").textContent = a[2];
-    $("aline").textContent = a[3] + "…";
-    const anim = k === appIdx("animat") && status?.frame && lastFrameSha;
-    w.classList.toggle("anim", !!anim);
-    $("pbadge").style.display = anim ? "" : "none";
-    if (anim) $("pbadge").innerHTML = `<span class="dot live" style="width:6px;height:6px"></span>FRAME ${status.frame}/${status.nframes}`;
+    pc.classList.remove("asleep");
+    const w = status?.window || "", st = status?.stage || "";
+    const hit = !/make_short/.test(w) && SAY.find(a=>a[0].test(w));
+    $("aline").textContent = (hit ? hit[1] : (st || "Waking up the studio computer")) + "…";
+    $("idle").style.display = lastScreenSha ? "none" : "";
+    if (!lastScreenSha) $("idleTxt").textContent = "Turning on the studio computer…";
+    $("pbadge").style.display = "";
+    $("pbadge").innerHTML = `<span class="dot live" style="width:6px;height:6px"></span>LIVE` + (status?.frame ? ` · FRAME ${status.frame}/${status.nframes}` : "");
   } else {
-    curApp = -2; seenApps.clear();
-    document.querySelectorAll(".dock span").forEach(e=>e.classList.remove("on","done"));
-    $("win").style.display = "none"; $("idle").style.display = "";
-    $("pbadge").style.display = "none"; $("mbApp").textContent = "Finder";
+    pc.classList.add("asleep");
+    $("pbadge").style.display = "none";
     $("aline").textContent = $("autoDot").classList.contains("on") ? `Asleep · wakes up for the next Short at about ${ist(nextPost())}` : "Asleep · auto posts are stopped";
-    $("idleTxt").innerHTML = lastFrameSha ? `<img src="${$("pimg").src}" alt="last frame">` : "The studio computer wakes up for the next Short.";
+    $("idle").style.display = "";
+    $("idleTxt").textContent = lastScreenSha ? "Last session · computer is asleep" : "The studio computer wakes up for the next Short.";
   }
 }
 async function makeNow(){

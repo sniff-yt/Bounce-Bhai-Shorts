@@ -8,7 +8,7 @@ REPO_URL="https://x-access-token:${GITHUB_TOKEN:-}@github.com/${GITHUB_REPOSITOR
 W=/tmp/bb-live
 push_once() {
   [ -f "$SRC/status.json" ] || return 0
-  rm -rf "$W" && mkdir -p "$W" && cp -f "$SRC"/status.json "$W"/ && { cp -f "$SRC"/frame.jpg "$W"/ 2>/dev/null || true; }
+  rm -rf "$W" && mkdir -p "$W" && cp -f "$SRC"/status.json "$W"/ && { cp -f "$SRC"/frame.jpg "$W"/ 2>/dev/null || true; } && { cp -f "$SRC"/screen.jpg "$W"/ 2>/dev/null || true; }
   ( cd "$W" && git init -q -b live && git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com \
       add -A && git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com commit -qm live \
       && git push -qf "$REPO_URL" live:live ) >/dev/null 2>&1 || echo "live push failed (ignored)"

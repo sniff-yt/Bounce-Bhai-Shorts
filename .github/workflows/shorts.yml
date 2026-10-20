@@ -40,6 +40,9 @@ jobs:
           python3 scripts/live.py set trigger=${{ github.event_name }} started=$(date +%s)
           BB_LIVE_EVERY=4 nohup bash scripts/live_push.sh loop >/dev/null 2>&1 &
 
+      - name: Start the studio desktop
+        run: bash scripts/desktop.sh || true
+
       - uses: actions/setup-python@v5
         id: py
         with:

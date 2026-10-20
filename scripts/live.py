@@ -46,6 +46,7 @@ def event(text, **kw):
         s = _load()
         s.setdefault("events", []).append({"t": time.time(), "text": str(text)[:200]})
         s["events"] = s["events"][-40:]
+        _log(f"\x1b[38;5;114m\u25cf {text}\x1b[0m\n")
         s.update(kw); _save(s)
     except Exception as e:
         print("live: event failed:", e, flush=True)
@@ -68,6 +69,15 @@ def frame(img, i=None, n=None, every=2.0):
         print("live: frame failed:", e, flush=True)
 
 
+def _log(text):
+    try:
+        os.makedirs(DIR, exist_ok=True)
+        with open(os.path.join(DIR, "console.log"), "a", encoding="utf-8") as f:
+            f.write(text)
+    except Exception:
+        pass
+
+
 def tee(title):
     """Pass stdin through to stdout and mirror it into the dashboard console (last 80 lines).
     Handles \r progress bars (pip, Hugging Face downloads) by rewriting the current line."""
@@ -79,6 +89,7 @@ def tee(title):
     except Exception:
         pass
     lines.append(f"$ {title}")
+    _log(f"\n\x1b[1;38;5;209m$ {title}\x1b[0m\n")
     update(console=lines[-80:], window=title)
     out = sys.stdout.buffer
     while True:
@@ -86,6 +97,7 @@ def tee(title):
         if not chunk:
             break
         out.write(chunk); out.flush()
+        _log(chunk.decode("utf-8", "replace"))
         for ch in ansi.sub("", chunk.decode("utf-8", "replace")):
             if ch == "\n":
                 if cur.strip():
