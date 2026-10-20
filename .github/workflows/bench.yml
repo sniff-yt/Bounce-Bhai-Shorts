@@ -1,6 +1,8 @@
 name: Render benchmark
 on:
   workflow_dispatch: {}
+permissions:
+  contents: read
 jobs:
   bench:
     runs-on: ubuntu-latest
