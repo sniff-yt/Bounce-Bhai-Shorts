@@ -68,6 +68,51 @@ def frame(img, i=None, n=None, every=2.0):
         print("live: frame failed:", e, flush=True)
 
 
+def tee(title):
+    """Pass stdin through to stdout and mirror it into the dashboard console (last 80 lines).
+    Handles \r progress bars (pip, Hugging Face downloads) by rewriting the current line."""
+    import re
+    ansi = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+    lines, cur, last, inbar = [], "", 0.0, False
+    try:
+        s = _load(); lines = s.get("console", []) or []
+    except Exception:
+        pass
+    lines.append(f"$ {title}")
+    update(console=lines[-80:], window=title)
+    out = sys.stdout.buffer
+    while True:
+        chunk = sys.stdin.buffer.read1(4096) if hasattr(sys.stdin.buffer, "read1") else sys.stdin.buffer.read(4096)
+        if not chunk:
+            break
+        out.write(chunk); out.flush()
+        for ch in ansi.sub("", chunk.decode("utf-8", "replace")):
+            if ch == "\n":
+                if cur.strip():
+                    if inbar and lines and lines[-1].startswith("\u21bb "):
+                        lines[-1] = "\u2713 " + cur[:156]
+                    else:
+                        lines.append(cur[:160])
+                cur, inbar = "", False
+            elif ch == "\r":
+                if cur.strip():
+                    if lines and lines[-1].startswith("\u21bb "):
+                        lines[-1] = "\u21bb " + cur[:156]
+                    else:
+                        lines.append("\u21bb " + cur[:156])
+                    inbar = True
+                cur = ""
+            else:
+                cur += ch
+        now = time.time()
+        if now - last > 0.7:
+            last = now
+            update(console=[l for l in lines if not l.startswith("::")][-80:])
+    if cur.strip():
+        lines.append(cur[:160])
+    update(console=[l for l in lines if not l.startswith("::")][-80:])
+
+
 if __name__ == "__main__":
     a = sys.argv[1:]
     if not a:
@@ -82,6 +127,8 @@ if __name__ == "__main__":
         event(" ".join(rest), **kw)
     elif cmd == "set":
         update(**{x.split("=", 1)[0]: x.split("=", 1)[1] for x in rest if "=" in x}, **kw)
+    elif cmd == "tee":
+        tee(" ".join(rest) or "run")
     elif cmd == "done":
         ok = (rest or ["ok"])[0] == "ok"
         event("Finished: posted" if ok else "Run failed", state="done" if ok else "failed",

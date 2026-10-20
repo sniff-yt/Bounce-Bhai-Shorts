@@ -57,6 +57,22 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .phone{width:100%;max-width:260px;aspect-ratio:9/16;border-radius:26px;background:#14120f;overflow:hidden;position:relative;margin:0 auto;box-shadow:0 12px 30px rgba(0,0,0,.18);border:6px solid #14120f}
 .phone img{width:100%;height:100%;object-fit:cover;display:block}
 .phone .ph{position:absolute;inset:0;display:grid;place-items:center;color:#8b857b;font-size:13px;text-align:center;padding:20px}
+.term{position:absolute;inset:0;background:#0f0e0c;color:#d9d3c7;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;display:none;flex-direction:column}
+.term .tb{display:flex;align-items:center;gap:6px;padding:9px 10px 8px;background:#1d1b18;border-bottom:1px solid #2a2722;flex:none}
+.term .tb i{width:8px;height:8px;border-radius:50%;background:#ff5f57;flex:none}.term .tb i:nth-child(2){background:#febc2e}.term .tb i:nth-child(3){background:#28c840}
+.term .tb b{flex:1;text-align:center;font-weight:600;color:#bdb6a9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px}
+.term .app{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #22201c;flex:none}
+.term .app .ai{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:16px;background:#2a2620;animation:pop .35s ease}
+.term .app .an{font:600 12px Inter,sans-serif;color:#f5f1ea}.term .app .as{font:11px Inter,sans-serif;color:#8b857b}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.term .lines{flex:1;overflow:hidden;padding:8px 10px;display:flex;flex-direction:column;justify-content:flex-end;word-break:break-all}
+.term .lines div{white-space:pre-wrap;animation:fadein .25s ease}
+.term .lines .cmd{color:#FF8A5C;font-weight:700;margin-top:6px}
+.term .lines .dl{color:#7cc7ff}.term .lines .okl{color:#6fdc9c}.term .lines .err{color:#ff7b6b}
+.term .lines .cur::after{content:"▌";animation:blink 1s steps(1) infinite;color:#FF8A5C}
+@keyframes blink{50%{opacity:0}}@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.mini{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(15,14,12,.78);backdrop-filter:blur(6px);border-radius:12px;padding:7px 9px;font:10px/1.4 ui-monospace,Menlo,monospace;color:#d9d3c7;display:none}
+.mini div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .phone .badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:999px;display:flex;gap:6px;align-items:center;backdrop-filter:blur(6px)}
 .bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:12px 0 4px}
 .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#FFA260);border-radius:99px;transition:width .8s ease}
@@ -148,7 +164,13 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
       <div class="row"><div class="grow"><div class="label">Studio</div><div class="h2 serif" id="studioTitle">Watching the studio…</div></div>
         <span class="pill" id="livePill" style="display:none"><span class="dot live"></span>LIVE</span></div>
       <div class="studio" style="margin-top:12px">
-        <div class="phone" id="phone"><div class="ph" id="phonePh">The next Short appears here while it's being drawn.</div></div>
+        <div class="phone" id="phone"><div class="ph" id="phonePh">The next Short appears here while it's being drawn.</div>
+          <img id="pimg" alt="" style="display:none">
+          <div class="term" id="term"><div class="tb"><i></i><i></i><i></i><b id="termTitle">bounce-bhai@studio</b></div>
+            <div class="app"><div class="ai" id="appIco">⚙️</div><div><div class="an" id="appName">Studio</div><div class="as" id="appSub">starting…</div></div></div>
+            <div class="lines" id="termLines"></div></div>
+          <div class="mini" id="mini"></div>
+          <span class="badge" id="pbadge" style="display:none"></span></div>
         <div>
           <div class="thought" id="thought">Idle. Next Short at —</div>
           <div class="bar"><i id="prog"></i></div>
@@ -337,7 +359,8 @@ async function loadStudio(){
     $("thought").textContent = ev.length ? ev.at(-1).text : "Setting up the studio…";
     $("feed").style.display = ev.length ? "" : "none";
     $("feed").innerHTML = ev.slice().reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
-    if (mine) await loadFrame();
+    if (mine && status.frame) await loadFrame();
+    showPhone(mine ? status : null, true);
     try{
       const jobs = (await gh(`/actions/runs/${live.id}/jobs`)).jobs;
       const steps = (jobs[0]?.steps||[]).filter(s=>!HIDE.test(s.name));
@@ -358,19 +381,58 @@ async function loadStudio(){
       $("feed").style.display = "";
       $("feed").innerHTML = status.events.slice(-8).reverse().map(e=>`<div><time>${ist(e.t*1000)}</time><span>${linkify(esc(e.text))}</span></div>`).join("");
     } else $("feed").style.display = "none";
-    if (!lastFrameSha) await loadFrame(true);
+    if (!lastFrameSha) await loadFrame();
+    showPhone(status, false);
   }
 }
 const linkify = s => s.replace(/(https:\/\/youtube\.com\/shorts\/[\w-]+)/g,'<a href="$1" target="_blank">$1</a>');
-async function loadFrame(idle){
+async function loadFrame(){
   try{
     const meta = await gh("/contents/frame.jpg?ref=live");
-    if (meta.sha === lastFrameSha) return;
+    if (meta.sha === lastFrameSha) return true;
     lastFrameSha = meta.sha;
     const r = await gh("/contents/frame.jpg?ref=live",{raw:true,headers:{Accept:"application/vnd.github.raw"}});
-    const url = URL.createObjectURL(await r.blob());
-    $("phone").innerHTML = `<img src="${url}" alt="frame"><span class="badge">${idle?"LAST FRAME":'<span class="dot live" style="width:6px;height:6px"></span>DRAWING'}</span>`;
-  }catch(e){}
+    const old = $("pimg").src; $("pimg").src = URL.createObjectURL(await r.blob()); if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+    return true;
+  }catch(e){ return false; }
+}
+const APPS = [
+  [/apt-get|ffmpeg \+ graphics/i, "📦", "Package manager", "installing ffmpeg and graphics libraries"],
+  [/blender/i, "🧊", "Blender", "3D toolkit"],
+  [/torch|chatterbox|pip install/i, "🐍", "Python installer", "downloading AI and video tools"],
+  [/skia/i, "🎨", "Skia", "2D drawing engine"],
+  [/story/i, "✍️", "Story writer", "an AI writes today's Hinglish story"],
+  [/voice/i, "🎙️", "Voice studio", "your cloned voice reads every line"],
+  [/animat|render|cartoon/i, "🎬", "Animator", "drawing every frame at 30 fps"],
+  [/caption|polish|music/i, "✨", "Editor", "captions, music and polish"],
+  [/upload|youtube/i, "🚀", "YouTube", "uploading to Bounce Bhai"],
+];
+function appFor(text){ for (const a of APPS) if (a[0].test(text||"")) return a; return [null,"⚙️","Studio","setting things up"]; }
+let lastApp = "";
+function showPhone(status, live){
+  const stage = status?.stage || "", win = status?.window || "";
+  const animating = live && status?.frame && /animat/i.test(stage);
+  const a = appFor(/make_short/.test(win) ? stage : (win || stage));
+  if (a[2] !== lastApp){ lastApp = a[2]; $("appIco").textContent = a[1]; $("appIco").style.animation="none"; void $("appIco").offsetWidth; $("appIco").style.animation=""; }
+  $("appName").textContent = a[2]; $("appSub").textContent = a[3];
+  $("termTitle").textContent = (win || "bounce-bhai@studio").slice(0,60);
+  const con = (status?.console || []).slice(-26);
+  $("termLines").innerHTML = con.map((l,k)=>{
+    let c = l.startsWith("$ ") ? "cmd" : /^(Get:|Downloading|Collecting|Fetching|\u21bb)/.test(l) ? "dl" : /^(\u2713|Setting up|Successfully|Uploaded|2d:|Posted)/.test(l) ? "okl" : /error|Traceback|failed/i.test(l) ? "err" : "";
+    if (k === con.length-1 && live) c += " cur";
+    return `<div class="${c}">${esc(l)}</div>`; }).join("");
+  $("phonePh").style.display = (con.length || lastFrameSha) ? "none" : "";
+  if (animating && lastFrameSha){
+    $("pimg").style.display=""; $("term").style.display="none";
+    $("mini").style.display=""; $("mini").innerHTML = con.slice(-3).map(l=>`<div>${esc(l)}</div>`).join("");
+    $("pbadge").style.display=""; $("pbadge").innerHTML='<span class="dot live" style="width:6px;height:6px"></span>DRAWING';
+  } else if (live && con.length){
+    $("pimg").style.display="none"; $("term").style.display="flex"; $("mini").style.display="none";
+    $("pbadge").style.display="none";
+  } else if (lastFrameSha){
+    $("pimg").style.display=""; $("term").style.display="none"; $("mini").style.display="none";
+    $("pbadge").style.display=""; $("pbadge").textContent="LAST FRAME";
+  }
 }
 async function makeNow(){
   if (needToken()) return;

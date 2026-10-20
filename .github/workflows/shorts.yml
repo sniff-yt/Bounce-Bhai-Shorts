@@ -18,6 +18,9 @@ jobs:
   short:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash   # -eo pipefail, so "cmd | live.py tee" still fails when cmd fails
     env:
       BLENDER_VERSION: "4.5.14"
       BB_BUDGET_MIN: "45"
@@ -35,7 +38,7 @@ jobs:
           rm -rf out/live
           python3 scripts/live.py stage "Starting up the studio" --pct 1
           python3 scripts/live.py set trigger=${{ github.event_name }} started=$(date +%s)
-          nohup bash scripts/live_push.sh loop >/dev/null 2>&1 &
+          BB_LIVE_EVERY=4 nohup bash scripts/live_push.sh loop >/dev/null 2>&1 &
 
       - uses: actions/setup-python@v5
         id: py
@@ -45,10 +48,12 @@ jobs:
       # Plain apt install on purpose: caching apt packages breaks ffmpeg (libblas.so.3 missing).
       - name: System packages
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-            libxkbcommon0 libsm6 libice6 libx11-6 libgl1 libegl1
-          ffprobe -version | head -1
+          {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libxi6 libxxf86vm1 libxfixes3 libxrender1 \
+              libxkbcommon0 libsm6 libice6 libx11-6 libgl1 libegl1
+            ffprobe -version | head -1
+          } 2>&1 | python3 scripts/live.py tee "apt-get install ffmpeg + graphics libraries"
 
       - name: Cache Blender
         id: blender-cache
@@ -65,11 +70,12 @@ jobs:
           curl -fsSL --retry 3 --retry-all-errors -o "/tmp/$f" "$base/$f"
           curl -fsSL --retry 3 --retry-all-errors "$base/blender-${BLENDER_VERSION}.sha256" | grep " $f" | (cd /tmp && sha256sum -c -)
           mkdir -p ~/blender && tar -xJf "/tmp/$f" -C ~/blender --strip-components=1 && rm "/tmp/$f"
+          python3 scripts/live.py event "Downloaded Blender $BLENDER_VERSION"
 
       - name: Blender ready
         run: |
           echo "BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV"
-          ~/blender/blender --version | head -1
+          ~/blender/blender --version 2>&1 | head -3 | python3 scripts/live.py tee "blender --version"
 
       - name: Cache Python packages
         id: venv-cache
@@ -81,15 +87,18 @@ jobs:
       - name: Python packages (only on cache miss)
         if: steps.venv-cache.outputs.cache-hit != 'true'
         run: |
-          python -m venv ~/venv
-          ~/venv/bin/pip install --upgrade pip
-          ~/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-          ~/venv/bin/pip install -r requirements.txt
+          {
+            python -m venv ~/venv
+            ~/venv/bin/pip install --upgrade pip
+            ~/venv/bin/pip install --progress-bar on --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+            ~/venv/bin/pip install --progress-bar on -r requirements.txt
+          } 2>&1 | python3 scripts/live.py tee "pip install torch + Chatterbox voice AI"
 
       - name: Use cached venv
         run: |
           echo "$HOME/venv/bin" >> "$GITHUB_PATH"
-          ~/venv/bin/pip install -q skia-python==144.0.post2   # 2D cartoon engine (engine/render2d.py)
+          python3 scripts/live.py event "Opened cached Python tools (torch, Chatterbox)"
+          ~/venv/bin/pip install skia-python==144.0.post2 2>&1 | python3 scripts/live.py tee "pip install skia-python (2D cartoon engine)"
 
       - name: Cache voice model
         uses: actions/cache@v4
@@ -104,6 +113,7 @@ jobs:
         run: |
           # Your own cloned voice (voice/my_voice.wav.enc, cleaned 20 s recording) wins when MY_VOICE_KEY is set;
           # otherwise the original sample keeps working.
+          python3 scripts/live.py event "Unlocking your voice sample"
           if [ -n "$MY_VOICE_KEY" ] && [ -f voice/my_voice.wav.enc ] && \
              openssl enc -d -aes-256-cbc -pbkdf2 -in voice/my_voice.wav.enc -out voice/ref.wav -pass env:MY_VOICE_KEY; then
             echo "voice: using my_voice.wav"
@@ -128,7 +138,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/make_short.sh prepare
+        run: bash scripts/make_short.sh prepare 2>&1 | python3 scripts/live.py tee "make_short.sh prepare (story + voice)"
 
       - name: Animate and post the Short
         env:
@@ -142,7 +152,7 @@ jobs:
           YT_PRIVACY: public
           MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
           YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw   # Bounce Bhai (@bouncebhaiofficial): refuse to post anywhere else
-        run: bash scripts/make_short.sh publish
+        run: bash scripts/make_short.sh publish 2>&1 | python3 scripts/live.py tee "make_short.sh publish (animate + upload)"
 
       - name: Save the video
         if: always()
