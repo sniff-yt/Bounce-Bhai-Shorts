@@ -29,7 +29,7 @@ jobs:
           python3 - <<'PY'
           import os, json, base64, urllib.parse, urllib.request, subprocess, sys
           cid, csec, code = os.environ["CID"], os.environ["CSEC"], os.environ["CODE_IN"].strip()
-          redirect = "http://localhost"
+          redirect = "https://developers.google.com/oauthplayground"
           if not code:
               url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({
                   "client_id": cid, "redirect_uri": redirect, "response_type": "code",
