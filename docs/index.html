@@ -52,8 +52,41 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .spark{width:100%;height:38px;margin-top:10px}
 
 /* studio */
-.studio{display:grid;grid-template-columns:260px 1fr;gap:22px;align-items:start}
-@media(max-width:700px){.studio{grid-template-columns:1fr}}
+.studio{display:grid;grid-template-columns:1fr;gap:18px}
+.agentline{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.agentline .spin{width:16px;height:16px;border:2.5px solid var(--accent);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex:none}
+.agentline .spin.idle{animation:none;border-color:var(--line)}
+.pc{position:relative;width:100%;aspect-ratio:16/10;border-radius:18px;overflow:hidden;background:#14120f;box-shadow:0 14px 34px rgba(0,0,0,.18);border:7px solid #1c1a17}
+.desk{position:absolute;inset:0;background:radial-gradient(120% 90% at 20% 10%,#FFB38A 0%,#FF6A3D 35%,#7a2f1a 75%,#2a130c 100%)}
+.desk .menubar{position:absolute;top:0;left:0;right:0;height:22px;background:rgba(20,18,15,.45);backdrop-filter:blur(8px);display:flex;align-items:center;gap:12px;padding:0 10px;color:#fff;font:600 10.5px Inter,sans-serif;z-index:3}
+.desk .menubar .sp{flex:1}
+.dock{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);display:flex;gap:6px;padding:6px 8px;border-radius:16px;background:rgba(255,255,255,.22);backdrop-filter:blur(10px);z-index:4}
+.dock span{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:17px;background:rgba(255,255,255,.55);position:relative;transition:transform .25s}
+.dock span.on{transform:translateY(-6px) scale(1.12);background:#fff}
+.dock span.on::after{content:"";position:absolute;bottom:-6px;width:4px;height:4px;border-radius:50%;background:#fff}
+.dock span.done{opacity:.55}
+.win{position:absolute;left:6%;right:6%;top:30px;bottom:54px;border-radius:12px;overflow:hidden;background:#0f0e0c;box-shadow:0 20px 50px rgba(0,0,0,.45);display:flex;flex-direction:column;z-index:2;transform-origin:50% 100%}
+.win.opening{animation:winopen .45s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes winopen{from{transform:scale(.2) translateY(60%);opacity:0}to{transform:none;opacity:1}}
+.win .tb{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#1d1b18;border-bottom:1px solid #2a2722;flex:none}
+.win .tb i{width:9px;height:9px;border-radius:50%;background:#ff5f57;flex:none}.win .tb i:nth-child(2){background:#febc2e}.win .tb i:nth-child(3){background:#28c840}
+.win .tb b{flex:1;text-align:center;font:600 11px Inter,sans-serif;color:#d6cfc2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win .body{flex:1;display:flex;min-height:0}
+.win .shot{display:none;height:100%;aspect-ratio:9/16;background:#000;flex:none}
+.win .shot img{width:100%;height:100%;object-fit:cover;display:block}
+.win.anim .shot{display:block}
+.lines{flex:1;overflow:hidden;padding:8px 10px;display:flex;flex-direction:column;justify-content:flex-end;word-break:break-all;font:10.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#d9d3c7;min-width:0}
+.lines div{white-space:pre-wrap;animation:fadein .25s ease}
+.lines .cmd{color:#FF8A5C;font-weight:700;margin-top:6px}
+.lines .dl{color:#7cc7ff}.lines .okl{color:#6fdc9c}.lines .err{color:#ff7b6b}
+.lines .cur::after{content:"▌";animation:blink 1s steps(1) infinite;color:#FF8A5C}
+@keyframes blink{50%{opacity:0}}@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.cursor{position:absolute;width:18px;height:18px;z-index:6;left:50%;top:50%;transition:left .7s cubic-bezier(.4,0,.2,1),top .7s cubic-bezier(.4,0,.2,1);pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))}
+.cursor.click::after{content:"";position:absolute;left:-8px;top:-8px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;animation:ripple .5s ease-out}
+@keyframes ripple{from{transform:scale(.3);opacity:1}to{transform:scale(1.6);opacity:0}}
+.pc .idle{position:absolute;inset:30px 0 54px;display:grid;place-items:center;color:#fff;text-align:center;font:600 14px Inter,sans-serif;z-index:1;text-shadow:0 1px 8px rgba(0,0,0,.3)}
+.pc .idle img{max-height:100%;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.pc .badge{position:absolute;top:30px;right:10px;background:rgba(0,0,0,.55);color:#fff;font:700 10px Inter,sans-serif;padding:4px 8px;border-radius:999px;display:flex;gap:6px;align-items:center;z-index:5}
 .phone{width:100%;max-width:260px;aspect-ratio:9/16;border-radius:26px;background:#14120f;overflow:hidden;position:relative;margin:0 auto;box-shadow:0 12px 30px rgba(0,0,0,.18);border:6px solid #14120f}
 .phone img{width:100%;height:100%;object-fit:cover;display:block}
 .phone .ph{position:absolute;inset:0;display:grid;place-items:center;color:#8b857b;font-size:13px;text-align:center;padding:20px}
@@ -164,13 +197,20 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
       <div class="row"><div class="grow"><div class="label">Studio</div><div class="h2 serif" id="studioTitle">Watching the studio…</div></div>
         <span class="pill" id="livePill" style="display:none"><span class="dot live"></span>LIVE</span></div>
       <div class="studio" style="margin-top:12px">
-        <div class="phone" id="phone"><div class="ph" id="phonePh">The next Short appears here while it's being drawn.</div>
-          <img id="pimg" alt="" style="display:none">
-          <div class="term" id="term"><div class="tb"><i></i><i></i><i></i><b id="termTitle">bounce-bhai@studio</b></div>
-            <div class="app"><div class="ai" id="appIco">⚙️</div><div><div class="an" id="appName">Studio</div><div class="as" id="appSub">starting…</div></div></div>
-            <div class="lines" id="termLines"></div></div>
-          <div class="mini" id="mini"></div>
-          <span class="badge" id="pbadge" style="display:none"></span></div>
+        <div class="agentline"><span class="spin idle" id="aspin"></span><span id="aline">Studio computer is asleep</span></div>
+        <div class="pc" id="pc">
+          <div class="desk">
+            <div class="menubar"><span>🏀 Bounce Bhai Studio</span><span id="mbApp">Finder</span><span class="sp"></span><span id="mbClock"></span></div>
+          </div>
+          <div class="idle" id="idle"><div id="idleTxt">The studio computer wakes up for the next Short.</div></div>
+          <div class="win" id="win" style="display:none">
+            <div class="tb"><i></i><i></i><i></i><b id="winTitle">Terminal</b></div>
+            <div class="body"><div class="shot"><img id="pimg" alt=""></div><div class="lines" id="termLines"></div></div>
+          </div>
+          <div class="dock" id="dock"></div>
+          <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M3 2l7 19 2.6-7.6L20 11z" fill="#fff" stroke="#1c1a17" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <span class="badge" id="pbadge" style="display:none"></span>
+        </div>
         <div>
           <div class="thought" id="thought">Idle. Next Short at —</div>
           <div class="bar"><i id="prog"></i></div>
@@ -397,41 +437,62 @@ async function loadFrame(){
   }catch(e){ return false; }
 }
 const APPS = [
-  [/apt-get|ffmpeg \+ graphics/i, "📦", "Package manager", "installing ffmpeg and graphics libraries"],
-  [/blender/i, "🧊", "Blender", "3D toolkit"],
-  [/torch|chatterbox|pip install/i, "🐍", "Python installer", "downloading AI and video tools"],
-  [/skia/i, "🎨", "Skia", "2D drawing engine"],
-  [/story/i, "✍️", "Story writer", "an AI writes today's Hinglish story"],
-  [/voice/i, "🎙️", "Voice studio", "your cloned voice reads every line"],
-  [/animat|render|cartoon/i, "🎬", "Animator", "drawing every frame at 30 fps"],
-  [/caption|polish|music/i, "✨", "Editor", "captions, music and polish"],
-  [/upload|youtube/i, "🚀", "YouTube", "uploading to Bounce Bhai"],
+  [/apt-get|graphics/i, "📦", "Package Manager", "Installing ffmpeg and graphics libraries"],
+  [/blender/i, "🧊", "Blender", "Opening the 3D toolkit"],
+  [/skia/i, "🎨", "Skia", "Installing the 2D drawing engine"],
+  [/torch|chatterbox|pip install|python tools/i, "🐍", "Python", "Downloading the AI and video tools"],
+  [/unlock|voice sample/i, "🔐", "Keychain", "Unlocking your voice sample"],
+  [/story/i, "✍️", "Story Writer", "Writing today's Hinglish story"],
+  [/voice/i, "🎙️", "Voice Studio", "Recording every line in your cloned voice"],
+  [/animat|render|cartoon/i, "🎬", "Animator", "Drawing every frame of the cartoon"],
+  [/caption|polish|music/i, "✨", "Editor", "Adding captions, music and polish"],
+  [/upload|youtube|posted/i, "🚀", "YouTube Studio", "Uploading to Bounce Bhai"],
 ];
-function appFor(text){ for (const a of APPS) if (a[0].test(text||"")) return a; return [null,"⚙️","Studio","setting things up"]; }
-let lastApp = "";
+$("dock").innerHTML = APPS.map((a,k)=>`<span id="dk${k}" title="${a[2]}">${a[1]}</span>`).join("");
+function appIdx(text){ for (let k=0;k<APPS.length;k++) if (APPS[k][0].test(text||"")) return k; return -1; }
+let curApp = -2, seenApps = new Set();
+function moveCursor(el){
+  const pc = $("pc").getBoundingClientRect(), r = el.getBoundingClientRect(), c = $("cursor");
+  c.style.left = (r.left - pc.left + r.width/2) + "px"; c.style.top = (r.top - pc.top + r.height/2) + "px";
+  setTimeout(()=>{ c.classList.remove("click"); void c.offsetWidth; c.classList.add("click"); }, 700);
+}
+setInterval(()=>{ $("mbClock").textContent = new Date().toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"}); }, 1000);
 function showPhone(status, live){
   const stage = status?.stage || "", win = status?.window || "";
-  const animating = live && status?.frame && /animat/i.test(stage);
-  const a = appFor(/make_short/.test(win) ? stage : (win || stage));
-  if (a[2] !== lastApp){ lastApp = a[2]; $("appIco").textContent = a[1]; $("appIco").style.animation="none"; void $("appIco").offsetWidth; $("appIco").style.animation=""; }
-  $("appName").textContent = a[2]; $("appSub").textContent = a[3];
-  $("termTitle").textContent = (win || "bounce-bhai@studio").slice(0,60);
-  const con = (status?.console || []).slice(-26);
-  $("termLines").innerHTML = con.map((l,k)=>{
+  const evs = status?.events || [], lastEv = evs.length ? evs.at(-1).text : "";
+  let k = appIdx(/make_short/.test(win) || !win ? (lastEv + " " + stage) : win);
+  if (/make_short/.test(win)) { const s2 = appIdx(stage); if (s2 >= 0) k = s2; }
+  const con = (status?.console || []).slice(-30);
+  $("termLines").innerHTML = con.map((l,i)=>{
     let c = l.startsWith("$ ") ? "cmd" : /^(Get:|Downloading|Collecting|Fetching|\u21bb)/.test(l) ? "dl" : /^(\u2713|Setting up|Successfully|Uploaded|2d:|Posted)/.test(l) ? "okl" : /error|Traceback|failed/i.test(l) ? "err" : "";
-    if (k === con.length-1 && live) c += " cur";
+    if (i === con.length-1 && live) c += " cur";
     return `<div class="${c}">${esc(l)}</div>`; }).join("");
-  $("phonePh").style.display = (con.length || lastFrameSha) ? "none" : "";
-  if (animating && lastFrameSha){
-    $("pimg").style.display=""; $("term").style.display="none";
-    $("mini").style.display=""; $("mini").innerHTML = con.slice(-3).map(l=>`<div>${esc(l)}</div>`).join("");
-    $("pbadge").style.display=""; $("pbadge").innerHTML='<span class="dot live" style="width:6px;height:6px"></span>DRAWING';
-  } else if (live && con.length){
-    $("pimg").style.display="none"; $("term").style.display="flex"; $("mini").style.display="none";
-    $("pbadge").style.display="none";
-  } else if (lastFrameSha){
-    $("pimg").style.display=""; $("term").style.display="none"; $("mini").style.display="none";
-    $("pbadge").style.display=""; $("pbadge").textContent="LAST FRAME";
+  $("aspin").className = "spin" + (live ? "" : " idle");
+  if (live){
+    $("idle").style.display = "none";
+    const w = $("win"); w.style.display = "flex";
+    if (k !== curApp){
+      if (curApp >= 0) { seenApps.add(curApp); $("dk"+curApp)?.classList.add("done"); }
+      curApp = k;
+      document.querySelectorAll(".dock span").forEach(e=>e.classList.remove("on"));
+      if (k >= 0){ const d = $("dk"+k); d.classList.add("on"); d.classList.remove("done"); moveCursor(d); }
+      w.classList.remove("opening"); setTimeout(()=>{ w.classList.add("opening"); }, 650);
+    }
+    const a = k >= 0 ? APPS[k] : [null,"⚙️","Terminal","Setting up the studio computer"];
+    $("winTitle").textContent = a[1] + "  " + a[2] + (win && !/make_short/.test(win) ? "  —  " + win : "");
+    $("mbApp").textContent = a[2];
+    $("aline").textContent = a[3] + "…";
+    const anim = k === appIdx("animat") && status?.frame && lastFrameSha;
+    w.classList.toggle("anim", !!anim);
+    $("pbadge").style.display = anim ? "" : "none";
+    if (anim) $("pbadge").innerHTML = `<span class="dot live" style="width:6px;height:6px"></span>FRAME ${status.frame}/${status.nframes}`;
+  } else {
+    curApp = -2; seenApps.clear();
+    document.querySelectorAll(".dock span").forEach(e=>e.classList.remove("on","done"));
+    $("win").style.display = "none"; $("idle").style.display = "";
+    $("pbadge").style.display = "none"; $("mbApp").textContent = "Finder";
+    $("aline").textContent = $("autoDot").classList.contains("on") ? `Asleep · wakes up for the next Short at about ${ist(nextPost())}` : "Asleep · auto posts are stopped";
+    $("idleTxt").innerHTML = lastFrameSha ? `<img src="${$("pimg").src}" alt="last frame">` : "The studio computer wakes up for the next Short.";
   }
 }
 async function makeNow(){
