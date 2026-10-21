@@ -38,6 +38,14 @@ jobs:
           git fetch -q origin data 2>/dev/null && git show origin/data:stats.json > /tmp/data/stats.json 2>/dev/null || true
           git show origin/data:replied.json > /tmp/data/replied.json 2>/dev/null || true
           cd scripts && python stats.py /tmp/data/stats.json
+      - name: Game link in the channel bio
+        continue-on-error: true
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+        run: cd scripts && python channel_bio.py
       - name: Reply to new comments (Hinglish, AI)
         continue-on-error: true
         env:

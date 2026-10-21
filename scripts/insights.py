@@ -54,7 +54,8 @@ def videos():
     out = []
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
-        fmt = h.get("format") or ("sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
+        fmt = h.get("format") or ("promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
+                                  "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
         out.append({"id": v["id"], "title": v["title"], "views": v.get("views", 0), "likes": v.get("likes", 0),
                     "age_h": age_h, "format": fmt, "genre": h.get("genre"), "topic": h.get("topic")})
@@ -68,10 +69,20 @@ def _score(vs):
     return (sum(math.log1p(v["views"]) for v in vs) + prior_n * prior) / (len(vs) + prior_n), len(vs)
 
 
+def promo_due(hours=20):
+    """One Bhai Drive game promo per day (BB_PROMO=0 turns them off)."""
+    if os.environ.get("BB_PROMO", "1") == "0":
+        return False
+    last = max([_ts(h.get("date")) for h in _load_history() if h.get("format") == "promo" and h.get("video_id")] or [0])
+    return time.time() - last > hours * 3600
+
+
 def pick_format(rng=random):
     forced = os.environ.get("BB_FORMAT")
-    if forced in ("story", "sim"):
+    if forced in ("story", "sim", "promo"):
         return forced
+    if promo_due():
+        return "promo"
     vs = videos()
     s_story, _ = _score([v for v in vs if v["format"] == "story"])
     s_sim, _ = _score([v for v in vs if v["format"] == "sim"])

@@ -80,6 +80,13 @@ if c.get("format") == "sim":
             "hi": "कोड से बना फिज़िक्स सिमुलेशन। असली फिज़िक्स, कोई AI नहीं।",
             "en": "Physics simulation made with code. Real physics, no AI.",
             "te": "కోడ్‌తో తయారైన ఫిజిక్స్ సిమ్యులేషన్. నిజమైన ఫిజిక్స్, AI లేదు."}
+if c.get("format") == "promo":
+    FOOT = {"hi_roman": "Bhai Drive: Bounce Bhai ka apna FREE car parking game. Android + browser, offline, no ads.",
+            "hi": "भाई ड्राइव: बाउंस भाई का अपना फ्री कार पार्किंग गेम। एंड्रॉइड + ब्राउज़र, ऑफलाइन, कोई ऐड नहीं।",
+            "en": "Bhai Drive: Bounce Bhai's own FREE car parking game. Android + browser, offline, no ads.",
+            "te": "భాయ్ డ్రైవ్: బౌన్స్ భాయ్ సొంత ఫ్రీ కార్ పార్కింగ్ గేమ్. ఆండ్రాయిడ్ + బ్రౌజర్, ఆఫ్‌లైన్, యాడ్స్ లేవు."}
+GAME_URL = os.environ.get("BB_GAME_URL", "https://sniff-yt.github.io/Bounce-Bhai-Shorts/game/")
+FOOT = {k: f"{v}\n🎮 Bhai Drive FREE game: {GAME_URL}" for k, v in FOOT.items()}
 tags_line = f"#shorts #animation #story {c.get('genre_tag', '#facts')}"
 desc = lambda k: f"{c['question'][k]} 👇\n{FOOT[k]}\n{tags_line}"
 yt_t = c["yt_title"]

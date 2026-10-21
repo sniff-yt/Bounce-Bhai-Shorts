@@ -16,6 +16,13 @@ prepare_models() {
   FORMAT="$(python scripts/insights.py format 2>/dev/null || echo story)"
   echo "Format picked from channel stats: $FORMAT"
   echo "::notice title=format::$FORMAT"
+  if [ "$FORMAT" = "promo" ]; then
+    live stage "Planning a Bhai Drive game promo" --pct 5
+    python scripts/make_promo.py "out/$NAME.json"
+    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+    echo "Setup complete: out/$NAME.json"
+    return 0
+  fi
   if [ "$FORMAT" = "sim" ]; then
     live stage "Setting up a ball-escape challenge" --pct 5
     python scripts/make_sim.py "out/$NAME.json"
@@ -72,7 +79,14 @@ animate_and_post() {
 
   T=$SECONDS
   FORMAT="$(python -c 'import json,sys;print(json.load(open(sys.argv[1])).get("format","story"))' "out/$NAME.json")"
-  if [ "$FORMAT" = "sim" ]; then
+  if [ "$FORMAT" = "promo" ]; then
+    live stage "Recording Bhai Drive gameplay" --pct 40
+    pip install -q playwright
+    export CHROME="${CHROME:-$(command -v google-chrome || command -v chromium || true)}"
+    [ -n "$CHROME" ] || python -m playwright install --with-deps chromium
+    python scripts/promo.py "out/$NAME.json"
+    echo "::notice title=timing::render promo $((SECONDS - T))s"
+  elif [ "$FORMAT" = "sim" ]; then
     live stage "Simulating the ball escape" --pct 40
     python engine/sim_escape.py "out/$NAME.json"
     cp "out/$NAME.mp4" "out/${NAME}_final.mp4"

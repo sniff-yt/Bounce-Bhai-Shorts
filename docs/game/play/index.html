@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Bhai Drive</title>
+<style>
+@font-face{font-family:Lilita;src:url(fonts/Lilita.ttf)}
+@font-face{font-family:Nunito;src:url(fonts/Nunito.ttf);font-weight:200 1000}
+:root{--ink:#221d2b;--paper:#f4ecdc;--card:#fffaf0;--p2:#e9dfc9;--mus:#f2b134;--tom:#e8553e;--teal:#2a9d8f;--sky:#8ecae6;--mut:#7a7185;--grass:#86b86a;--beat:0}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--grass);font-family:Nunito,system-ui,sans-serif;font-weight:750;color:var(--ink)}
+button{font-family:inherit;color:inherit;cursor:pointer;font-weight:800}
+input{font-family:inherit}
+#c{position:fixed;inset:0;width:100%;height:100%;touch-action:none}
+.hide{opacity:0!important;pointer-events:none!important}
+.hide *{pointer-events:none!important}
+#hud.hide,.ov.hide{visibility:hidden}
+.disp{font-family:Lilita,Nunito,sans-serif;font-weight:400;letter-spacing:.3px}
+svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.stk{background:var(--card);border:2.5px solid var(--ink);border-radius:16px;box-shadow:0 4px 0 var(--ink)}
+.press{transition:transform .06s,box-shadow .06s}
+.press:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+
+/* shell */
+#shell{position:fixed;inset:0;display:flex;flex-direction:column;transition:opacity .3s}
+#topbar{display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 12px) 14px 8px}
+.pill{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 13px;font-size:17px;font-weight:900}
+.pill svg{width:18px;height:18px}
+.coin{width:17px;height:17px;border-radius:50%;background:var(--mus);border:2px solid var(--ink);display:inline-block;box-shadow:inset -2px -2px 0 rgba(0,0,0,.12)}
+.sq{width:42px;height:42px;display:grid;place-items:center;padding:0}
+.grow{flex:1}
+#pages{flex:1;position:relative;overflow:hidden}
+.page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 14px 18px;transition:opacity .2s,transform .2s}
+.page:not(#home){background:var(--paper)}
+.page.off{opacity:0;transform:translateY(8px);pointer-events:none}
+
+/* home */
+#home{display:flex;flex-direction:column}
+.brand{text-align:center;margin-top:3vh}
+.brand small{display:inline-block;font-size:13px;letter-spacing:3px;font-weight:900;background:var(--ink);color:var(--paper);padding:3px 10px;border-radius:7px;transform:rotate(-2deg)}
+.brand h1{font-family:Lilita;font-weight:400;font-size:clamp(56px,17vw,78px);line-height:.9;color:var(--mus);-webkit-text-stroke:3px var(--ink);text-shadow:0 6px 0 var(--ink);transform:rotate(-3deg);margin-top:8px;paint-order:stroke fill}
+.brand p{font-size:16px;margin-top:12px;display:inline-block;background:var(--card);border:2px solid var(--ink);border-radius:10px;padding:4px 10px;transform:rotate(1deg)}
+.modes{display:flex;flex-direction:column;gap:12px;margin-top:auto}
+.mode{display:flex;align-items:center;gap:14px;padding:14px;text-align:left;width:100%}
+.mode .art{width:74px;height:74px;border-radius:12px;border:2.5px solid var(--ink);flex:none;display:grid;place-items:center;overflow:hidden}
+.mode .art canvas{width:100%;height:100%}
+.mode .lab{font-family:Lilita;font-size:25px;line-height:1}
+.mode .sub{font-size:14px;color:var(--mut);margin-top:3px;font-weight:700}
+.mode .tx{flex:1}
+.mode .go{font-family:Lilita;font-size:18px;background:var(--mus);border:2.5px solid var(--ink);border-radius:12px;padding:8px 14px}
+.mode.alt .go{background:var(--teal);color:#fff}
+.prog{height:9px;border:2px solid var(--ink);border-radius:9px;background:var(--p2);margin-top:7px;overflow:hidden}.prog i{display:block;height:100%;background:var(--mus)}
+.chips{display:flex;gap:10px;margin-top:12px}
+.chip{flex:1;display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:13px;color:var(--mut)}
+.chip b{display:block;color:var(--ink);font-size:18px;font-family:Lilita;font-weight:400}
+.chip .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--p2);border:2px solid var(--ink);color:var(--ink)}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--tom);border:2px solid var(--ink);display:inline-block}
+
+/* levels */
+.lvgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.lv{aspect-ratio:1/1.05;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px}
+.lv b{font-family:Lilita;font-weight:400;font-size:34px;line-height:1}
+.lv span{font-size:12px;color:var(--mut);text-align:center;line-height:1.1}
+.lv .st{font-size:15px;letter-spacing:1px;color:var(--mus);-webkit-text-stroke:.6px var(--ink)}
+.lv.locked{background:var(--p2);color:var(--mut)}
+.lv.next{background:#fff3c9}
+.back{display:flex;align-items:center;gap:8px;margin:4px 0 10px}
+
+/* now playing + tabs */
+#np{margin:0 14px 8px;display:flex;align-items:center;gap:10px;padding:7px}
+#np img{width:62px;height:42px;border-radius:9px;object-fit:cover;background:var(--p2);border:2px solid var(--ink)}
+#np .t{flex:1;min-width:0}
+#np .t b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:900}
+#np .t span{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.ib{width:40px;height:40px;border:0;border-radius:12px;background:transparent;display:grid;place-items:center}
+.eq{display:inline-flex;gap:2px;align-items:flex-end;height:11px;margin-right:4px}
+.eq i{width:3px;border-radius:2px;background:var(--tom);height:calc(3px + var(--beat)*8px)}
+.eq i:nth-child(2){height:calc(5px + var(--beat)*6px);background:var(--teal)}.eq i:nth-child(3){height:calc(2px + var(--beat)*9px);background:var(--mus)}
+#tabs{display:grid;grid-template-columns:repeat(4,1fr);padding:6px 10px calc(env(safe-area-inset-bottom) + 10px);background:var(--card);border-top:2.5px solid var(--ink)}
+#tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:900;color:var(--mut);padding:6px 0;position:relative;border-radius:12px}
+#tabs button.on{color:var(--ink);background:var(--mus);border:2px solid var(--ink)}
+#tabs .dot{position:absolute;top:2px;right:calc(50% - 20px)}
+
+/* generic */
+h2{font-family:Lilita;font-weight:400;font-size:32px;margin:6px 0 10px}
+.seg{display:flex;gap:6px;padding:4px;margin-bottom:12px;overflow-x:auto}
+.seg button{flex:1;border:0;background:none;padding:8px 11px;border-radius:10px;font-size:14px;color:var(--mut);white-space:nowrap}
+.seg button.on{background:var(--ink);color:var(--paper)}
+.btn{border:2.5px solid var(--ink);border-radius:14px;padding:11px 20px;font-size:16px;background:var(--mus);box-shadow:0 4px 0 var(--ink);transition:transform .06s,box-shadow .06s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.btn.sm{padding:6px 13px;font-size:14px;border-radius:11px;box-shadow:0 3px 0 var(--ink)}
+.btn.gh{background:var(--card)}
+.btn.cy{background:var(--teal);color:#fff}
+.btn.rd{background:var(--tom);color:#fff}
+.btn:disabled{opacity:.45}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative}
+.card.sel{background:#fff3c9}
+.card canvas{width:100%;height:100px}
+.card .nm{font-family:Lilita;font-size:18px}
+.lock{position:absolute;top:10px;right:10px;color:var(--mut)}
+.lock svg{width:16px;height:16px}
+
+/* music */
+.search{display:flex;gap:8px;margin-bottom:10px}
+.search input{flex:1;height:46px;border-radius:14px;border:2.5px solid var(--ink);background:var(--card);color:var(--ink);padding:0 14px;font-size:16px;font-weight:700;outline:none}
+.song{display:flex;align-items:center;gap:12px;padding:7px;border-radius:14px;border:2px solid transparent}
+.song.on{background:#fff3c9;border-color:var(--ink)}
+.song img{width:56px;height:42px;border-radius:9px;object-fit:cover;background:var(--p2);flex:none;border:2px solid var(--ink)}
+.song .t{flex:1;min-width:0}
+.song .t b{display:block;font-size:15px;line-height:1.2;max-height:2.4em;overflow:hidden}
+.song .t span{font-size:12px;color:var(--mut)}
+.song .ib svg{width:20px;height:20px}
+.song .ib.liked svg{fill:var(--tom);stroke:var(--ink)}
+.empty{color:var(--mut);text-align:center;padding:30px 10px;font-size:15px}
+.sync{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:13px;margin-bottom:8px}
+.spin{width:14px;height:14px;border-radius:50%;border:2.5px solid var(--p2);border-top-color:var(--ink);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#ytwrap{position:fixed;z-index:5;border-radius:14px;overflow:hidden;background:#000;border:2.5px solid var(--ink)}
+#ytwrap.big{left:14px;right:14px;top:calc(env(safe-area-inset-top) + 64px);height:calc((100vw - 28px)*.5625)}
+#ytwrap.mini{border-radius:9px;border-width:2px}
+#ytwrap.game{left:auto;right:12px;top:calc(env(safe-area-inset-top) + 110px);width:92px;height:52px;opacity:.9;border-width:2px}
+#ytwrap.gone{left:-400px;top:0;width:200px;height:113px;opacity:0;pointer-events:none}
+#yt,#ytwrap iframe{width:100%;height:100%;border:0}
+#musicTop{height:calc((100vw - 28px)*.5625 + 12px)}
+
+/* missions */
+.mis{display:flex;gap:12px;align-items:center;padding:12px;margin-bottom:10px}
+.mis .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--p2);border:2px solid var(--ink)}
+.mis .tx{flex:1}.mis .tx div{font-weight:900;font-size:16px}.mis .tx small{color:var(--mut);font-size:13px}
+.bar{height:9px;border-radius:9px;background:var(--p2);border:2px solid var(--ink);margin-top:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--teal)}
+.daily{padding:14px;margin-bottom:14px;background:#fff3c9}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:12px 0 2px}
+.days div{border-radius:9px;padding:7px 0;text-align:center;font-size:12px;font-weight:900;background:var(--card);border:2px solid var(--ink);color:var(--mut)}
+.days div.done{background:var(--mus);color:var(--ink)}
+.days div.today{background:var(--tom);color:#fff}
+
+/* settings */
+.row{display:flex;justify-content:space-between;align-items:center;padding:13px 4px;border-bottom:2px dashed rgba(34,29,43,.15);font-size:16px;gap:10px}
+.row small{display:block;color:var(--mut);font-size:12px;font-weight:700}
+.tg{width:54px;height:32px;border-radius:99px;background:var(--p2);border:2.5px solid var(--ink);position:relative;flex:none}
+.tg:after{content:"";position:absolute;top:2px;left:2px;width:23px;height:23px;border-radius:50%;background:var(--card);border:2px solid var(--ink);transition:left .15s}
+.tg.on{background:var(--teal)}.tg.on:after{left:23px}
+.mini-seg{display:flex;border:2.5px solid var(--ink);border-radius:12px;overflow:hidden}
+.mini-seg button{border:0;background:var(--card);padding:7px 12px;font-size:14px}
+.mini-seg button.on{background:var(--ink);color:var(--paper)}
+input[type=range]{accent-color:var(--teal)}
+.credits{font-size:11px;color:var(--mut);line-height:1.5;margin-top:16px;font-weight:600}
+
+/* HUD */
+#hud{position:fixed;inset:0;pointer-events:none;transition:opacity .2s}
+#hudTop{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 10px) 12px 0;display:flex;gap:8px;align-items:flex-start}
+#hObjBox{flex:1;padding:8px 12px;pointer-events:none}
+#hTitle{font-family:Lilita;font-size:20px;line-height:1.1}
+#hObj{font-size:13px;color:var(--mut);line-height:1.25;font-weight:750}
+#hPause{pointer-events:auto;flex:none}
+#hInfo{position:absolute;left:12px;top:calc(env(safe-area-inset-top) + 92px);display:flex;gap:6px}
+#hInfo .pill{height:32px;font-size:14px;padding:0 10px}
+#hArrow{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 140px);width:56px;height:56px;margin-left:-28px;display:grid;place-items:center;border-radius:50%}
+#hArrow svg{width:30px;height:30px;stroke-width:3}
+#hArrow small{position:absolute;bottom:-20px;font-size:12px;font-weight:900;background:var(--card);border:2px solid var(--ink);border-radius:8px;padding:0 6px;white-space:nowrap}
+#hTip{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--dash) + 16px);padding:8px 14px;font-weight:900;font-size:16px;white-space:nowrap;transition:opacity .2s;background:var(--teal);color:#fff}
+:root{--dash:236px}
+#dash{position:absolute;left:0;right:0;bottom:0;height:calc(var(--dash) + env(safe-area-inset-bottom));padding:52px 12px calc(env(safe-area-inset-bottom) + 12px);background:#2b2534;border-top:3px solid var(--ink);display:flex;gap:8px;align-items:flex-end;pointer-events:auto;touch-action:none;
+  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.025) 0 6px,transparent 6px 12px)}
+#dashTop{position:absolute;left:12px;right:12px;top:8px;display:flex;align-items:center;gap:6px}
+#wheelBox{position:relative;width:min(38vw,168px);aspect-ratio:1;flex:none;align-self:center}
+#wheel{width:100%;height:100%;touch-action:none}
+#tiltTag{position:absolute;left:0;right:0;bottom:-6px;text-align:center;font-size:11px;color:#c9c1d6;font-weight:900;letter-spacing:1px}
+#mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:56px;align-self:stretch}
+#speedo{background:#13101a;border:2.5px solid var(--ink);border-radius:10px;color:#9be7a8;font-family:Lilita;font-size:24px;line-height:1;padding:3px 10px;min-width:92px;text-align:center;box-shadow:inset 0 0 0 2px #3a3346;margin:0 auto}
+#speedo small{display:inline;margin-left:4px;font-family:Nunito;font-size:10px;color:#6f8f75;letter-spacing:1px}
+#gearbox{display:flex;flex-direction:column;background:#13101a;border:2.5px solid var(--ink);border-radius:14px;padding:4px;gap:3px;touch-action:none}
+#gearbox button{width:46px;height:31px;border:0;border-radius:9px;background:transparent;color:#8d849c;font-family:Lilita;font-size:18px}
+#gearbox button.on{background:var(--mus);color:var(--ink);box-shadow:0 0 0 2px var(--ink) inset}
+#gearbox button[data-g=R].on{background:var(--tom);color:#fff}
+.dbtn{width:40px;height:34px;border-radius:10px;border:2.5px solid var(--ink);background:#3a3346;color:#c9c1d6;display:grid;place-items:center;padding:0}
+.dbtn svg{width:18px;height:18px}
+.dbtn.on{background:#ffa31a;color:var(--ink)}
+#hbBtn{width:auto;padding:0 8px;font-size:11px;font-weight:900;letter-spacing:.5px}
+#hbBtn.on{background:var(--tom);color:#fff}
+#pedals{display:flex;gap:8px;align-items:flex-end;flex:none}
+.pedal{border:3px solid var(--ink);border-radius:12px;background:linear-gradient(#5b5466,#3c3647);position:relative;touch-action:none;transition:transform .05s;transform-origin:50% 100%;box-shadow:0 5px 0 var(--ink)}
+.pedal:before{content:"";position:absolute;inset:8px;border-radius:6px;background:repeating-linear-gradient(0deg,#2a2532 0 4px,#4a4356 4px 9px)}
+.pedal span{position:absolute;left:0;right:0;top:-18px;text-align:center;font-size:11px;font-weight:900;color:#c9c1d6;letter-spacing:1px}
+#brakeP{width:64px;height:100px}
+#gasP{width:50px;height:150px}
+.pedal.down{transform:perspective(200px) rotateX(18deg) translateY(3px);box-shadow:0 1px 0 var(--ink)}
+#banner{position:fixed;top:30%;left:0;right:0;text-align:center;font-family:Lilita;font-size:50px;pointer-events:none;opacity:0;transform:scale(.8) rotate(-3deg);transition:opacity .15s,transform .25s cubic-bezier(.2,1.6,.4,1);-webkit-text-stroke:2.5px var(--ink);paint-order:stroke fill;text-shadow:0 5px 0 var(--ink)}
+#banner.on{opacity:1;transform:scale(1) rotate(-3deg)}
+#banner small{display:block;font-family:Nunito;font-size:17px;font-weight:900;-webkit-text-stroke:0;text-shadow:none;color:var(--ink);background:var(--card);border:2px solid var(--ink);border-radius:10px;display:inline-block;padding:2px 10px;margin-bottom:6px}
+
+/* overlays */
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:rgba(34,29,43,.55);transition:opacity .25s}
+.sheet{width:min(360px,92vw);padding:20px 18px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.sheet .tag{font-size:13px;letter-spacing:3px;font-weight:900;color:var(--mut)}
+.big{font-family:Lilita;font-size:44px;line-height:1.05;margin:4px 0}
+.stars{font-size:46px;letter-spacing:4px;line-height:1;margin:6px 0}
+.stars i{font-style:normal;color:var(--p2);-webkit-text-stroke:2px var(--ink);display:inline-block;transform:scale(.6);transition:transform .35s cubic-bezier(.2,1.8,.4,1)}
+.stars i.on{color:var(--mus);transform:scale(1)}
+.stats{display:flex;gap:8px;margin:10px 0 6px;flex-wrap:wrap;justify-content:center}
+.stats div{padding:8px 12px;border-radius:12px;background:var(--p2);border:2px solid var(--ink);font-size:12px;color:var(--mut);min-width:78px}
+.stats b{display:block;font-family:Lilita;font-weight:400;font-size:21px;color:var(--ink)}
+.note{color:var(--mut);font-weight:800;margin:6px 0 4px;font-size:14px}
+.sheet .btn{width:100%;margin-top:10px;height:52px;font-size:18px}
+.rowb{display:flex;gap:10px;width:100%}
+.rowb .btn{flex:1;height:46px;font-size:15px;padding:0 10px}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 96px);transform:translateX(-50%);padding:9px 16px;font-weight:900;font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap;z-index:9}
+#toast.on{opacity:1}
+</style></head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="shell">
+  <div id="topbar">
+    <div class="pill stk"><i class="coin"></i><span id="coins">0</span></div>
+    <div class="pill stk" id="streakPill"><svg viewBox="0 0 24 24" style="color:var(--tom)"><path d="M12 2c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></svg><span id="streak">0</span></div>
+    <div class="grow"></div>
+    <button class="sq stk press" id="setB"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button>
+  </div>
+
+  <div id="pages">
+    <div class="page" id="home">
+      <div class="brand"><small>BOUNCE BHAI</small><h1>Bhai Drive</h1><p>Chill drives &amp; parking puzzles</p></div>
+      <div class="modes">
+        <button class="mode stk press" id="mPark"><div class="art" style="background:#55545e"><canvas id="pvPark"></canvas></div><div class="tx"><div class="lab">Parking Puzzles</div><div class="sub" id="parkSub">12 hand-made lots</div><div class="prog"><i id="parkProg"></i></div></div><span class="go">Play</span></button>
+        <button class="mode alt stk press" id="mFree"><div class="art" style="background:var(--grass)"><canvas id="pvFree"></canvas></div><div class="tx"><div class="lab">Free Drive</div><div class="sub" id="freeSub">Cruise town, park for cash</div></div><span class="go">Drive</span></button>
+      </div>
+      <div class="chips">
+        <div class="chip stk"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg></div><div><b id="chipStars">0</b>stars</div></div>
+        <button class="chip stk press" id="chipMis"><div class="ic"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div><div style="text-align:left"><b id="chipMisN">0/3</b>missions</div></button>
+      </div>
+    </div>
+
+    <div class="page off" id="levels">
+      <div class="back"><button class="sq stk press" id="lvBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><h2 style="margin:0">Parking Puzzles</h2></div>
+      <div class="lvgrid" id="lvGrid"></div>
+      <div class="empty" style="padding:16px 4px">Every bump costs a star, never the level. Take your time.</div>
+    </div>
+
+    <div class="page off" id="garage">
+      <h2>Garage</h2>
+      <div class="grid2" id="gGrid"></div>
+    </div>
+
+    <div class="page off" id="music">
+      <div id="musicTop"></div>
+      <div class="seg stk" id="mSeg"><button class="on" data-m="hits">Hits</button><button data-m="new">New</button><button data-m="search">Search</button><button data-m="liked">Liked</button><button data-m="local">Offline</button></div>
+      <div class="search hide" id="sBox" style="display:none"><input id="sIn" placeholder="Search songs on YouTube" enterkeyhint="search"><button class="btn sm cy" id="sGo">Go</button></div>
+      <div class="sync" id="syncLine"></div>
+      <div id="songs"></div>
+    </div>
+
+    <div class="page off" id="missions">
+      <h2>Missions</h2>
+      <div class="daily stk"><div style="display:flex;justify-content:space-between;align-items:center"><div><div class="disp" style="font-size:21px">Daily reward</div><small style="color:var(--mut)" id="dayTxt"></small></div><button class="btn sm" id="claimDay">Claim</button></div><div class="days" id="days"></div></div>
+      <div id="misList"></div>
+    </div>
+
+    <div class="page off" id="settings">
+      <h2>Settings</h2>
+      <div class="row"><div>Steering<small>Wheel on screen, or tilt your phone</small></div><div class="mini-seg" id="ctrlSeg"><button data-c="wheel">Wheel</button><button data-c="tilt">Tilt</button></div></div>
+      <div class="row"><div>Tilt sensitivity</div><input type="range" id="sens" min="40" max="160" style="width:130px"></div>
+      <div class="row"><div>Camera turns with car<small>Off keeps north up, like a map</small></div><button class="tg" id="tCam"></button></div>
+      <div class="row"><div>Music volume</div><input type="range" id="vol" min="0" max="100" style="width:130px"></div>
+      <div class="row"><span>Sound effects</span><button class="tg" id="tSfx"></button></div>
+      <div class="row"><span>Vibration</span><button class="tg" id="tVib"></button></div>
+      <div class="row"><span>Auto-play music</span><button class="tg" id="tAuto"></button></div>
+      <div class="row"><span>Bounce Bhai on YouTube</span><button class="btn sm gh" id="ytB">Open</button></div>
+      <div class="credits" id="credits"></div>
+    </div>
+  </div>
+
+  <div id="np" class="stk">
+    <img id="npImg" alt="">
+    <div class="t"><b id="npT">Piano Fire</b><span id="npA"><span class="eq"><i></i><i></i><i></i></span>Offline track</span></div>
+    <button class="ib" id="npPrev"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8z"/><path d="M5 19V5"/></svg></button>
+    <button class="ib" id="npPlay"><svg viewBox="0 0 24 24" id="npPlayIc"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+    <button class="ib" id="npNext"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><path d="M19 5v14"/></svg></button>
+  </div>
+
+  <div id="tabs">
+    <button class="on" data-p="home"><svg viewBox="0 0 24 24"><path d="M5 12l7-8 7 8M7 10v10h10V10"/></svg>Play</button>
+    <button data-p="garage"><svg viewBox="0 0 24 24"><path d="M5 17h14l-1.5-6.5A2 2 0 0 0 15.6 9H8.4a2 2 0 0 0-1.9 1.5z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/></svg>Garage</button>
+    <button data-p="music"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Music</button>
+    <button data-p="missions"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>Missions<i class="dot hide" id="misDot"></i></button>
+  </div>
+</div>
+
+<div id="ytwrap" class="gone"><div id="yt"></div></div>
+
+<div id="hud" class="hide">
+  <div id="hudTop">
+    <div id="hObjBox" class="stk"><div id="hTitle">Level 1</div><div id="hObj"></div></div>
+    <button class="sq stk press" id="hPause"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
+  </div>
+  <div id="hInfo"></div>
+  <div id="hArrow" class="stk hide"><svg viewBox="0 0 24 24" id="hArrowIc"><path d="M12 3l7 14-7-4-7 4z" fill="#f2b134"/></svg><small id="hArrowT"></small></div>
+  <div id="hTip" class="stk hide"></div>
+  <div id="dash">
+    <div id="wheelBox"><canvas id="wheel"></canvas><div id="tiltTag" class="hide">TILT TO STEER · TAP TO RE-CENTRE</div></div>
+    <div id="dashTop"><button class="dbtn" id="blL"><svg viewBox="0 0 24 24"><path d="M10 6l-6 6 6 6M4 12h16"/></svg></button><button class="dbtn" id="blR"><svg viewBox="0 0 24 24"><path d="M14 6l6 6-6 6M20 12H4"/></svg></button><div id="speedo"><span id="spd">0</span><small>KM/H</small></div><button class="dbtn" id="hbBtn">HANDBRAKE</button></div>
+    <div id="mid">
+      <div id="gearbox"><button data-g="P">P</button><button data-g="R">R</button><button data-g="N">N</button><button data-g="D">D</button></div>
+    </div>
+    <div id="pedals"><div class="pedal" id="brakeP"><span>BRAKE</span></div><div class="pedal" id="gasP"><span>GAS</span></div></div>
+  </div>
+</div>
+<div id="banner"></div>
+
+<div id="pauseOv" class="ov hide"><div class="sheet stk">
+  <div class="tag">PAUSED</div><div class="big">Take a breather</div>
+  <button class="btn" id="resumeB">Keep driving</button>
+  <div class="rowb" style="margin-top:2px"><button class="btn gh" id="restartB">Restart</button><button class="btn gh" id="quitB">Menu</button></div>
+  <button class="btn cy" id="endB" style="display:none">End drive &amp; cash in</button>
+</div></div>
+
+<div id="overOv" class="ov hide"><div class="sheet stk">
+  <div class="tag" id="oTag">PARKED</div>
+  <div class="big" id="oTitle">Nice parking!</div>
+  <div class="stars" id="oStars"><i>★</i><i>★</i><i>★</i></div>
+  <div class="stats" id="oStats"></div>
+  <div class="note" id="oNote"></div>
+  <button class="btn" id="nextB">Next level</button>
+  <div class="rowb"><button class="btn gh" id="againB">Retry</button><button class="btn gh" id="lvB">Levels</button><button class="btn gh" id="shareB">Share</button></div>
+</div></div>
+
+<div id="toast" class="stk"></div>
+<script src="js/core.js"></script>
+<script src="js/cars.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/ui.js"></script>
+</body></html>
