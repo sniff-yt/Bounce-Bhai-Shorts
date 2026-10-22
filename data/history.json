@@ -285,5 +285,15 @@
   "format": "sim",
   "genre": null,
   "topic": "ball escape"
+ },
+ {
+  "date": "2026-10-22T07:27:30.694970+00:00",
+  "title": "Bhai Drive promo 20261022_0726",
+  "hook": "3 star parking challenge",
+  "video_id": "1Eb77fc_FO8",
+  "seed": 10734,
+  "format": "promo",
+  "genre": null,
+  "topic": "bhai drive game promo"
  }
 ]
