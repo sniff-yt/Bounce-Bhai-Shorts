@@ -65,7 +65,7 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
 def find(cfg):
     lo, hi = cfg.get("target", [22, 28])
     s0 = cfg.get("seed", 1)
-    for seed in range(s0, s0 + 400):
+    for seed in range(s0, s0 + 4000):
         fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"])
         if esc and lo <= esc <= hi and len(ev) >= 25:
             return seed, fr, ev, esc
