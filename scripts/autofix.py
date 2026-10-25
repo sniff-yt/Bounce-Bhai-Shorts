@@ -119,7 +119,10 @@ def ask(prompt):
     tries = []
     if os.environ.get("GROQ_API_KEY"):
         tries.append(("Groq", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
-                                          os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"))))
+                                          os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
+                                          extra={"reasoning_effort": "low"}, limit=24000)))
+        tries.append(("Groq llama", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
+                                                "llama-3.3-70b-versatile", limit=20000)))
     if os.environ.get("NVIDIA_API_KEY"):
         for m in ("moonshotai/kimi-k2.6", "deepseek-ai/deepseek-v4.1-flash", "mistralai/mistral-large-2-instruct"):
             tries.append((f"NVIDIA {m}", lambda m=m: oai("https://integrate.api.nvidia.com/v1/chat/completions",
@@ -136,7 +139,9 @@ def ask(prompt):
         except Exception as e:
             detail = e.read().decode()[:300] if isinstance(e, urllib.error.HTTPError) else str(e)[:300]
             errs.append(f"{name}: {detail}"); print("LLM failed:", name, detail, flush=True)
-    raise SystemExit("No LLM answered: " + " | ".join(errs))
+    msg = "No LLM answered: " + " | ".join(errs)
+    print("::error title=fixer::" + msg.replace("\n", " ")[:900], flush=True)
+    raise SystemExit(msg)
 
 
 def apply(edits):
