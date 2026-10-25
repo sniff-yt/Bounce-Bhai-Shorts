@@ -33,7 +33,15 @@ prepare_models() {
 
   T=$SECONDS
   live stage "Writing a new story" --pct 3
-  python scripts/write_story.py "out/$NAME.json"
+  if ! python scripts/write_story.py "out/$NAME.json"; then
+    # Every story LLM failed (providers down / models retired): still post today, as a ball-escape Short.
+    echo "::warning title=story::All story LLMs failed - posting a ball-escape Short instead"
+    live stage "Story AI is down - making a ball-escape challenge instead" --pct 5
+    python scripts/make_sim.py "out/$NAME.json"
+    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+    echo "Setup complete: out/$NAME.json"
+    return 0
+  fi
   live event "Story: $(python -c 'import json,sys;print(json.load(open(sys.argv[1]))["title"])' "out/$NAME.json" 2>/dev/null)"
   echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
   live stage "Recording the voice (your cloned voice)" --pct 10

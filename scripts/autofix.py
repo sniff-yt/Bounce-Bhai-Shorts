@@ -121,7 +121,7 @@ def ask(prompt):
         tries.append(("Groq", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
                                           os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"))))
     if os.environ.get("NVIDIA_API_KEY"):
-        for m in ("qwen/qwen3-coder-480b-a35b-instruct", "meta/llama-3.3-70b-instruct"):
+        for m in ("moonshotai/kimi-k2.6", "deepseek-ai/deepseek-v4.1-flash", "mistralai/mistral-large-2-instruct"):
             tries.append((f"NVIDIA {m}", lambda m=m: oai("https://integrate.api.nvidia.com/v1/chat/completions",
                                                           os.environ["NVIDIA_API_KEY"], m)))
     if os.environ.get("NARA_API_KEY"):

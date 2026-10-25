@@ -36,7 +36,7 @@ NVIDIA_MODELS = [
     m.strip()
     for m in os.environ.get(
         "NVIDIA_MODELS",
-        "meta/llama-3.3-70b-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5"
+        "mistralai/mistral-large-2-instruct,deepseek-ai/deepseek-v4.1-flash,moonshotai/kimi-k2.6,nvidia/nemotron-3-super-120b-a12b"
     ).split(",")
     if m.strip()
 ]
@@ -44,8 +44,8 @@ NVIDIA_MODELS = [
 GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
-GITHUB_MODELS_URL = "https://models.inference.ai.azure.com/chat/completions"
-GITHUB_MODEL = "gpt-4o-mini"
+GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions"
+GITHUB_MODEL = "openai/gpt-4o-mini"
 
 GEMINI_API_URL = os.environ.get(
     "GEMINI_API_URL",
@@ -331,10 +331,13 @@ def post_story(prompt):
 
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
     if groq_key:
-        try:
-            return call_openai_compatible(GROQ_API_URL, groq_key, GROQ_MODEL, prompt, "Groq")
-        except Exception as exc:
-            errors.append(str(exc))
+        for gmodel, gextra in ((GROQ_MODEL, {"reasoning_effort": "low"}), ("llama-3.3-70b-versatile", None)):
+            try:
+                return call_openai_compatible(GROQ_API_URL, groq_key, gmodel, prompt, f"Groq({gmodel})",
+                                              max_tokens=6000, timeout=90, extra=gextra)
+            except Exception as exc:
+                errors.append(str(exc))
+                print(f"Groq model {gmodel} failed: {exc}", flush=True)
 
     gh_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     if gh_token:
