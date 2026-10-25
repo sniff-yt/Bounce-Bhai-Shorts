@@ -55,7 +55,7 @@ def videos():
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
         fmt = h.get("format") or ("promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
-                                  "race" if re.search(r"race|kaun jeetega|colour|🏁", v["title"], re.I) else
+                                  "race" if re.search(r"kaun jeetega|race shuru|🏁|🟢", v["title"], re.I) else
                                   "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
         out.append({"id": v["id"], "title": v["title"], "views": v.get("views", 0), "likes": v.get("likes", 0),
