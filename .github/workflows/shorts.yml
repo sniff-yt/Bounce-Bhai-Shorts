@@ -5,7 +5,12 @@ on:
     # 5 posts a day at Indian peak times (runs start ~20 min early): ~8:00, 12:30, 17:00, 19:00, 21:00 IST
     - cron: "10 2,11,13,15 * * *"
     - cron: "40 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      format:
+        description: 'Force a format (story, sim, race, promo); empty = auto'
+        required: false
+        default: ''
 
 concurrency:
   group: bouncebhai-shorts
@@ -24,6 +29,7 @@ jobs:
       run:
         shell: bash   # -eo pipefail, so "cmd | live.py tee" still fails when cmd fails
     env:
+      BB_FORMAT: ${{ inputs.format }}
       BLENDER_VERSION: "4.5.14"
       BB_BUDGET_MIN: "45"
       NARA_MODELS: "laguna-s-2.1,nemotron-3.5-lightning-free"
