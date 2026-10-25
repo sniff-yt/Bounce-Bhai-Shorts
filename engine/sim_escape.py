@@ -24,6 +24,7 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
     ang = rnd.uniform(0, 2*math.pi); sp = rnd.uniform(500, 800)
     v = [math.cos(ang)*sp, math.sin(ang)*sp]
     r = 22.0; g0 = rnd.uniform(0, 360); G = 1500.0
+    r_max = min(0.30*R, 0.42*2*R*math.sin(math.radians(gap)/2))   # never too big for the gap or the ring
     frames, bounces, events = [], 0, []
     escaped_at = None; t = 0.0
     for f in range(int(max_t*FPS)):
@@ -52,7 +53,7 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
                         spd = math.hypot(*v)
                         target = max(spd*1.0, 900)
                         v = [v[0]/spd*target, v[1]/spd*target]
-                        bounces += 1; r += grow
+                        bounces += 1; r = min(r + grow, r_max)
                         events.append((t, bounces))
                     p = [CX + nx*(rin - r), CY + ny*(rin - r)]
             if escaped_at is None and d - r > R + TH/2:
@@ -69,6 +70,8 @@ def find(cfg):
     best, best_d, t0 = None, 1e9, time.time()
     for seed in range(s0, s0 + 4000):
         fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"])
+        if len(ev) > 160:
+            continue
         if esc and lo <= esc <= hi and len(ev) >= 25:
             return seed, fr, ev, esc
         if esc and esc >= 12:  # remember the closest usable escape so a run never fails here
@@ -82,11 +85,27 @@ def find(cfg):
         return best
     raise SystemExit("no seed found")
 
-def text_center(dr, y, txt, size, fill=(255,255,255), stroke=0):
-    f = ImageFont.truetype(FONT, size*SS)
-    w = dr.textlength(txt, font=f)
-    dr.text(((W*SS - w)/2, y*SS), txt, font=f, fill=fill,
-            stroke_width=stroke*SS, stroke_fill=(0,0,0))
+def text_center(dr, y, txt, size, fill=(255,255,255), stroke=0, max_w=960):
+    """Centered text that always fits the frame: wraps to 2 lines, then shrinks."""
+    words = txt.split()
+    while True:
+        f = ImageFont.truetype(FONT, size*SS)
+        lines = [txt]
+        if dr.textlength(txt, font=f) > max_w*SS and len(words) > 1:
+            best = None
+            for k in range(1, len(words)):
+                a, b = " ".join(words[:k]), " ".join(words[k:])
+                m = max(dr.textlength(a, font=f), dr.textlength(b, font=f))
+                if best is None or m < best[0]:
+                    best = (m, [a, b])
+            lines = best[1]
+        if max(dr.textlength(l, font=f) for l in lines) <= max_w*SS or size <= 30:
+            break
+        size -= 4
+    for i, l in enumerate(lines):
+        w = dr.textlength(l, font=f)
+        dr.text(((W*SS - w)/2, (y + i*size*1.18)*SS), l, font=f, fill=fill,
+                stroke_width=stroke*SS, stroke_fill=(0,0,0))
 
 def render(cfg, frames, esc, tmpdir):
     os.makedirs(tmpdir, exist_ok=True)
@@ -113,12 +132,12 @@ def render(cfg, frames, esc, tmpdir):
         dr.ellipse([(x-r)*SS, (y-r)*SS, (x+r)*SS, (y+r)*SS], fill=col,
                    outline=(255,255,255), width=3*SS)
         # texts (hook on frame 1)
-        text_center(dr, 250, cfg["hook"], 64, stroke=4)
-        text_center(dr, 1440, f"Bounces: {b}", 72, fill=col, stroke=4)
+        text_center(dr, 200, cfg["hook"], 66, stroke=4)
+        text_center(dr, 420, f"Bounces: {b}", 76, fill=col, stroke=4)
         if esc is not None and t >= esc:
-            text_center(dr, 1560, cfg.get("win", "BAHAR NIKAL GAYI!"), 70, fill=(255, 220, 60), stroke=5)
+            text_center(dr, 1420, cfg.get("win", "BAHAR NIKAL GAYI!"), 70, fill=(255, 220, 60), stroke=5)
         else:
-            text_center(dr, 1560, cfg["cta"], 46, fill=(220,220,230), stroke=3)
+            text_center(dr, 1420, cfg["cta"], 46, fill=(220,220,230), stroke=3)
         img = img.resize((W, H), Image.LANCZOS)
         img.save(f"{tmpdir}/f{i:05d}.png", compress_level=1)
     return len(frames)
