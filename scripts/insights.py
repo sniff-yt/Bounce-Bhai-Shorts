@@ -81,13 +81,15 @@ def promo_due(hours=20):
 RACE_TRIAL_UNTIL = os.environ.get("BB_RACE_TRIAL_UNTIL", "2026-10-29")   # head-to-head: race vs ball-escape
 
 
-ALLOWED_FORMATS = ("race", "sim")   # OWNER'S STRICT RULE (2026-10-25): only ball-race and ball-escape Shorts. No stories, no promos.
+ALLOWED_FORMATS = ("race", "sim")   # OWNER'S STRICT RULE (2026-10-25): only ball-race, ball-escape and the daily Bhai Drive game promo. No stories.
 
 
 def pick_format(rng=random):
     forced = os.environ.get("BB_FORMAT")
-    if forced in ALLOWED_FORMATS:
+    if forced in ALLOWED_FORMATS + ("promo",):
         return forced
+    if promo_due():
+        return "promo"
     if time.strftime("%Y-%m-%d", time.gmtime()) <= RACE_TRIAL_UNTIL:
         return "race" if rng.random() < 0.8 else "sim"   # race is winning: mostly races, a few escapes to keep testing
     vs = videos()

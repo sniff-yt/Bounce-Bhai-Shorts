@@ -98,7 +98,7 @@ scripts/make_race.py: 3 balls race through a parkour course), "sim" (engine/sim_
 a growing ball escapes a spinning ring with a gap), "promo" (game promo, scripts/promo.py), "story" (2D cartoon,
 scripts/write_story.py + engine/render2d.py + scripts/finish.py). scripts/upload.py uploads to YouTube.
 docs/index.html is the owner's web dashboard.
-OWNER'S STRICT RULE: the channel posts ONLY "race" and "sim" (ball escape) Shorts. Never re-enable stories or promos,
+OWNER'S STRICT RULE: the channel posts ONLY "race", "sim" (ball escape) and the daily "promo" (Bhai Drive game) Shorts. Never re-enable stories,
 never remove or replace either of these two formats, and keep every video under 60 seconds."""
 
 

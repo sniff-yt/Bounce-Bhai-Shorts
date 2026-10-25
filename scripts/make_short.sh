@@ -13,7 +13,7 @@ prepare_models() {
   printf '%s\n' "$NAME" > out/current_name.txt
   printf 'Preparing %s\n' "$NAME"
 
-  FORMAT="$(python scripts/insights.py format 2>/dev/null || echo story)"
+  FORMAT="$(python scripts/insights.py format 2>/dev/null || echo race)"
   echo "Format picked from channel stats: $FORMAT"
   echo "::notice title=format::$FORMAT"
   if [ "$FORMAT" = "promo" ]; then
