@@ -40,6 +40,13 @@ prepare_models() {
 
   T=$SECONDS
   live stage "Writing a new story" --pct 3
+  # Owner's strict rule: only race + ball-escape Shorts. Anything else falls back to a race.
+  echo "::warning title=format::format '$FORMAT' is not allowed (race/sim only) - making a race"
+  live stage "Setting up a 3-ball race" --pct 5
+  python scripts/make_race.py "out/$NAME.json"
+  echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+  echo "Setup complete: out/$NAME.json"
+  return 0
   if ! python scripts/write_story.py "out/$NAME.json"; then
     # Every story LLM failed (providers down / models retired): still post today, as a ball-escape Short.
     echo "::warning title=story::All story LLMs failed - posting a ball-escape Short instead"

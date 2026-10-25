@@ -81,19 +81,18 @@ def promo_due(hours=20):
 RACE_TRIAL_UNTIL = os.environ.get("BB_RACE_TRIAL_UNTIL", "2026-10-29")   # head-to-head: race vs ball-escape
 
 
+ALLOWED_FORMATS = ("race", "sim")   # OWNER'S STRICT RULE (2026-10-25): only ball-race and ball-escape Shorts. No stories, no promos.
+
+
 def pick_format(rng=random):
     forced = os.environ.get("BB_FORMAT")
-    if forced in ("story", "sim", "promo", "race"):
+    if forced in ALLOWED_FORMATS:
         return forced
-    if promo_due():
-        return "promo"
     if time.strftime("%Y-%m-%d", time.gmtime()) <= RACE_TRIAL_UNTIL:
         return "race" if rng.random() < 0.8 else "sim"   # race is winning: mostly races, a few escapes to keep testing
     vs = videos()
-    ranked = sorted(("story", "sim", "race"), key=lambda f: _score([v for v in vs if v["format"] == f])[0], reverse=True)
-    if rng.random() < 0.7:
-        return ranked[0]
-    return rng.choice(ranked[1:])     # keep testing the others 30% of the time
+    ranked = sorted(ALLOWED_FORMATS, key=lambda f: _score([v for v in vs if v["format"] == f])[0], reverse=True)
+    return ranked[0] if rng.random() < 0.7 else ranked[1]
 
 
 def genre_weights(genres):
