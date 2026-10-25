@@ -75,7 +75,7 @@ FOOT = {"hi_roman": "2D cartoon animation, code se banaya. No AI visuals.",
         "hi": "कोड से बना 2D कार्टून एनिमेशन। कोई AI विज़ुअल नहीं।",
         "en": "2D cartoon animation made with code. No AI visuals.",
         "te": "కోడ్‌తో తయారైన 2D కార్టూన్ యానిమేషన్. AI విజువల్స్ లేవు."}
-if c.get("format") == "sim":
+if c.get("format") in ("sim", "race"):
     FOOT = {"hi_roman": "Physics simulation, code se banaya. Asli physics, koi AI nahi.",
             "hi": "कोड से बना फिज़िक्स सिमुलेशन। असली फिज़िक्स, कोई AI नहीं।",
             "en": "Physics simulation made with code. Real physics, no AI.",

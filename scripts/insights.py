@@ -55,6 +55,7 @@ def videos():
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
         fmt = h.get("format") or ("promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
+                                  "race" if re.search(r"race|kaun jeetega|colour|🏁", v["title"], re.I) else
                                   "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
         out.append({"id": v["id"], "title": v["title"], "views": v.get("views", 0), "likes": v.get("likes", 0),
@@ -77,17 +78,22 @@ def promo_due(hours=20):
     return time.time() - last > hours * 3600
 
 
+RACE_TRIAL_UNTIL = os.environ.get("BB_RACE_TRIAL_UNTIL", "2026-10-29")   # head-to-head: race vs ball-escape
+
+
 def pick_format(rng=random):
     forced = os.environ.get("BB_FORMAT")
-    if forced in ("story", "sim", "promo"):
+    if forced in ("story", "sim", "promo", "race"):
         return forced
     if promo_due():
         return "promo"
+    if time.strftime("%Y-%m-%d", time.gmtime()) <= RACE_TRIAL_UNTIL:
+        return "race" if rng.random() < 0.5 else "sim"   # trial days: alternate the two ball formats
     vs = videos()
-    s_story, _ = _score([v for v in vs if v["format"] == "story"])
-    s_sim, _ = _score([v for v in vs if v["format"] == "sim"])
-    best, other = ("sim", "story") if s_sim >= s_story else ("story", "sim")
-    return best if rng.random() < 0.7 else other     # keep testing the other format 30% of the time
+    ranked = sorted(("story", "sim", "race"), key=lambda f: _score([v for v in vs if v["format"] == f])[0], reverse=True)
+    if rng.random() < 0.7:
+        return ranked[0]
+    return rng.choice(ranked[1:])     # keep testing the others 30% of the time
 
 
 def genre_weights(genres):
@@ -140,7 +146,7 @@ if __name__ == "__main__":
         print(pick_format())
     else:
         vs = videos()
-        for f in ("story", "sim"):
+        for f in ("story", "sim", "race"):
             s, n = _score([v for v in vs if v["format"] == f])
             print(f"{f}: score {s:.2f} from {n} videos")
         print(prompt_block())
