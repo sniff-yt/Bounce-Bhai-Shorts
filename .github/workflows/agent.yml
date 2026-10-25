@@ -1,0 +1,69 @@
+name: Chat agent
+
+# The dashboard's chat box: the owner describes a problem, an LLM reads the code, patches it and replies.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "What's wrong / what you want changed"
+        required: true
+
+concurrency:
+  group: bouncebhai-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  models: read
+
+jobs:
+  chat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unlock LLM keys
+        env:
+          VOICE_KEY: ${{ secrets.VOICE_KEY }}
+          S_NARA: ${{ secrets.NARA_API_KEY }}
+          S_NVIDIA: ${{ secrets.NVIDIA_API_KEY }}
+          S_GROQ: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -n "$S_NARA" ]; then echo "NARA_API_KEY=$S_NARA" >> "$GITHUB_ENV"; fi
+          if [ -n "$S_NVIDIA" ]; then echo "NVIDIA_API_KEY=$S_NVIDIA" >> "$GITHUB_ENV"; fi
+          if [ -n "$S_GROQ" ]; then echo "GROQ_API_KEY=$S_GROQ" >> "$GITHUB_ENV"; fi
+          if [ -f voice/keys.env.enc ] && [ -n "$VOICE_KEY" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env || exit 0
+            while IFS='=' read -r k v; do
+              [ -n "$k" ] || continue
+              echo "::add-mask::$v"
+              echo "$k=$v" >> "$GITHUB_ENV"
+            done < /tmp/keys.env
+            rm -f /tmp/keys.env
+          fi
+      - name: Get the chat
+        run: |
+          git fetch -q origin data && git worktree add -q /tmp/data origin/data || mkdir -p /tmp/data
+      - name: Think and fix
+        env:
+          MESSAGE: ${{ inputs.message }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/agent_chat.py
+      - name: Save the chat
+        if: always()
+        run: |
+          cd /tmp/data && cp chat.json /tmp/chat.json
+          for i in 1 2 3; do
+            git fetch -q origin data && git checkout -qf --detach origin/data
+            cp /tmp/chat.json chat.json
+            git -c user.name=bouncebhai-agent -c user.email=bot@users.noreply.github.com add chat.json
+            git -c user.name=bouncebhai-agent -c user.email=bot@users.noreply.github.com commit -qm "chat $(date -u +%FT%TZ)" || true
+            git push -q origin HEAD:data && break
+            sleep 3
+          done

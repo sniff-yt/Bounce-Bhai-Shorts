@@ -38,6 +38,13 @@ header .sub{color:var(--muted);font-size:13px;margin-top:4px}
 
 /* grid */
 .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.chat{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding:4px 2px;margin-top:12px}
+.msg{max-width:82%;padding:10px 14px;border-radius:16px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.msg.agent{align-self:flex-start;background:#F2F0EC;border-bottom-left-radius:5px}
+.msg .meta{display:block;font-size:11px;opacity:.65;margin-top:4px}
+.chatin{display:flex;gap:8px;margin-top:12px}
+.chatin textarea{flex:1;min-height:46px;max-height:140px;resize:vertical;border-radius:14px;border:1px solid #ddd;padding:12px;font:inherit}
 .card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;min-width:0}
 .span3{grid-column:span 3}.span4{grid-column:span 4}.span5{grid-column:span 5}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}.span6{grid-column:span 6}
 @media(max-width:900px){.span3,.span4,.span5,.span6,.span7,.span8{grid-column:span 12}.stat.span4{grid-column:span 6}.stat.span4:last-child{grid-column:span 12}}
@@ -227,6 +234,17 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:28px}
             <a class="btn ghost" id="runLink" target="_blank" style="display:none;text-decoration:none">Open run ↗</a>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- chat with the agent -->
+    <div class="card span12">
+      <div class="label">Chat with the agent</div>
+      <div class="small muted">Tell it what's wrong with a video or what to change. It reads the code, fixes it and pushes the fix (about 1-3 min).</div>
+      <div class="chat" id="chat"><div class="msg agent">Hi! Describe a problem, like "the title is cut off" or "make the race shorter".</div></div>
+      <div class="chatin">
+        <textarea id="chatIn" maxlength="1500" placeholder="Type your problem…"></textarea>
+        <button class="btn" id="chatSend">Send</button>
       </div>
     </div>
 
@@ -532,6 +550,40 @@ async function fixNow(){
   catch(e){ toast("Couldn't start the fixer: "+e.message); }
 }
 
+/* ---------- chat agent ---------- */
+let chatPending = null;
+async function loadChat(){
+  let msgs = [];
+  try{ msgs = await (await fetch(`https://raw.githubusercontent.com/${REPO}/data/chat.json?t=${Date.now()}`,{cache:"no-store"})).json(); }catch(e){}
+  if (chatPending && msgs.some(m=>m.role==="user" && m.text===chatPending.text && m.ts*1000 > chatPending.at-120000)){
+    const i = msgs.map(m=>m.text).lastIndexOf(chatPending.text);
+    if (msgs.slice(i+1).some(m=>m.role==="agent")) chatPending = null;
+  }
+  const box = $("chat");
+  let h = msgs.length ? "" : `<div class="msg agent">Hi! Describe a problem, like "the title is cut off" or "make the race shorter".</div>`;
+  h += msgs.map(m=>`<div class="msg ${m.role==="user"?"user":"agent"}">${esc(m.text)}<span class="meta">${ago(m.ts*1000)}${m.commit?` · <a href="https://github.com/${REPO}/commit/${m.commit}" target="_blank">fix ${esc(m.commit)}</a>`:""}</span></div>`).join("");
+  if (chatPending){
+    if (!msgs.some(m=>m.role==="user" && m.text===chatPending.text)) h += `<div class="msg user">${esc(chatPending.text)}<span class="meta">sending…</span></div>`;
+    h += `<div class="msg agent"><span class="agentline" style="display:flex;gap:8px;align-items:center"><i class="spin"></i>Looking into it…</span></div>`;
+  }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  box.innerHTML = h;
+  if (atBottom || chatPending) box.scrollTop = box.scrollHeight;
+  if (chatPending) { clearTimeout(loadChat._t); loadChat._t = setTimeout(loadChat, 6000); }
+}
+async function sendChat(){
+  if (needToken()) return;
+  const text = $("chatIn").value.trim(); if (!text) return;
+  $("chatSend").disabled = true;
+  try{
+    await gh("/actions/workflows/agent.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs:{message:text}})});
+    chatPending = {text, at:Date.now()}; $("chatIn").value=""; loadChat();
+  }catch(e){ toast("Couldn't reach the agent: "+e.message); }
+  $("chatSend").disabled = false;
+}
+$("chatSend").onclick = sendChat;
+$("chatIn").addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); } });
+
 /* ---------- post own video ---------- */
 let file = null;
 $("file").onchange = e => {
@@ -607,7 +659,7 @@ async function tick(){
 }
 async function init(){
   $("tokenNote").style.display = TOKEN ? "none" : "";
-  await loadAuto(); loadStats(); loadFixer(); tick();
+  await loadAuto(); loadStats(); loadFixer(); loadChat(); tick();
 }
 setInterval(()=>{ loadStats(); loadFixer(); loadAuto(); }, 120000);
 init();

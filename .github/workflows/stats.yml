@@ -37,6 +37,7 @@ jobs:
           mkdir -p /tmp/data
           git fetch -q origin data 2>/dev/null && git show origin/data:stats.json > /tmp/data/stats.json 2>/dev/null || true
           git show origin/data:replied.json > /tmp/data/replied.json 2>/dev/null || true
+          git show origin/data:chat.json > /tmp/data/chat.json 2>/dev/null || true
           cd scripts && python stats.py /tmp/data/stats.json
       - name: Game link in the channel bio
         continue-on-error: true
@@ -69,6 +70,6 @@ jobs:
       - name: Publish to the data branch
         run: |
           cd /tmp/data && git init -q -b data
-          git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json replied.json 2>/dev/null || git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json
+          git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json replied.json $(ls chat.json 2>/dev/null) 2>/dev/null || git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com add stats.json
           git -c user.name=bouncebhai-bot -c user.email=bot@users.noreply.github.com commit -qm "stats $(date -u +%FT%TZ)"
           git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data:data
