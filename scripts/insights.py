@@ -88,7 +88,7 @@ def pick_format(rng=random):
     if promo_due():
         return "promo"
     if time.strftime("%Y-%m-%d", time.gmtime()) <= RACE_TRIAL_UNTIL:
-        return "race" if rng.random() < 0.5 else "sim"   # trial days: alternate the two ball formats
+        return "race" if rng.random() < 0.8 else "sim"   # race is winning: mostly races, a few escapes to keep testing
     vs = videos()
     ranked = sorted(("story", "sim", "race"), key=lambda f: _score([v for v in vs if v["format"] == f])[0], reverse=True)
     if rng.random() < 0.7:
