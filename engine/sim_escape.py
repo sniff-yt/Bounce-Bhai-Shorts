@@ -65,10 +65,21 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
 def find(cfg):
     lo, hi = cfg.get("target", [22, 28])
     s0 = cfg.get("seed", 1)
+    import time
+    best, best_d, t0 = None, 1e9, time.time()
     for seed in range(s0, s0 + 4000):
         fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"])
         if esc and lo <= esc <= hi and len(ev) >= 25:
             return seed, fr, ev, esc
+        if esc and esc >= 12:  # remember the closest usable escape so a run never fails here
+            d = (lo - esc if esc < lo else esc - hi if esc > hi else 0) + max(0, 25 - len(ev))
+            if d < best_d:
+                best, best_d = (seed, fr, ev, esc), d
+        if time.time() - t0 > 600 and best:
+            break
+    if best:
+        print(f"no exact seed; using closest (off by {best_d:.1f})", flush=True)
+        return best
     raise SystemExit("no seed found")
 
 def text_center(dr, y, txt, size, fill=(255,255,255), stroke=0):
