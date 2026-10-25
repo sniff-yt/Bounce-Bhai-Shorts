@@ -1,0 +1,17 @@
+name: Resume posting
+# Re-enables auto-posting (after guard.py paused it) and starts one Short now.
+on:
+  workflow_dispatch:
+permissions:
+  actions: write
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow enable shorts.yml
+          gh workflow run shorts.yml
+          echo "::notice::shorts.yml enabled and dispatched"
