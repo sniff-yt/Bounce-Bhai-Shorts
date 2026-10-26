@@ -194,7 +194,10 @@ def look_at_video(vid, videos):
     for env, base in (("GROQ_API_KEY", GROQ), ("NVIDIA_API_KEY", NV)):
         if os.environ.get(env):
             for m in pick_models(list_models(base, os.environ[env]), VISION_PREFS)[:3]:
-                vis.append((m, base + "/chat/completions", os.environ[env]))
+                url = base + "/chat/completions"
+                if base == NV and "llama-3.2" in m and "vision" in m:   # NVIDIA serves these on its own vision host
+                    url = "https://ai.api.nvidia.com/v1/gr/" + m + "/chat/completions"
+                vis.append((m, url, os.environ[env]))
     for m, url, key in vis:
         raw = ""
         try:
@@ -261,6 +264,9 @@ Return {{"files": ["..."], "look": "<video_id or null>"}}""")
         seen = f"\nYou watched video {pick['look']}: " + look_at_video(str(pick["look"]), videos)
         print("look:", seen[:1500], flush=True)
     LOOKED = seen
+    if seen:
+        seen += ("\nAnswer about THIS VIDEO in your reply (what is fine, what is buggy, with timestamps), not about the code. "
+                 "If the frame check failed, say so and judge from the measured facts above.")
     paths = [p for p in pick.get("files", []) if p in files_list][:4] or ["scripts/make_short.sh"]
     budget, files = 80000, {}
     for p in paths:
