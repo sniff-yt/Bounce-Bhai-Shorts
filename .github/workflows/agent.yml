@@ -51,7 +51,15 @@ jobs:
         run: |
           git fetch -q origin data && git worktree add -q /tmp/data origin/data || mkdir -p /tmp/data
       - name: Video tools (to watch a Short)
-        run: sudo apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null 2>&1 || true
+        timeout-minutes: 6
+        run: |
+          # apt sometimes hangs on a stale mirror; cap it and fall back to a pip-bundled ffmpeg
+          sudo timeout 150 apt-get update -qq >/dev/null 2>&1 || true
+          sudo timeout 150 apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null 2>&1 || true
+          if ! command -v ffmpeg >/dev/null; then
+            pip install -q imageio-ffmpeg && sudo ln -sf "$(python -c 'import imageio_ffmpeg as f; print(f.get_ffmpeg_exe())')" /usr/local/bin/ffmpeg
+          fi
+          ffmpeg -version | head -1 || true
       - name: Think and fix
         env:
           MESSAGE: ${{ inputs.message }}
