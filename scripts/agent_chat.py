@@ -10,6 +10,30 @@ import json, os, re, subprocess, sys, time, urllib.error
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from write_story import _post_json, extract_json   # noqa: E402
 
+
+_MODELS = {}
+def list_models(base, key):
+    """Model ids a provider currently serves (cached). Providers retire models often, so pick from the live list."""
+    if base not in _MODELS:
+        import urllib.request
+        try:
+            r = urllib.request.Request(base + "/models", headers={"Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"})
+            _MODELS[base] = [m["id"] for m in json.loads(urllib.request.urlopen(r, timeout=30).read())["data"]]
+        except Exception as e:
+            print("model list failed:", base, str(e)[:120], flush=True); _MODELS[base] = []
+        print("models at", base, ":", len(_MODELS[base]), flush=True)
+    return _MODELS[base]
+
+def pick_models(ids, prefs):
+    out = []
+    for p in prefs:
+        out += [i for i in ids if p in i.lower() and i not in out]
+    return out
+
+GROQ, NV = "https://api.groq.com/openai/v1", "https://integrate.api.nvidia.com/v1"
+TEXT_PREFS = ["gpt-oss-120b", "kimi-k2", "qwen3", "llama-4-maverick", "deepseek-v", "gpt-oss-20b", "llama-3.3-70b", "llama-4-scout"]
+VISION_PREFS = ["llama-4-maverick", "llama-4-scout", "qwen2.5-vl", "qwen3-vl", "vision", "gemma-3", "phi-4-multimodal", "nemotron-nano-vl", "-vl"]
+
 REPO = os.environ.get("GITHUB_REPOSITORY", "sniff-yt/Bounce-Bhai-Shorts")
 MSG = (os.environ.get("MESSAGE") or "").strip()[:2000]
 ALLOWED = ("scripts/", "engine/", "docs/", "requirements.txt")
@@ -42,23 +66,20 @@ def llm(prompt, sysmsg="You are a careful senior Python engineer. Reply with str
                              {"role": "user", "content": prompt[-limit:] if limit else prompt}]}
         body.update(extra or {})
         raw = _post_json(url, {"Content-Type": "application/json", "Authorization": f"Bearer {key}",
-                               "User-Agent": "bouncebhai-agent"}, body, 240)
+                               "User-Agent": "bouncebhai-agent"}, body, 100)
         return extract_json(json.loads(raw)["choices"][0]["message"]["content"])
     tries = []
     if os.environ.get("GROQ_API_KEY"):
-        tries.append(("groq", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
-                                          "openai/gpt-oss-120b", extra={"reasoning_effort": "low"}, limit=24000)))
-    if os.environ.get("GH_TOKEN"):
-        tries.append(("github models", lambda: oai("https://models.github.ai/inference/chat/completions",
-                                                   os.environ["GH_TOKEN"], "openai/gpt-4.1", limit=28000)))
-    if os.environ.get("GROQ_API_KEY"):
-        tries.append(("groq llama", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
-                                                "llama-3.3-70b-versatile", limit=20000)))
+        k = os.environ["GROQ_API_KEY"]
+        for m in pick_models(list_models(GROQ, k), TEXT_PREFS)[:4]:
+            ex = {"reasoning_effort": "low"} if "gpt-oss" in m else None
+            tries.append(("groq " + m, lambda m=m, ex=ex: oai(GROQ + "/chat/completions", k, m, extra=ex, limit=15000)))
+    if os.environ.get("NVIDIA_API_KEY"):
+        k2 = os.environ["NVIDIA_API_KEY"]
+        for m in pick_models(list_models(NV, k2), TEXT_PREFS)[:3]:
+            tries.append(("nvidia " + m, lambda m=m: oai(NV + "/chat/completions", k2, m)))
     if os.environ.get("NARA_API_KEY"):
         tries.append(("nara", lambda: oai("https://router.bynara.id/v1/chat/completions", os.environ["NARA_API_KEY"], "laguna-s-2.1")))
-    if os.environ.get("NVIDIA_API_KEY"):
-        tries.append(("nvidia deepseek", lambda: oai("https://integrate.api.nvidia.com/v1/chat/completions",
-                                                     os.environ["NVIDIA_API_KEY"], "deepseek-ai/deepseek-v4.1-flash")))
     errs = []
     for name, fn in tries:
         try:
@@ -166,11 +187,10 @@ def look_at_video(vid, videos):
                                                       {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]}
     seen, errs = None, []
     vis = []
-    if os.environ.get("GH_TOKEN"):
-        for m in ("openai/gpt-4.1", "openai/gpt-4o-mini"):
-            vis.append((m, "https://models.github.ai/inference/chat/completions", os.environ["GH_TOKEN"]))
-    if os.environ.get("GROQ_API_KEY"):
-        vis.append(("meta-llama/llama-4-scout-17b-16e-instruct", "https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"]))
+    for env, base in (("GROQ_API_KEY", GROQ), ("NVIDIA_API_KEY", NV)):
+        if os.environ.get(env):
+            for m in pick_models(list_models(base, os.environ[env]), VISION_PREFS)[:3]:
+                vis.append((m, base + "/chat/completions", os.environ[env]))
     for m, url, key in vis:
         raw = ""
         try:
