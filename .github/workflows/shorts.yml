@@ -2,8 +2,11 @@ name: Bounce Bhai Shorts
 
 on:
   schedule:
-    # Wakes every hour (~:40 IST); the gate job posts only in the IST hours listed in data/schedule.json.
+    # GitHub silently drops many scheduled runs, so wake 3x an hour; the gate posts at most once per ~50 min,
+    # and only in the IST hours listed in data/schedule.json.
     - cron: "10 * * * *"
+    - cron: "30 * * * *"
+    - cron: "50 * * * *"
   workflow_dispatch:
     inputs:
       format:
@@ -28,12 +31,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: data/schedule.json
+          sparse-checkout: |
+            data/schedule.json
+            data/history.json
           sparse-checkout-cone-mode: false
       - id: g
         run: |
           H=$(TZ=Asia/Kolkata date +%-H)
           if [ "${{ github.event_name }}" != "schedule" ]; then echo go=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! python3 -c "
+          import json, datetime as d
+          try:
+              h = [x for x in json.load(open('data/history.json')) if x.get('video_id')]
+              age = (d.datetime.now(d.timezone.utc) - d.datetime.fromisoformat(h[-1]['date'])).total_seconds() / 60
+          except Exception:
+              age = 1e9
+          print(f'last post {age:.0f} min ago'); raise SystemExit(0 if age >= 50 else 1)"; then
+            echo "Posted recently, skipping"; echo go=false >> "$GITHUB_OUTPUT"; exit 0
+          fi
           if python3 -c "import json,sys;h=json.load(open('data/schedule.json')).get('hours_ist',[]);sys.exit(0 if int(sys.argv[1]) in h else 1)" "$H"; then
             echo go=true >> "$GITHUB_OUTPUT"
           else
