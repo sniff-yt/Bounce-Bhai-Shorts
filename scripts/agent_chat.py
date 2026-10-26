@@ -157,6 +157,21 @@ VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")   # Groq:
 SHEETS, GRID = 3, 3   # 3 contact sheets, each a 3x3 grid of timestamped frames (27 frames over the whole Short)
 
 
+def video_duration(mp4):
+    """Seconds as a string. ffprobe is missing when the workflow falls back to imageio-ffmpeg, so parse `ffmpeg -i` too."""
+    try:
+        d = sh("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4, check=False).strip()
+        if d:
+            return d
+    except OSError:
+        pass
+    try:
+        m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", sh("ffmpeg", "-hide_banner", "-i", mp4, check=False, err=True))
+        return f"{int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)):.2f}" if m else ""
+    except OSError:
+        return ""
+
+
 def contact_sheets(mp4, dur, d="/tmp/look/sheets"):
     """Cut the Short into SHEETS images, each a GRIDxGRID tile of evenly spaced frames with the time burned in."""
     sh("rm", "-rf", d, check=False); os.makedirs(d, exist_ok=True)
@@ -263,7 +278,7 @@ def look_at_video(vid, videos):
     for extra in (f"{name}.mp4.json",):
         if os.path.isfile(os.path.join(d, extra)):
             facts += open(os.path.join(d, extra)).read()[:600]
-    dur = sh("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4, check=False).strip()
+    dur = video_duration(mp4)
     # measured checks that don't need an AI: frozen stretches (nothing moving) in the video
     fz = sh("ffmpeg", "-hide_banner", "-i", mp4, "-vf", "freezedetect=n=0.003:d=2", "-map", "0:v", "-f", "null", "-", check=False, err=True)
     frozen = re.findall(r"freeze_start: ([\d.]+).*?freeze_duration: ([\d.]+)", fz.replace("\n", " "))
