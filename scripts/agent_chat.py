@@ -92,7 +92,7 @@ def apply(edits):
     return list(backup)
 
 
-OVERVIEW = """Project: automated YouTube Shorts for the channel Bounce Bhai (GitHub Actions, posts ~5x/day).
+OVERVIEW = """Project: automated YouTube Shorts for the channel Bounce Bhai (GitHub Actions, posts hourly at the IST hours in data/schedule.json).
 scripts/make_short.sh runs everything. scripts/insights.py picks the format: "race" (engine/sim_race.py via
 scripts/make_race.py: 3 balls race through a parkour course), "sim" (engine/sim_escape.py via scripts/make_sim.py:
 a growing ball escapes a spinning ring with a gap), "promo" (game promo, scripts/promo.py), "story" (2D cartoon,
@@ -102,12 +102,108 @@ OWNER'S STRICT RULE: the channel posts ONLY "race", "sim" (ball escape) and the 
 never remove or replace either of these two formats, and keep every video under 60 seconds."""
 
 
+SCHEDULE = "data/schedule.json"
+
+
+def recent_videos(n=10):
+    """Latest posted Shorts (history.json) with views from the data branch stats."""
+    try:
+        hist = [h for h in json.load(open("data/history.json", encoding="utf-8")) if h.get("video_id")]
+    except Exception:
+        hist = []
+    views = {}
+    try:
+        for v in json.load(open("/tmp/data/stats.json")).get("videos", []):
+            views[v.get("id")] = v.get("views")
+    except Exception:
+        pass
+    out = []
+    for h in hist[-n:][::-1]:
+        out.append({"video_id": h["video_id"], "format": h.get("format", "story"), "title": h.get("title"),
+                    "posted": h.get("date"), "views": views.get(h["video_id"]), "deleted": bool(h.get("deleted"))})
+    return out
+
+
+def load_schedule():
+    try:
+        return json.load(open(SCHEDULE))
+    except Exception:
+        return {"hours_ist": list(range(6, 23))}
+
+
+def look_at_video(vid, videos):
+    """Download the Short's workflow artifact, make a frame contact sheet and let a vision model describe it."""
+    h = next((v for v in videos if v["video_id"] == vid), None)
+    m = re.search(r"\d{8}_\d{4}", (h or {}).get("title") or "")
+    if not m:
+        return "(couldn't find that video's file)"
+    name = f"short_{m.group(0)}"
+    d = "/tmp/look"
+    sh("rm", "-rf", d, check=False)
+    r = subprocess.run(["gh", "run", "download", "--repo", REPO, "-n", name, "-D", d], capture_output=True, text=True)
+    mp4 = os.path.join(d, f"{name}_final.mp4")
+    if r.returncode or not os.path.isfile(mp4):
+        return f"(the video file has expired or is missing: {r.stderr[-200:]})"
+    facts = ""
+    for extra in (f"{name}.mp4.json",):
+        if os.path.isfile(os.path.join(d, extra)):
+            facts += open(os.path.join(d, extra)).read()[:600]
+    dur = sh("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4, check=False).strip()
+    sheet = "/tmp/look/sheet.jpg"
+    sh("ffmpeg", "-v", "error", "-y", "-i", mp4, "-vf", "fps=1/1.5,scale=200:-1,tile=10x3", "-frames:v", "1",
+       "-q:v", "4", sheet, check=False)
+    if not os.path.isfile(sheet):
+        return f"(couldn't read frames) duration {dur}s, render facts {facts}"
+    import base64
+    b64 = base64.b64encode(open(sheet, "rb").read()).decode()
+    ask = ("This contact sheet shows one frame every 1.5 s of a YouTube Short (read left to right, top to bottom; "
+           f"duration {dur}s). Render facts: {facts}. List every visible bug or quality problem precisely: dead time where "
+           "nothing happens, things stuck, text cut off at the edges or overlapping, objects off screen, glitches, "
+           "and say at what time (seconds) each one happens. Be concise.")
+    body = {"model": "openai/gpt-4.1", "temperature": 0.2, "max_tokens": 900,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": ask},
+                                                      {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]}
+    try:
+        raw = _post_json("https://models.github.ai/inference/chat/completions",
+                         {"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['GH_TOKEN']}"}, body, 180)
+        seen = json.loads(raw)["choices"][0]["message"]["content"]
+    except Exception as e:
+        seen = f"(vision model failed: {str(e)[:150]})"
+    return f"duration {dur}s; render facts {facts}; what the frames show: {seen}"
+
+
+def run_actions(actions, videos):
+    """Things beyond code edits: delete / repost / change posting hours. Returns (done list, changed files)."""
+    done, changed = [], []
+    ids = {v["video_id"] for v in videos}
+    for a in actions or []:
+        t = a.get("type")
+        if t == "delete" and a.get("video_id") in ids:
+            sh("gh", "workflow", "run", "delete.yml", "--repo", REPO, "-f", f"video_id={a['video_id']}")
+            done.append(f"deleting {a['video_id']}")
+        elif t == "post" and a.get("format") in ("race", "sim", "promo"):
+            sh("gh", "workflow", "run", "shorts.yml", "--repo", REPO, "-f", f"format={a['format']}")
+            done.append(f"posting a new {a['format']} Short")
+        elif t == "schedule":
+            hrs = sorted({int(x) for x in a.get("hours_ist", []) if str(x).lstrip("-").isdigit() and 0 <= int(x) <= 23})
+            if hrs:
+                json.dump({"hours_ist": hrs, "note": "IST hours when a scheduled run may post (runs start ~:40)"},
+                          open(SCHEDULE, "w"), indent=1)
+                changed.append(SCHEDULE)
+                done.append("posting hours (IST) now " + ", ".join(map(str, hrs)))
+    return done, changed
+
+
 def main():
     chat = load_chat()
     chat.append({"role": "user", "text": MSG, "ts": time.time()})
     save_chat(chat)
     history = "\n".join(f"{m['role'].upper()}: {m['text'][:600]}" for m in chat[-9:-1]) or "(new conversation)"
     files_list = [f for f in sh("git", "ls-files").split() if f.startswith(ALLOWED) and not f.startswith("docs/game/")]
+    videos = recent_videos()
+    sched = load_schedule()
+    world = (f"Latest Shorts (newest first, views may lag): {json.dumps(videos, ensure_ascii=False)}\n"
+             f"Posting hours (IST, one Short per listed hour; YouTube caps ~10-13 uploads/day): {sched.get('hours_ist')}")
 
     pick = llm(f"""{OVERVIEW}
 
@@ -117,7 +213,15 @@ Recent chat:
 Owner's new message: {MSG}
 
 Repo files you may read: {', '.join(files_list)}
-Which files (at most 4) do you need to read to answer or fix this? Return {{"files": ["..."]}}""")
+{world}
+
+Which files (at most 4) do you need to read to answer or fix this? If he is talking about a specific video
+(e.g. "the latest", "the one with 693 views", "this short has bugs"), set "look" to its video_id so you can watch it.
+Return {{"files": ["..."], "look": "<video_id or null>"}}""")
+    seen = ""
+    if pick.get("look"):
+        seen = f"\nYou watched video {pick['look']}: " + look_at_video(str(pick["look"]), videos)
+        print("look:", seen[:1500], flush=True)
     paths = [p for p in pick.get("files", []) if p in files_list][:4] or ["scripts/make_short.sh"]
     budget, files = 80000, {}
     for p in paths:
@@ -133,13 +237,20 @@ If he only asks a question, answer it with no edits. If you are not sure what he
 
 Rules:
 - Only edit: {', '.join(files)}. Never workflows or secrets.
+- Besides code edits you can take actions (list them in "actions"):
+  {{"type": "delete", "video_id": "..."}} only when he clearly asks to remove/delete a video;
+  {{"type": "post", "format": "race"|"sim"|"promo"}} to post a fresh Short now (e.g. a repost after a fix);
+  {{"type": "schedule", "hours_ist": [7, 8, ...]}} to change posting times (IST hours 0-23, one post per hour listed).
+- If he says a video has bugs: use what you saw in it, fix the cause in the engine code, and if he asked, delete + repost.
 - Each edit replaces one exact snippet: "search" copied verbatim from the file, appearing exactly once.
 - Keep everything else working. No big refactors.
 - "reply": 1-3 short friendly sentences to the owner in simple English, saying what was wrong and what you changed
   (or your answer/question). No code in the reply.
 - "test_now": true if he should see a fresh Short made with the fix right away.
 Return JSON: {{"reply": "...", "summary": "commit title under 60 chars", "edits": [{{"path": "...", "search": "...", "replace": "..."}}],
- "test_now": false}}
+ "actions": [], "test_now": false}}
+
+{world}{seen}
 
 Recent chat:
 {history}
@@ -159,22 +270,37 @@ Files:
         except Exception as e:
             print("patch rejected:", e, flush=True)
             prompt += f"\n\nYour previous patch was rejected: {e}. Copy search text exactly and try again."
-    reply = (plan or {}).get("reply") or "Sorry, I couldn't work that out. Can you describe it a bit more?"
+    plan = plan or {}
+    print("plan:", json.dumps(plan, ensure_ascii=False)[:2000], flush=True)
+    # code edits first, so a repost uses the fixed code
+    if changed:
+        sh("git", "config", "user.name", "bouncebhai-agent")
+        sh("git", "config", "user.email", "bot@users.noreply.github.com")
+        sh("git", "add", *changed)
+        sh("git", "commit", "-m", "agent: " + re.sub(r"\s+", " ", plan.get("summary") or "fix from chat")[:70], "-m", f"Owner said: {MSG[:300]}")
+        sh("git", "pull", "--rebase", "-q", "origin", "main")
+        sh("git", "push", "-q", "origin", "HEAD:main")
+    done, sched_files = run_actions(plan.get("actions"), videos)
+    if sched_files:
+        sh("git", "config", "user.name", "bouncebhai-agent")
+        sh("git", "config", "user.email", "bot@users.noreply.github.com")
+        sh("git", "add", *sched_files)
+        sh("git", "commit", "-m", "agent: posting hours", check=False)
+        sh("git", "pull", "--rebase", "-q", "origin", "main")
+        sh("git", "push", "-q", "origin", "HEAD:main")
+    reply = plan.get("reply") or (("Done: " + "; ".join(done) + ".") if done or changed else
+                                  "I didn't get that. Tell me which video (or its views) and what looks wrong in it.")
+    if done and plan.get("reply"):
+        reply += " (" + "; ".join(done) + ")"
     entry = {"role": "agent", "text": reply, "ts": time.time()}
     if plan and plan.get("edits") and not changed:
         entry["text"] = reply + " (My patch didn't apply cleanly, so nothing was changed. Try telling me again.)"
     if changed:
         title = re.sub(r"\s+", " ", plan.get("summary") or "fix from chat")[:70]
-        sh("git", "config", "user.name", "bouncebhai-agent")
-        sh("git", "config", "user.email", "bot@users.noreply.github.com")
-        sh("git", "add", *changed)
-        sh("git", "commit", "-m", f"agent: {title}", "-m", f"Owner said: {MSG[:300]}")
-        sh("git", "pull", "--rebase", "-q", "origin", "main")
-        sh("git", "push", "-q", "origin", "HEAD:main")
         entry["commit"] = sh("git", "rev-parse", "--short", "HEAD").strip()
         entry["files"] = changed
         print("::notice title=agent::" + title)
-        if plan.get("test_now"):
+        if plan.get("test_now") and not any(d.startswith("posting a new") for d in done):
             sh("gh", "workflow", "run", "shorts.yml", "--repo", REPO, check=False)
             entry["text"] += " I've started a fresh Short so you can check it."
     chat.append(entry)

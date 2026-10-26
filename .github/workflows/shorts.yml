@@ -2,8 +2,8 @@ name: Bounce Bhai Shorts
 
 on:
   schedule:
-    # Every hour, ~6:45 AM to ~10:45 PM IST (GitHub may start runs late). YouTube's daily upload cap may skip a few late slots.
-    - cron: "10 1-17 * * *"
+    # Wakes every hour (~:40 IST); the gate job posts only in the IST hours listed in data/schedule.json.
+    - cron: "10 * * * *"
   workflow_dispatch:
     inputs:
       format:
@@ -21,7 +21,28 @@ permissions:
   actions: write   # guard.py pauses auto-posting after 2 failed runs in a row
 
 jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      go: ${{ steps.g.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: data/schedule.json
+          sparse-checkout-cone-mode: false
+      - id: g
+        run: |
+          H=$(TZ=Asia/Kolkata date +%-H)
+          if [ "${{ github.event_name }}" != "schedule" ]; then echo go=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          if python3 -c "import json,sys;h=json.load(open('data/schedule.json')).get('hours_ist',[]);sys.exit(0 if int(sys.argv[1]) in h else 1)" "$H"; then
+            echo go=true >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a posting hour ($H IST)"; echo go=false >> "$GITHUB_OUTPUT"
+          fi
+
   short:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
