@@ -19,7 +19,7 @@ def main(out):
     name = os.path.splitext(os.path.basename(out))[0]
     cfg = {
         "format": "race", "title": f"Ball race {name[-13:]}", "topic": "ball race",
-        "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 80, "budget": 90,
+        "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 120, "budget": 150,
         "hook": "KAUN JEETEGA?", "cta": rng.choice(CTAS),
         "yt_title": {"hi_roman": f"{hr} #shorts", "en": f"{en} #shorts", "te": f"{te} #shorts", "hi": f"{hd} #shorts"},
         "question": {"hi_roman": "Tumhara colour kaunsa tha? 👇", "en": "Which colour did you pick? 👇",

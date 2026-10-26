@@ -1,0 +1,57 @@
+name: Delete a Short
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: "YouTube video id to delete from Bounce Bhai"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -q google-api-python-client google-auth
+      - name: Delete it
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw
+          VID: ${{ inputs.video_id }}
+        run: |
+          cd scripts && python - <<'PY'
+          import os, re, sys
+          from yt_client import youtube
+          vid = os.environ["VID"].strip()
+          if not re.fullmatch(r"[A-Za-z0-9_-]{11}", vid): sys.exit("bad video id")
+          yt = youtube()
+          items = yt.videos().list(part="snippet", id=vid).execute().get("items", [])
+          if not items: sys.exit(f"{vid} not found")
+          if items[0]["snippet"]["channelId"] != os.environ["YT_CHANNEL_ID"]: sys.exit("not a Bounce Bhai video; refusing")
+          yt.videos().delete(id=vid).execute()
+          print(f"::notice title=deleted::{vid} {items[0]['snippet']['title']}")
+          PY
+      - name: Mark it deleted in history
+        env:
+          VID: ${{ inputs.video_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          p = "data/history.json"; h = json.load(open(p, encoding="utf-8"))
+          for e in h:
+              if e.get("video_id") == os.environ["VID"].strip(): e["deleted"] = True
+          json.dump(h, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          PY
+          git config user.name "bouncebhai-bot"; git config user.email "bot@users.noreply.github.com"
+          git commit -qam "log: deleted ${{ inputs.video_id }}" || exit 0
+          git pull -q --rebase --autostash && git push -q

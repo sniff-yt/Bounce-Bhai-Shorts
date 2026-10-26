@@ -57,8 +57,8 @@ def make_course(rnd):
             segs += [((XL, y + 40), (480, y + 260)), ((XR, y + 40), (600, y + 260))]
             y += 360
         elif k == "pads":
-            pads.append((XL + 30, y + 220, 470, y + 300))
-            pads.append((610, y + 300, XR - 30, y + 220))
+            pads.append((XL, y + 220, 470, y + 300))   # joined to the walls: no slot for a ball to wedge into
+            pads.append((610, y + 300, XR, y + 220))
             segs.append(((470, y + 300), (470, y + 330)))
             y += 400
     y += 120
@@ -113,17 +113,28 @@ def simulate(seed, max_t=70.0):
     dt = 1.0 / (FPS * sub)
     frames, events, finish = [], [], {}
     slow = [0.0] * 3
+    best_y = [0.0] * 3; stall = [0.0] * 3
     rad = BR + T / 2
     for f in range(int(max_t * FPS)):
         t = f / FPS
         for s in range(sub):
             ts = t + s * dt
             mv = moving(c, ts)
+            racing_y = [P[j][1] for j in range(3) if j not in finish]
+            lead_y = max(racing_y) if racing_y else 0
+            lead_i = max((j for j in range(3) if j not in finish), key=lambda j: P[j][1], default=-1)
             for i in range(3):
                 p, v = P[i], V[i]
                 if i in finish and p[1] > c["finish"] + 200:
                     v[0] *= 0.98
                 v[1] += G * dt
+                if ts > COUNT and i not in finish and i != lead_i:
+                    behind = lead_y - p[1]
+                    if p[1] < CY + CR and lead_y > CY + CR + 200 and ts > COUNT + 2:
+                        # still in the arena while others raced off: drift toward the exit gap
+                        v[0] += (CX - p[0]) * 3.0 * dt; v[1] += 900 * dt
+                    elif behind > 500:
+                        v[1] += G * min(0.8, behind / 2500) * dt   # rubber band: no 30-second stragglers
                 p[0] += v[0] * dt; p[1] += v[1] * dt
                 near = [sg for sg in statics if min(sg[1], sg[3]) - 80 < p[1] < max(sg[1], sg[3]) + 80]
                 for sg in near:
@@ -154,8 +165,9 @@ def simulate(seed, max_t=70.0):
                         events.append((ts, "bump", i, (bx, by)))
                 for (x1, y1, x2, y2) in c["pads"]:
                     before = v[1]
-                    hit = collide_seg(p, v, x1, y1, x2, y2, rad, 1.0)
-                    if hit > 0:
+                    above = p[1] < y1 + (y2 - y1) * max(0.0, min(1.0, (p[0] - x1) / (x2 - x1)))
+                    hit = collide_seg(p, v, x1, y1, x2, y2, rad, 1.0 if above else 0.6)
+                    if hit > 0 and above:   # launch only from the top (from below it used to pin balls)
                         v[1] = min(v[1], -1350.0); events.append((ts, "pad", i, hit))
             for i in range(3):
                 for j in range(i + 1, 3):
@@ -178,6 +190,12 @@ def simulate(seed, max_t=70.0):
             slow[i] = slow[i] + 1 / FPS if (sp < 60 and t > COUNT and i not in finish) else 0
             if slow[i] > 1.2:
                 V[i][0] += rnd.choice([-1, 1]) * 500; V[i][1] -= 600; slow[i] = 0
+            # jitter-stuck (resting on a ledge/spinner but still moving): no downward progress for 1.5 s -> kick
+            if P[i][1] > best_y[i] + 25: best_y[i] = P[i][1]; stall[i] = 0
+            elif t > COUNT and i not in finish:
+                stall[i] += 1 / FPS
+                if stall[i] > 1.5:
+                    V[i][0] += (1 if P[i][0] < CX else -1) * 650; V[i][1] -= 250; stall[i] = 0
             if i not in finish and P[i][1] > c["finish"]:
                 finish[i] = t; events.append((t, "finish", i, len(finish)))
         frames.append([tuple(p) for p in P])
@@ -197,13 +215,16 @@ def score(c, frames, finish):
     dur = len(frames) / FPS
     order = sorted(finish, key=finish.get)
     gap = finish[order[1]] - finish[order[0]]
+    win = finish[order[0]] - COUNT          # winner's race time
+    spread = finish[order[2]] - finish[order[0]]
+    if dur > 52 or spread > 9: return -1   # too long / a straggler leaves dead air
     changes, last = 0, None
     for k in range(int(COUNT * FPS), len(frames), 6):
         ldr = order_at(c, frames[k], finish, k / FPS)[0]
         if last is not None and ldr != last: changes += 1
         last = ldr
-    s = min(changes, 8) * 2.0 - gap * 3 + (8 if 32 <= dur <= 55 else -abs(dur - 42) / 2)
-    return s, dict(dur=round(dur, 1), gap=round(gap, 2), changes=changes)
+    s = min(changes, 8) * 2.0 - gap * 3 + (8 if 28 <= dur <= 48 else -abs(dur - 38) / 2) - spread - max(0, spread - 5) * 5 - max(0, 12 - win) * 4
+    return s, dict(dur=round(dur, 1), gap=round(gap, 2), changes=changes, win=round(win, 1), spread=round(spread, 1))
 
 # ---------------- render ----------------
 def C(rgb, a=255): return skia.Color(int(rgb[0]), int(rgb[1]), int(rgb[2]), int(a))
@@ -212,6 +233,8 @@ TF = skia.Typeface.MakeFromFile(FONT)
 def text(cv, s, x, y, size, rgb=(255, 255, 255), center=True, stroke=8):
     f = skia.Font(TF, size)
     w = f.measureText(s)
+    if center and w > 940:                 # never let text run off the screen
+        size = size * 940 / w; f = skia.Font(TF, size); w = f.measureText(s)
     x0 = x - w / 2 if center else x
     if stroke:
         cv.drawString(s, x0, y, f, skia.Paint(Color=C((0, 0, 0)), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeJoin=skia.Paint.kRound_Join))
@@ -255,7 +278,7 @@ def render(cfg, c, frames, events, finish, tmp):
         # camera: follow the leader that is still racing (or the pack), keep lookahead
         racing = [i for i in range(3) if i not in finish or finish[i] > t]
         tgt_i = racing[0] if racing and False else None
-        ys = [fr[i][1] for i in range(3)]
+        ys = [fr[i][1] for i in (racing or range(3))]
         tgt = max(min(ys) * 0.35 + max(ys) * 0.65 - 760, 0)
         tgt = min(tgt, c["finish"] + 420 - H + 60)
         if t < COUNT: tgt = 0
@@ -427,7 +450,8 @@ if __name__ == "__main__":
         print("seed", seed, round(sc[0], 1), sc[1], flush=True)
         if best is None or sc[0] > best[0]:
             best = (sc[0], seed, c, fr, ev, fin, sc[1])
-        if best[6]["changes"] >= 4 and best[6]["gap"] < 0.8 and 32 <= best[6]["dur"] <= 55: break
+        b = best[6]
+        if b["changes"] >= 4 and b["gap"] < 0.8 and 28 <= b["dur"] <= 48 and b["spread"] <= 5 and b["win"] >= 12: break
         if time.time() - t_start > cfg.get("budget", 150) and best: break
     if not best: raise SystemExit("no race found")
     _, seed, c, fr, ev, fin, info = best
