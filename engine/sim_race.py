@@ -16,6 +16,7 @@ XL, XR = 40, 1040         # side walls
 CX, CY, CR = 540, 420, 290
 GAP = 21                  # arena exit gap (deg)
 COUNT = 3.0               # countdown seconds (gate closed)
+INTENSE = False           # "intense" races: harder physics, closer finishes, red pulse, faster beat
 
 # ---------------- course ----------------
 def make_course(rnd):
@@ -29,9 +30,11 @@ def make_course(rnd):
     y = CY + CR * math.cos(math.radians(GAP / 2))
     segs += [((CX - gx, y), (CX - gx, 1000)), ((CX + gx, y), (CX + gx, 1000))]
     y = 1000
-    kinds = ["zigzag", "spinners", "bumpers", "slider", "funnel", "pads", "spinners", "zigzag", "bumpers", "slider"]
-    rnd.shuffle(kinds)
-    kinds = kinds[:rnd.randint(7, 8)]
+    pool = ["zigzag", "spinners", "bumpers", "slider", "funnel", "pads"]
+    kinds = []
+    while len(kinds) < rnd.randint(10, 12):   # longer course (was 7-8 sections)
+        k = rnd.choice(pool)
+        if not kinds or k != kinds[-1]: kinds.append(k)
     for k in kinds:
         if k == "zigzag":
             d = rnd.choice([-1, 1])
@@ -109,7 +112,8 @@ def simulate(seed, max_t=70.0):
     statics = [(a[0], a[1], b[0], b[1]) for a, b in c["segs"]]
     P = [[CX + rnd.uniform(-150, 150), CY + rnd.uniform(-150, 60)] for _ in range(3)]
     V = [[rnd.uniform(-800, 800), rnd.uniform(-900, 100)] for _ in range(3)]
-    sub, G = 10, 1700.0
+    sub, G = 10, (2050.0 if INTENSE else 1700.0)
+    KICK, PAD, VMAX = (1250, 1600, 2800) if INTENSE else (950, 1350, 2400)
     dt = 1.0 / (FPS * sub)
     frames, events, finish = [], [], {}
     slow = [0.0] * 3
@@ -161,14 +165,14 @@ def simulate(seed, max_t=70.0):
                         vn = v[0] * nx + v[1] * ny
                         if vn < 0:
                             v[0] -= vn * nx; v[1] -= vn * ny
-                        v[0] += nx * 950; v[1] += ny * 950
+                        v[0] += nx * KICK; v[1] += ny * KICK
                         events.append((ts, "bump", i, (bx, by)))
                 for (x1, y1, x2, y2) in c["pads"]:
                     before = v[1]
                     above = p[1] < y1 + (y2 - y1) * max(0.0, min(1.0, (p[0] - x1) / (x2 - x1)))
                     hit = collide_seg(p, v, x1, y1, x2, y2, rad, 1.0 if above else 0.6)
                     if hit > 0 and above:   # launch only from the top (from below it used to pin balls)
-                        v[1] = min(v[1], -1350.0); events.append((ts, "pad", i, hit))
+                        v[1] = min(v[1], -float(PAD)); events.append((ts, "pad", i, hit))
             for i in range(3):
                 for j in range(i + 1, 3):
                     dx, dy = P[j][0] - P[i][0], P[j][1] - P[i][1]
@@ -184,7 +188,7 @@ def simulate(seed, max_t=70.0):
                             if -rv > 300: events.append((ts, "clash", i, j))
             for i in range(3):
                 sp = math.hypot(*V[i])
-                if sp > 2400: V[i][0] *= 2400 / sp; V[i][1] *= 2400 / sp
+                if sp > VMAX: V[i][0] *= VMAX / sp; V[i][1] *= VMAX / sp
         for i in range(3):
             sp = math.hypot(*V[i])
             slow[i] = slow[i] + 1 / FPS if (sp < 60 and t > COUNT and i not in finish) else 0
@@ -285,7 +289,7 @@ def render(cfg, c, frames, events, finish, tmp):
         camy += (tgt - camy) * 0.12
         sh = 0
         for te in shake_ev:
-            if 0 <= t - te < 0.18: sh = 9 * (1 - (t - te) / 0.18)
+            if 0 <= t - te < 0.18: sh = (15 if INTENSE else 9) * (1 - (t - te) / 0.18)
         ox = math.sin(n * 2.7) * sh; oy = math.cos(n * 3.1) * sh
         # background
         cv.clear(C((10, 10, 24)))
@@ -346,7 +350,7 @@ def render(cfg, c, frames, events, finish, tmp):
         cv.drawRect(skia.Rect(0, 0, W, 300), skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, 300)], [C((0, 0, 0), 200), C((0, 0, 0), 0)])))
         text(cv, cfg.get("hook", "KAUN JEETEGA?"), 540, 110, 78, (255, 255, 255), stroke=10)
         if t < COUNT:
-            text(cv, "Apna colour chuno!", 540, 185, 50, (255, 230, 80), stroke=8)
+            text(cv, "INTENSE RACE!" if INTENSE else "Apna colour chuno!", 540, 185, 50, (255, 70, 70) if INTENSE else (255, 230, 80), stroke=8)
             num = str(3 - int(t))
             sz = 260 * (1.3 - (t % 1) * 0.3)
             text(cv, num, 540, 1500, sz, (255, 230, 80), stroke=14)
@@ -359,6 +363,18 @@ def render(cfg, c, frames, events, finish, tmp):
                 cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(40, y0 - 44, 330, y0 + 12), 16, 16), skia.Paint(Color=C((0, 0, 0), 150), AntiAlias=True))
                 cv.drawCircle(78, y0 - 16, 18, skia.Paint(Color=C(col), AntiAlias=True))
                 text(cv, f"{r_ + 1}. {name}", 110, y0, 46, col, center=False, stroke=6)
+        if INTENSE and t > COUNT and n < len(tl) - end_hold:
+            ry = sorted((fr[i][1] for i in range(3) if i not in finish or finish[i] > t), reverse=True)
+            close = len(ry) >= 2 and ry[0] - ry[1] < 220
+            stretch = ry and c["finish"] - ry[0] < 750
+            if close or stretch:   # red heartbeat pulse at the edges when it's neck and neck
+                a = int(70 + 60 * (0.5 + 0.5 * math.sin(n * 0.55)))
+                vg = skia.GradientShader.MakeRadial((540, 960), 1150, [C((255, 0, 40), 0), C((255, 0, 40), 0), C((255, 20, 50), a)], [0.0, 0.6, 1.0])
+                cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Shader=vg))
+            if stretch:
+                text(cv, "FINAL STRETCH!", 540, 380, 74, (255, 80, 80), stroke=10)
+            elif close and (n // 8) % 2 == 0:
+                text(cv, "NECK AND NECK!", 540, 380, 66, (255, 200, 60), stroke=10)
         # progress bar (right)
         top, bot = 330, 1650
         cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(1000, top, 1024, bot), 12, 12), skia.Paint(Color=C((255, 255, 255), 50), AntiAlias=True))
@@ -400,7 +416,7 @@ def audio(events, seq, lead_changes, path):
         if k >= n: return
         m = min(len(s), n - k); buf[k:k + m] += g * s[:m].astype(np.float32)
     # beat: kick + hat, 128 bpm after GO
-    bpm = 128; step = 60 / bpm
+    bpm = 150 if INTENSE else 128; step = 60 / bpm
     T_end = len(seq) / FPS
     t0 = at(COUNT) or COUNT
     kk = tone(sr, 55, 0.25, 18); _c = tone(sr, 110, 0.08, 40); kk[:len(_c)] += _c * 0.5
@@ -441,6 +457,7 @@ def audio(events, seq, lead_changes, path):
 
 if __name__ == "__main__":
     cfg = json.load(open(sys.argv[1]))
+    INTENSE = bool(cfg.get("intense"))
     s0 = cfg.get("seed", random.randint(1, 10 ** 6))
     best, t_start = None, time.time()
     for seed in range(s0, s0 + cfg.get("tries", 40)):
@@ -451,7 +468,7 @@ if __name__ == "__main__":
         if best is None or sc[0] > best[0]:
             best = (sc[0], seed, c, fr, ev, fin, sc[1])
         b = best[6]
-        if b["changes"] >= 4 and b["gap"] < 0.8 and 28 <= b["dur"] <= 48 and b["spread"] <= 5 and b["win"] >= 12: break
+        if b["changes"] >= (8 if INTENSE else 4) and b["gap"] < (0.5 if INTENSE else 0.8) and 28 <= b["dur"] <= 48 and b["spread"] <= 5 and b["win"] >= 12: break
         if time.time() - t_start > cfg.get("budget", 150) and best: break
     if not best: raise SystemExit("no race found")
     _, seed, c, fr, ev, fin, info = best

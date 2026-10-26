@@ -10,17 +10,23 @@ HOOKS = [
     ("Is race ka winner guess karo 🏁", "Guess the winner of this race 🏁", "ఈ రేస్ విజేతను ఊహించండి 🏁", "इस रेस का विनर गेस करो 🏁"),
     ("Last second mein palat gaya? 😱", "Did it flip in the last second? 😱", "చివరి సెకనులో మారిపోయిందా? 😱", "लास्ट सेकंड में पलट गया? 😱"),
 ]
+INTENSE_HOOKS = [
+    ("Sabse INTENSE race! 🔥", "The most INTENSE race! 🔥", "అత్యంత ఉత్కంఠభరిత రేస్! 🔥", "सबसे इंटेंस रेस! 🔥"),
+    ("Dil thaam ke dekhna 😤🔥", "Hold your breath for this one 😤🔥", "ఊపిరి బిగబట్టి చూడండి 😤🔥", "दिल थाम के देखना 😤🔥"),
+    ("Neck and neck till the end! 😱🔥", "Neck and neck till the end! 😱🔥", "చివరి వరకు పోటాపోటీ! 😱🔥", "आखिर तक कांटे की टक्कर! 😱🔥"),
+]
 CTAS = ["Tumhara colour jeeta? Comment karo!", "Kaunsa colour tha tumhara? Comment!", "Next race mein kaun? Comment karo!"]
 
 
 def main(out):
     rng = random.Random()
-    hr, en, te, hd = rng.choice(HOOKS)
+    intense = rng.random() < 0.35   # ~1 in 3 races is an "intense" one
+    hr, en, te, hd = rng.choice(INTENSE_HOOKS if intense else HOOKS)
     name = os.path.splitext(os.path.basename(out))[0]
     cfg = {
         "format": "race", "title": f"Ball race {name[-13:]}", "topic": "ball race",
         "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 120, "budget": 150,
-        "hook": "KAUN JEETEGA?", "cta": rng.choice(CTAS),
+        "hook": "KAUN JEETEGA?", "intense": intense, "cta": rng.choice(CTAS),
         "yt_title": {"hi_roman": f"{hr} #shorts", "en": f"{en} #shorts", "te": f"{te} #shorts", "hi": f"{hd} #shorts"},
         "question": {"hi_roman": "Tumhara colour kaunsa tha? 👇", "en": "Which colour did you pick? 👇",
                      "te": "మీరు ఏ రంగు ఎంచుకున్నారు? 👇", "hi": "तुम्हारा कलर कौनसा था? 👇"},
@@ -29,7 +35,7 @@ def main(out):
     }
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(cfg, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print("race:", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"])
+    print("race:", "INTENSE" if intense else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"])
 
 
 if __name__ == "__main__":
