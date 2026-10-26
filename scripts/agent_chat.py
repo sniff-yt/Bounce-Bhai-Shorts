@@ -45,19 +45,20 @@ def llm(prompt, sysmsg="You are a careful senior Python engineer. Reply with str
                                "User-Agent": "bouncebhai-agent"}, body, 240)
         return extract_json(json.loads(raw)["choices"][0]["message"]["content"])
     tries = []
-    if os.environ.get("NVIDIA_API_KEY"):
-        for m in ("moonshotai/kimi-k2.6", "deepseek-ai/deepseek-v4.1-flash", "mistralai/mistral-large-2-instruct"):
-            tries.append((m, lambda m=m: oai("https://integrate.api.nvidia.com/v1/chat/completions", os.environ["NVIDIA_API_KEY"], m)))
     if os.environ.get("GROQ_API_KEY"):
         tries.append(("groq", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
                                           "openai/gpt-oss-120b", extra={"reasoning_effort": "low"}, limit=24000)))
+    if os.environ.get("GH_TOKEN"):
+        tries.append(("github models", lambda: oai("https://models.github.ai/inference/chat/completions",
+                                                   os.environ["GH_TOKEN"], "openai/gpt-4.1", limit=28000)))
+    if os.environ.get("GROQ_API_KEY"):
         tries.append(("groq llama", lambda: oai("https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"],
                                                 "llama-3.3-70b-versatile", limit=20000)))
     if os.environ.get("NARA_API_KEY"):
         tries.append(("nara", lambda: oai("https://router.bynara.id/v1/chat/completions", os.environ["NARA_API_KEY"], "laguna-s-2.1")))
-    if os.environ.get("GH_TOKEN"):
-        tries.append(("github models", lambda: oai("https://models.github.ai/inference/chat/completions",
-                                                   os.environ["GH_TOKEN"], "openai/gpt-4.1", limit=28000)))
+    if os.environ.get("NVIDIA_API_KEY"):
+        tries.append(("nvidia deepseek", lambda: oai("https://integrate.api.nvidia.com/v1/chat/completions",
+                                                     os.environ["NVIDIA_API_KEY"], "deepseek-ai/deepseek-v4.1-flash")))
     errs = []
     for name, fn in tries:
         try:
@@ -163,12 +164,25 @@ def look_at_video(vid, videos):
     body = {"model": "openai/gpt-4.1", "temperature": 0.2, "max_tokens": 900,
             "messages": [{"role": "user", "content": [{"type": "text", "text": ask},
                                                       {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]}
-    try:
-        raw = _post_json("https://models.github.ai/inference/chat/completions",
-                         {"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['GH_TOKEN']}"}, body, 180)
-        seen = json.loads(raw)["choices"][0]["message"]["content"]
-    except Exception as e:
-        seen = f"(vision model failed: {str(e)[:150]})"
+    seen, errs = None, []
+    vis = []
+    if os.environ.get("GH_TOKEN"):
+        for m in ("openai/gpt-4.1", "openai/gpt-4o-mini"):
+            vis.append((m, "https://models.github.ai/inference/chat/completions", os.environ["GH_TOKEN"]))
+    if os.environ.get("GROQ_API_KEY"):
+        vis.append(("meta-llama/llama-4-scout-17b-16e-instruct", "https://api.groq.com/openai/v1/chat/completions", os.environ["GROQ_API_KEY"]))
+    for m, url, key in vis:
+        raw = ""
+        try:
+            raw = _post_json(url, {"Content-Type": "application/json", "Accept": "application/json",
+                                   "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"}, dict(body, model=m), 180)
+            seen = json.loads(raw)["choices"][0]["message"]["content"]
+            print("vision:", m, flush=True); break
+        except Exception as e:
+            d = e.read().decode()[:200] if isinstance(e, urllib.error.HTTPError) else (str(e)[:100] + " | " + str(raw)[:150])
+            errs.append(f"{m}: {d}"); print("vision failed:", m, d, flush=True)
+    if not seen:
+        seen = "(vision models failed: " + " ; ".join(errs)[:300] + ")"
     return f"duration {dur}s; render facts {facts}; what the frames show: {seen}"
 
 
@@ -218,10 +232,11 @@ Repo files you may read: {', '.join(files_list)}
 Which files (at most 4) do you need to read to answer or fix this? If he is talking about a specific video
 (e.g. "the latest", "the one with 693 views", "this short has bugs"), set "look" to its video_id so you can watch it.
 Return {{"files": ["..."], "look": "<video_id or null>"}}""")
-    seen = ""
+    seen = LOOKED = ""
     if pick.get("look"):
         seen = f"\nYou watched video {pick['look']}: " + look_at_video(str(pick["look"]), videos)
         print("look:", seen[:1500], flush=True)
+    LOOKED = seen
     paths = [p for p in pick.get("files", []) if p in files_list][:4] or ["scripts/make_short.sh"]
     budget, files = 80000, {}
     for p in paths:
@@ -288,8 +303,13 @@ Files:
         sh("git", "commit", "-m", "agent: posting hours", check=False)
         sh("git", "pull", "--rebase", "-q", "origin", "main")
         sh("git", "push", "-q", "origin", "HEAD:main")
-    reply = plan.get("reply") or (("Done: " + "; ".join(done) + ".") if done or changed else
-                                  "I didn't get that. Tell me which video (or its views) and what looks wrong in it.")
+    reply = plan.get("reply") or plan.get("answer") or plan.get("message")
+    if not reply and (done or changed):
+        reply = "Done: " + "; ".join(done or ["code updated"]) + "."
+    if not reply and LOOKED:
+        reply = "I watched it. " + LOOKED.split("what the frames show:", 1)[-1].strip()[:600]
+    if not reply:
+        reply = "I didn't get that. Tell me which video (or its views) and what looks wrong in it."
     if done and plan.get("reply"):
         reply += " (" + "; ".join(done) + ")"
     entry = {"role": "agent", "text": reply, "ts": time.time()}
