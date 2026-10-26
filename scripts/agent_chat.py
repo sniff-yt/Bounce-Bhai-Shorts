@@ -344,7 +344,16 @@ Files:
     reply = plan.get("reply")
     if not reply and (done or changed):
         reply = "Done: " + "; ".join(done or ["code updated"]) + "."
+    if LOOKED and reply and not (done or changed) and not (str(pick.get("look")) in reply or re.search(r"stuck|freez|frame|glitch|bug|clipp|cut off|timestamp", reply, re.I)):
+        reply = None   # model talked about code instead of the video he asked about
     if not reply and LOOKED:
+        d = re.search(r"duration ([\d.]+)", LOOKED); fz = re.search(r"frozen stretches[^;]*: ([^;]*)", LOOKED)
+        ok_frames = "vision models failed" not in LOOKED
+        reply = (f"I checked {pick.get('look')}: it's {float(d.group(1)):.0f}s long" if d else f"I checked {pick.get('look')}") + \
+                (", nothing freezes or gets stuck" if fz and fz.group(1).strip() == "none" else f", frozen at {fz.group(1)}" if fz else "") + \
+                (". " + LOOKED.split("what the frames show:", 1)[-1].strip()[:500] if ok_frames else
+                 ". I couldn't get an AI to look at the frames right now, so that's from measured checks only.")
+    if False:
         reply = "I watched it. " + LOOKED.split("what the frames show:", 1)[-1].strip()[:600]
     if not reply:
         reply = "I didn't get that. Tell me which video (or its views) and what looks wrong in it."
