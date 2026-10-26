@@ -394,7 +394,8 @@
   "seed": 558246,
   "format": "race",
   "genre": null,
-  "topic": "ball race"
+  "topic": "ball race",
+  "deleted": true
  },
  {
   "date": "2026-10-26T07:35:06.679300+00:00",
