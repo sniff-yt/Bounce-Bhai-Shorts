@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       format:
-        description: 'Force a format (story, sim, race, promo); empty = auto'
+        description: 'Force a format (race, sim, promo); empty = auto'
         required: false
         default: ''
 
@@ -30,7 +30,6 @@ jobs:
         shell: bash   # -eo pipefail, so "cmd | live.py tee" still fails when cmd fails
     env:
       BB_FORMAT: ${{ inputs.format }}
-      BLENDER_VERSION: "4.5.14"
       BB_BUDGET_MIN: "45"
       NARA_MODELS: "laguna-s-2.1,nemotron-3.5-lightning-free"
     steps:
@@ -48,7 +47,8 @@ jobs:
           python3 scripts/live.py set trigger=${{ github.event_name }} started=$(date +%s)
           BB_LIVE_EVERY=4 nohup bash scripts/live_push.sh loop >/dev/null 2>&1 &
 
-      - name: Start the studio desktop
+      - name: Start the studio desktop (optional, off by default - it cost ~4 min per run)
+        if: vars.BB_DESKTOP == '1'
         run: bash scripts/desktop.sh || true
 
       - uses: actions/setup-python@v5
@@ -61,99 +61,25 @@ jobs:
         run: |
           {
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-              libxkbcommon0 libsm6 libice6 libx11-6 libgl1 libegl1
+            sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libgl1 libegl1 libfontconfig1 libx11-6
             ffprobe -version | head -1
-          } 2>&1 | python3 scripts/live.py tee "apt-get install ffmpeg + graphics libraries"
+          } 2>&1 | python3 scripts/live.py tee "apt-get install ffmpeg"
 
-      - name: Cache Blender
-        id: blender-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/blender
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
-
-      - name: Install Blender (official tarball)
-        if: steps.blender-cache.outputs.cache-hit != 'true'
+      - name: Python packages (race / ball-escape / promo only need these)
         run: |
-          base="https://download.blender.org/release/Blender${BLENDER_VERSION%.*}"
-          f="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          curl -fsSL --retry 3 --retry-all-errors -o "/tmp/$f" "$base/$f"
-          curl -fsSL --retry 3 --retry-all-errors "$base/blender-${BLENDER_VERSION}.sha256" | grep " $f" | (cd /tmp && sha256sum -c -)
-          mkdir -p ~/blender && tar -xJf "/tmp/$f" -C ~/blender --strip-components=1 && rm "/tmp/$f"
-          python3 scripts/live.py event "Downloaded Blender $BLENDER_VERSION"
+          pip install --progress-bar off numpy pillow requests google-api-python-client google-auth skia-python==144.0.post2 \
+            2>&1 | python3 scripts/live.py tee "pip install skia + YouTube client"
 
-      - name: Blender ready
-        run: |
-          echo "BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV"
-          ~/blender/blender --version 2>&1 | head -3 | python3 scripts/live.py tee "blender --version"
-
-      - name: Cache Python packages
-        id: venv-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/venv
-          key: venv-py${{ steps.py.outputs.python-version }}-${{ hashFiles('requirements.txt') }}-torchcpu-v1
-
-      - name: Python packages (only on cache miss)
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: |
-          {
-            python -m venv ~/venv
-            ~/venv/bin/pip install --upgrade pip
-            ~/venv/bin/pip install --progress-bar on --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-            ~/venv/bin/pip install --progress-bar on -r requirements.txt
-          } 2>&1 | python3 scripts/live.py tee "pip install torch + Chatterbox voice AI"
-
-      - name: Use cached venv
-        run: |
-          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
-          python3 scripts/live.py event "Opened cached Python tools (torch, Chatterbox)"
-          ~/venv/bin/pip install skia-python==144.0.post2 2>&1 | python3 scripts/live.py tee "pip install skia-python (2D cartoon engine)"
-
-      - name: Cache voice model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-chatterbox-v1
-
-      - name: Unlock voice sample and encrypted keys
+      - name: Plan the Short
         env:
-          VOICE_KEY: ${{ secrets.VOICE_KEY }}
-          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
-        run: |
-          # Your own cloned voice (voice/my_voice.wav.enc, cleaned 20 s recording) wins when MY_VOICE_KEY is set;
-          # otherwise the original sample keeps working.
-          python3 scripts/live.py event "Unlocking your voice sample"
-          if [ -n "$MY_VOICE_KEY" ] && [ -f voice/my_voice.wav.enc ] && \
-             openssl enc -d -aes-256-cbc -pbkdf2 -in voice/my_voice.wav.enc -out voice/ref.wav -pass env:MY_VOICE_KEY; then
-            echo "voice: using my_voice.wav"
-          else
-            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/ref.wav.enc -out voice/ref.wav -pass env:VOICE_KEY
-            echo "voice: using ref.wav (set MY_VOICE_KEY to use your own recording)"
-          fi
-          if [ -f voice/keys.env.enc ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -in voice/keys.env.enc -pass env:VOICE_KEY > /tmp/keys.env
-            while IFS='=' read -r k v; do
-              [ -n "$k" ] || continue
-              echo "::add-mask::$v"
-              echo "$k=$v" >> "$GITHUB_ENV"
-            done < /tmp/keys.env
-            rm -f /tmp/keys.env
-          fi
-
-      - name: Setup the models in Blender
-        env:
-          SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
           NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/make_short.sh prepare 2>&1 | python3 scripts/live.py tee "make_short.sh prepare (story + voice)"
+        run: bash scripts/make_short.sh prepare 2>&1 | python3 scripts/live.py tee "make_short.sh prepare (pick format + plan)"
 
       - name: Animate and post the Short
         env:
-          SKETCHFAB_TOKEB: ${{ secrets.SKETCHFAB_TOKEB }}
           NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
@@ -196,7 +122,7 @@ jobs:
             python3 scripts/guard.py failed || true
           fi
 
-      - name: Remember the story (no repeats)
+      - name: Remember what was posted
         if: success()
         run: |
           git config user.name "bouncebhai-bot"
