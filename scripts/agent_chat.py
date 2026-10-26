@@ -40,11 +40,11 @@ ALLOWED = ("scripts/", "engine/", "docs/", "requirements.txt")
 CHAT = "/tmp/data/chat.json"
 
 
-def sh(*cmd, check=True, **kw):
+def sh(*cmd, check=True, err=False, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, **kw)
     if check and r.returncode:
         raise RuntimeError(f"{' '.join(cmd)} -> {r.stderr[-800:]}")
-    return r.stdout
+    return r.stdout + (r.stderr if err else "")
 
 
 def load_chat():
@@ -171,8 +171,12 @@ def look_at_video(vid, videos):
         if os.path.isfile(os.path.join(d, extra)):
             facts += open(os.path.join(d, extra)).read()[:600]
     dur = sh("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4, check=False).strip()
+    # measured checks that don't need an AI: frozen stretches (nothing moving) in the video
+    fz = sh("ffmpeg", "-hide_banner", "-i", mp4, "-vf", "freezedetect=n=0.003:d=2", "-map", "0:v", "-f", "null", "-", check=False, err=True)
+    frozen = re.findall(r"freeze_start: ([\d.]+).*?freeze_duration: ([\d.]+)", fz.replace("\n", " "))
+    facts += "; frozen stretches (start s, length s): " + (", ".join(f"{float(a):.1f}+{float(b):.1f}" for a, b in frozen) or "none")
     sheet = "/tmp/look/sheet.jpg"
-    sh("ffmpeg", "-v", "error", "-y", "-i", mp4, "-vf", "fps=1/1.5,scale=200:-1,tile=10x3", "-frames:v", "1",
+    sh("ffmpeg", "-v", "error", "-y", "-i", mp4, "-vf", "fps=1/1.5,scale=128:-1,tile=10x3", "-frames:v", "1",
        "-q:v", "4", sheet, check=False)
     if not os.path.isfile(sheet):
         return f"(couldn't read frames) duration {dur}s, render facts {facts}"
@@ -195,7 +199,7 @@ def look_at_video(vid, videos):
         raw = ""
         try:
             raw = _post_json(url, {"Content-Type": "application/json", "Accept": "application/json",
-                                   "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"}, dict(body, model=m), 180)
+                                   "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"}, dict(body, model=m), 60)
             seen = json.loads(raw)["choices"][0]["message"]["content"]
             print("vision:", m, flush=True); break
         except Exception as e:
@@ -306,6 +310,14 @@ Files:
             print("patch rejected:", e, flush=True)
             prompt += f"\n\nYour previous patch was rejected: {e}. Copy search text exactly and try again."
     plan = plan or {}
+    if not plan.get("reply"):
+        try:
+            again = llm(prompt + '\n\nYour last answer had no "reply" field. Answer again with the exact JSON shape asked for, '
+                        'including "reply" (what you saw in the video / what you did, in simple English).')
+            if again.get("reply"):
+                plan = again if not changed else dict(plan, reply=again["reply"])
+        except Exception as e:
+            print("retry failed:", e, flush=True)
     print("plan:", json.dumps(plan, ensure_ascii=False)[:2000], flush=True)
     # code edits first, so a repost uses the fixed code
     if changed:
@@ -323,7 +335,7 @@ Files:
         sh("git", "commit", "-m", "agent: posting hours", check=False)
         sh("git", "pull", "--rebase", "-q", "origin", "main")
         sh("git", "push", "-q", "origin", "HEAD:main")
-    reply = plan.get("reply") or plan.get("answer") or plan.get("message")
+    reply = plan.get("reply")
     if not reply and (done or changed):
         reply = "Done: " + "; ".join(done or ["code updated"]) + "."
     if not reply and LOOKED:
