@@ -153,6 +153,99 @@ def load_schedule():
         return {"hours_ist": list(range(6, 23))}
 
 
+VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")   # Groq: max 3 images/request, 2048 tokens each
+SHEETS, GRID = 3, 3   # 3 contact sheets, each a 3x3 grid of timestamped frames (27 frames over the whole Short)
+
+
+def contact_sheets(mp4, dur, d="/tmp/look/sheets"):
+    """Cut the Short into SHEETS images, each a GRIDxGRID tile of evenly spaced frames with the time burned in."""
+    sh("rm", "-rf", d, check=False); os.makedirs(d, exist_ok=True)
+    try:
+        dur = float(dur)
+    except Exception:
+        dur = 0.0
+    if dur <= 0:
+        return [], []
+    n = SHEETS * GRID * GRID
+    times = [round(dur * (i + 0.5) / n, 2) for i in range(n)]
+    font = next((f for f in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf") if os.path.isfile(f)), None)
+    for i, t in enumerate(times):
+        out = os.path.join(d, f"f{i:02d}.jpg")
+        base = "scale=240:426:force_original_aspect_ratio=decrease,pad=240:426:(ow-iw)/2:(oh-ih)/2"
+        label = (f",drawtext=fontfile={font}:text='{t:.1f}s':x=6:y=6:fontsize=26:fontcolor=yellow:box=1:boxcolor=black@0.7:boxborderw=4"
+                 if font else "")
+        for vf in ((base + label, base) if label else (base,)):
+            sh("ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", mp4, "-frames:v", "1", "-vf", vf, "-q:v", "3", out, check=False)
+            if os.path.isfile(out):
+                break
+        if not os.path.isfile(out):   # keep the grid positions honest: a black tile for an unreadable frame
+            sh("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=240x426", "-frames:v", "1", out, check=False)
+    sheets = []
+    for k in range(SHEETS):
+        out = os.path.join(d, f"sheet{k}.jpg")
+        first = k * GRID * GRID
+        sh("ffmpeg", "-v", "error", "-y", "-start_number", str(first), "-i", os.path.join(d, "f%02d.jpg"),
+           "-vf", f"tile={GRID}x{GRID}:padding=4:color=white", "-frames:v", "1",
+           "-q:v", "4", out, check=False)
+        if os.path.isfile(out):
+            sheets.append(out)
+    return sheets, times
+
+
+def groq_vision(mp4, dur, facts):
+    """Show the Short to Groq's vision model as 3 contact sheets in ONE request (fits the 8K tokens/min free tier)."""
+    import base64
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        return "(vision models failed: no GROQ_API_KEY)"
+    sheets, times = contact_sheets(mp4, dur)
+    if not sheets:
+        return "(vision models failed: couldn't read frames)"
+    per = GRID * GRID
+    spans = "; ".join(f"image {k + 1}: {times[k * per]:.1f}s-{times[min(len(times), (k + 1) * per) - 1]:.1f}s"
+                      for k in range(len(sheets)))
+    ask = (f"These {len(sheets)} images are contact sheets of one vertical YouTube Short ({dur}s long). Each image is a "
+           f"{GRID}x{GRID} grid of frames in time order (left to right, top to bottom), and the yellow label on each frame is its "
+           f"time in seconds. {spans}. Render facts: {facts[:400]}. First say in one line what the video shows. Then list every "
+           "visible bug or quality problem precisely with its time in seconds: dead time where nothing changes, things stuck, "
+           "text cut off at the edges or overlapping, objects off screen or clipping through each other, glitches, black or "
+           "blank frames. If it looks fine, say so. Be concise (under 150 words).")
+    content = [{"type": "text", "text": ask}] + [
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(open(s, "rb").read()).decode()}}
+        for s in sheets]
+    body = {"model": VISION_MODEL, "temperature": 0.3, "max_tokens": 600, "reasoning_effort": "none",
+            "messages": [{"role": "user", "content": content}]}
+    hdr = {"Content-Type": "application/json", "Accept": "application/json",
+           "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"}
+    last = ""
+    for attempt in range(2):
+        try:
+            raw = _post_json(GROQ + "/chat/completions", hdr, body, 90)
+            out = (json.loads(raw)["choices"][0]["message"].get("content") or "").strip()
+            out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip()
+            if out:
+                print("vision:", VISION_MODEL, f"({len(sheets)} sheets)", flush=True)
+                return out
+            last = "empty answer"
+        except urllib.error.HTTPError as e:
+            last = f"HTTP {e.code}: {e.read().decode(errors='replace')[:200]}"
+            if e.code == 429 and attempt == 0:
+                wait = 20.0
+                try:
+                    wait = float(e.headers.get("retry-after") or wait)
+                except Exception:
+                    pass
+                m = re.search(r"try again in ([\d.]+)s", last)
+                wait = min(65.0, max(wait, float(m.group(1)) + 1 if m else wait))
+                print(f"vision rate-limited, waiting {wait:.0f}s", flush=True); time.sleep(wait); continue
+        except Exception as e:
+            last = str(e)[:200]
+        print("vision failed:", VISION_MODEL, last, flush=True)
+        break
+    return "(vision models failed: " + VISION_MODEL + ": " + last[:250] + ")"
+
+
 def look_at_video(vid, videos):
     """Download the Short's workflow artifact, make a frame contact sheet and let a vision model describe it."""
     h = next((v for v in videos if v["video_id"] == vid), None)
@@ -175,41 +268,7 @@ def look_at_video(vid, videos):
     fz = sh("ffmpeg", "-hide_banner", "-i", mp4, "-vf", "freezedetect=n=0.003:d=2", "-map", "0:v", "-f", "null", "-", check=False, err=True)
     frozen = re.findall(r"freeze_start: ([\d.]+).*?freeze_duration: ([\d.]+)", fz.replace("\n", " "))
     facts += "; frozen stretches (start s, length s): " + (", ".join(f"{float(a):.1f}+{float(b):.1f}" for a, b in frozen) or "none")
-    sheet = "/tmp/look/sheet.jpg"
-    sh("ffmpeg", "-v", "error", "-y", "-i", mp4, "-vf", "fps=1/1.5,scale=128:-1,tile=10x3", "-frames:v", "1",
-       "-q:v", "4", sheet, check=False)
-    if not os.path.isfile(sheet):
-        return f"(couldn't read frames) duration {dur}s, render facts {facts}"
-    import base64
-    b64 = base64.b64encode(open(sheet, "rb").read()).decode()
-    ask = ("This contact sheet shows one frame every 1.5 s of a YouTube Short (read left to right, top to bottom; "
-           f"duration {dur}s). Render facts: {facts}. List every visible bug or quality problem precisely: dead time where "
-           "nothing happens, things stuck, text cut off at the edges or overlapping, objects off screen, glitches, "
-           "and say at what time (seconds) each one happens. Be concise.")
-    body = {"model": "openai/gpt-4.1", "temperature": 0.2, "max_tokens": 900,
-            "messages": [{"role": "user", "content": [{"type": "text", "text": ask},
-                                                      {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]}
-    seen, errs = None, []
-    vis = []
-    for env, base in (("GROQ_API_KEY", GROQ), ("NVIDIA_API_KEY", NV)):
-        if os.environ.get(env):
-            for m in pick_models(list_models(base, os.environ[env]), VISION_PREFS)[:3]:
-                url = base + "/chat/completions"
-                if base == NV and "llama-3.2" in m and "vision" in m:   # NVIDIA serves these on its own vision host
-                    url = "https://ai.api.nvidia.com/v1/gr/" + m + "/chat/completions"
-                vis.append((m, url, os.environ[env]))
-    for m, url, key in vis:
-        raw = ""
-        try:
-            raw = _post_json(url, {"Content-Type": "application/json", "Accept": "application/json",
-                                   "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-agent"}, dict(body, model=m), 60)
-            seen = json.loads(raw)["choices"][0]["message"]["content"]
-            print("vision:", m, flush=True); break
-        except Exception as e:
-            d = e.read().decode()[:200] if isinstance(e, urllib.error.HTTPError) else (str(e)[:100] + " | " + str(raw)[:150])
-            errs.append(f"{m}: {d}"); print("vision failed:", m, d, flush=True)
-    if not seen:
-        seen = "(vision models failed: " + " ; ".join(errs)[:300] + ")"
+    seen = groq_vision(mp4, dur, facts)
     return f"duration {dur}s; render facts {facts}; what the frames show: {seen}"
 
 
@@ -360,6 +419,8 @@ Files:
     if done and plan.get("reply"):
         reply += " (" + "; ".join(done) + ")"
     entry = {"role": "agent", "text": reply, "ts": time.time()}
+    if LOOKED:
+        entry["looked"] = LOOKED.strip()[:3000]   # full frame check (model + measured facts) for the dashboard / debugging
     if plan and plan.get("edits") and not changed:
         entry["text"] = reply + " (My patch didn't apply cleanly, so nothing was changed. Try telling me again.)"
     if changed:
