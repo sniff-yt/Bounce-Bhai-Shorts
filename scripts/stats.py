@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 """Write real channel numbers for the dashboard: python scripts/stats.py out/stats.json"""
-import json, sys, time, datetime
+import json, os, sys, time, datetime
+from google.auth.exceptions import RefreshError
 from yt_client import youtube, CHANNEL
 
-yt = youtube(check_channel=False)
+try:
+    yt = youtube(check_channel=False)
+    yt.channels().list(part="id", id=CHANNEL).execute()
+except RefreshError as e:
+    # Expired/revoked YouTube sign-in: no code change can fix this, it needs a new Google consent
+    # (run the "YouTube sign-in (phone friendly)" workflow). Keep the old numbers, flag it, don't fail
+    # (a failure here only makes the Fixer agent rewrite the auth code).
+    try:
+        old = json.load(open(sys.argv[1]))
+    except Exception:
+        old = {}
+    old["auth_error"] = "YouTube sign-in expired or revoked (" + str(e)[:120] + "). Re-run the YouTube sign-in workflow."
+    old["auth_error_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    os.makedirs(os.path.dirname(sys.argv[1]) or ".", exist_ok=True)
+    json.dump(old, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
+    print("::error title=youtube_signin_expired::YouTube refresh token expired or revoked - run the 'YouTube sign-in (phone friendly)' workflow (step 1, then step 2 with the code).")
+    sys.exit(0)
 ch = yt.channels().list(part="statistics,snippet,contentDetails", id=CHANNEL).execute()["items"][0]
 st = ch["statistics"]
 uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -32,6 +49,6 @@ except Exception:
     hist = []
 hist.append({"t": int(time.time()), "subs": out["channel"]["subscribers"], "views": out["channel"]["views"]})
 out["history"] = hist[-500:]
-os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+os.makedirs(os.path.dirname(sys.argv[1]) or ".", exist_ok=True)
 json.dump(out, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print(out["channel"])
