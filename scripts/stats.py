@@ -32,5 +32,6 @@ except Exception:
     hist = []
 hist.append({"t": int(time.time()), "subs": out["channel"]["subscribers"], "views": out["channel"]["views"]})
 out["history"] = hist[-500:]
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
 json.dump(out, open(sys.argv[1], "w"), ensure_ascii=False, indent=1)
 print(out["channel"])
