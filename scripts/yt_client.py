@@ -29,5 +29,5 @@ def youtube(check_channel=True):
             raise SystemExit(f"Token is not for {CHANNEL} (has {mine}); refusing.")
     else:
         # No auth needed for public data (stats collection)
-        yt = build("youtube", "v3", cache_discovery=False)
+        yt = build("youtube", "v3", credentials=None, cache_discovery=False)
     return yt
