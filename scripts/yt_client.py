@@ -14,20 +14,15 @@ def youtube(check_channel=True):
                            capture_output=True)
         if r.returncode == 0 and r.stdout.strip():
             os.environ["YT_REFRESH_TOKEN"] = r.stdout.decode().strip()
+    for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"):
+        if not os.environ.get(k):
+            raise SystemExit(f"Missing {k}")
+    creds = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"], token_uri="https://oauth2.googleapis.com/token",
+                        client_id=os.environ["YT_CLIENT_ID"], client_secret=os.environ["YT_CLIENT_SECRET"],
+                        scopes=["https://www.googleapis.com/auth/youtube.force-ssl"])
+    yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
     if check_channel:
-        # Require full auth only when we need to verify channel ownership
-        for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"):
-            if not os.environ.get(k):
-                raise SystemExit(f"Missing {k}")
-        creds = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"], token_uri="https://oauth2.googleapis.com/token",
-                            client_id=os.environ["YT_CLIENT_ID"], client_secret=os.environ["YT_CLIENT_SECRET"],
-                            scopes=["https://www.googleapis.com/auth/youtube.force-ssl"])
-        yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
-        # Verify the token belongs to the expected channel
         mine = [c["id"] for c in yt.channels().list(part="id", mine=True).execute().get("items", [])]
         if CHANNEL not in mine:
             raise SystemExit(f"Token is not for {CHANNEL} (has {mine}); refusing.")
-    else:
-        # No auth needed for public data (stats collection)
-        yt = build("youtube", "v3", credentials=None, cache_discovery=False)
     return yt
