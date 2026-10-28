@@ -459,7 +459,7 @@ def build(cfg, c, frames, events, finish):
         t = k / FPS
         if ords[k][0] != ords[k - 1][0]:
             if t < f1 + 0.05: lead_changes.append(t)
-            if t > COUNT + 4 and t < f1 - 0.3 and t - held_from >= 3.0 and t - last_pop >= 8 and len(pops) < 2:
+            if t > COUNT + 4 and t < f1 - 0.3 and t - held_from >= 3.0 and t - last_pop >= 8 and len(pops) < 1:   # at most ONE pop-up per race
                 pops.append((t, ords[k][0])); last_pop = t
             held_from = t
     impact_t = [te for (te, pt, st) in hits] + [f1]
@@ -677,7 +677,7 @@ def draw_shot(n, look):
     # ---- HUD: hook at the start, small 1-2-3 tag, one rare pop-up, end card ----
     if live:
         cv.drawRect(skia.Rect(0, 0, W, 300), skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, 300)], [C((0, 0, 0), 170), C((0, 0, 0), 0)])))
-        ha = 255 if t < COUNT + 0.6 else max(0, 255 * (1 - (t - COUNT - 0.6) / 0.8))
+        ha = 255 if t < COUNT + 0.3 else max(0, 255 * (1 - (t - COUNT - 0.3) / 0.6))   # hook gone before the tag shows
         if ha > 0:
             text(cv, cfg.get("hook", "KAUN JEETEGA?"), 540, 110, 78, (255, 255, 255), stroke=10, alpha=ha)
             if cfg.get("series"):
@@ -686,7 +686,7 @@ def draw_shot(n, look):
             text(cv, str(int(COUNT) - int(t)), 540, 1500, 260 * (1.3 - (t % 1) * 0.3), (255, 226, 70), stroke=14)
         elif t < COUNT + 0.7:
             text(cv, "GO!", 540, 1500, 260, (90, 240, 120), stroke=14, alpha=255 * min(1, (COUNT + 0.7 - t) / 0.25))
-        la = 0 if t < COUNT + 0.4 else min(255, (t - COUNT - 0.4) / 0.4 * 255)
+        la = 0 if t < COUNT + 0.9 else min(255, (t - COUNT - 0.9) / 0.4 * 255)
         if la > 0:
             o = B["ords"][min(int(tk / 2), len(B["ords"]) - 1)]; sy_ = B["slots"][n]
             for r_ in range(3):
@@ -881,6 +881,10 @@ def _try(seed):
         return seed, -1
     return seed, sc
 
+def excellent(b):
+    return (b["changes"] >= 8 and b["gap"] < 0.15 and b["tight"] >= 0.6 and b["comeback"] >= 1
+            and 22 <= b["dur"] <= 34 and b["win"] >= 12)
+
 def good_enough(b):
     return (b["changes"] >= (8 if INTENSE else 6) and b["gap"] < (0.2 if INTENSE else 0.3) and b["tight"] >= 0.55
             and 22 <= b["dur"] <= 34 and b["win"] >= 12)
@@ -903,7 +907,9 @@ if __name__ == "__main__":
                     n_ok += 1
                     print("seed", seed, round(sc[0], 1), sc[1], flush=True)
                     if best is None or sc[0] > best[0]: best = (sc[0], seed, sc[1])
-                    if good_enough(best[2]) and n_ok >= workers: break
+                    el = time.time() - t_start
+                    if excellent(best[2]) and n_ok >= 2 * workers: break
+                    if good_enough(best[2]) and el > cfg.get("min_search", 60): break
                 if time.time() - t_start > cfg.get("budget", 170) and best: break
         finally:
             pool.terminate()
