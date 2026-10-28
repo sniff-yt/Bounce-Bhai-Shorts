@@ -48,8 +48,9 @@ def main(out):
     series = f"Ball Race #{ep}"
     cfg = {
         "format": "race", "title": f"Ball race {name[-13:]}", "topic": "ball race",
-        "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 120, "budget": 150,
-        "hook": "KAUN JEETEGA?", "sub_hook": sub, "intense": intense, "cta": rng.choice(CTAS),
+        # parallel search (all runner cores) for the closest, most contested race; on-screen text is only the hook
+        "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 400, "budget": 170,
+        "hook": "KAUN JEETEGA?", "intense": intense,
         "series": series.upper(), "sub_line": "Roz nayi race!",
         "yt_title": {k: f"{v} | {series} #shorts" for k, v in (("hi_roman", hr), ("en", en), ("te", te), ("hi", hd))},
         "question": {"hi_roman": "Tumhara colour kaunsa tha? 👇", "en": "Which colour did you pick? 👇",
