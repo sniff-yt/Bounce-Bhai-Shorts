@@ -15,7 +15,7 @@ BR, T = 30, 30            # ball radius, wall thickness
 XL, XR = 40, 1040         # side walls
 CX, CY, CR = 540, 420, 290
 GAP = 21                  # arena exit gap (deg)
-COUNT = 3.0               # countdown seconds (gate closed)
+COUNT = 2.0               # countdown seconds (gate closed): short, so the race starts ~2 s in (Shorts hook)
 INTENSE = False           # "intense" races: harder physics, closer finishes, red pulse, faster beat
 
 # ---------------- course ----------------
@@ -32,7 +32,7 @@ def make_course(rnd):
     y = 1000
     pool = ["zigzag", "spinners", "bumpers", "slider", "funnel", "pads"]
     kinds = []
-    while len(kinds) < rnd.randint(10, 12):   # longer course (was 7-8 sections)
+    while len(kinds) < rnd.randint(6, 8):   # tight ~22-34 s races (Shorts retention; 10-12 sections made 35-45 s)
         k = rnd.choice(pool)
         if not kinds or k != kinds[-1]: kinds.append(k)
     for k in kinds:
@@ -221,13 +221,13 @@ def score(c, frames, finish):
     gap = finish[order[1]] - finish[order[0]]
     win = finish[order[0]] - COUNT          # winner's race time
     spread = finish[order[2]] - finish[order[0]]
-    if dur > 52 or spread > 9: return -1   # too long / a straggler leaves dead air
+    if dur > 40 or spread > 9: return -1   # too long / a straggler leaves dead air
     changes, last = 0, None
     for k in range(int(COUNT * FPS), len(frames), 6):
         ldr = order_at(c, frames[k], finish, k / FPS)[0]
         if last is not None and ldr != last: changes += 1
         last = ldr
-    s = min(changes, 8) * 2.0 - gap * 3 + (8 if 28 <= dur <= 48 else -abs(dur - 38) / 2) - spread - max(0, spread - 5) * 5 - max(0, 12 - win) * 4
+    s = min(changes, 8) * 2.0 - gap * 3 + (8 if 22 <= dur <= 34 else -abs(dur - 28) / 2) - spread - max(0, spread - 5) * 5 - max(0, 10 - win) * 4
     return s, dict(dur=round(dur, 1), gap=round(gap, 2), changes=changes, win=round(win, 1), spread=round(spread, 1))
 
 # ---------------- render ----------------
@@ -260,7 +260,9 @@ def render(cfg, c, frames, events, finish, tmp):
         tl.append(k)
         if photo and first - 0.8 <= t <= second + 0.2:
             tl.append(k)  # 2x slow-mo (duplicate)
-    end_hold = int(2.2 * FPS)
+    end_hold = int(2.4 * FPS)
+    fade = int(0.5 * FPS)       # last 0.5 s cross-fades into frame 1, so the Short loops seamlessly
+    first_img = None
     tl += [len(frames) - 1] * end_hold
     camy = frames[0][0][1]
     trails = [[], [], []]
@@ -350,8 +352,9 @@ def render(cfg, c, frames, events, finish, tmp):
         cv.drawRect(skia.Rect(0, 0, W, 300), skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, 300)], [C((0, 0, 0), 200), C((0, 0, 0), 0)])))
         text(cv, cfg.get("hook", "KAUN JEETEGA?"), 540, 110, 78, (255, 255, 255), stroke=10)
         if t < COUNT:
-            text(cv, "INTENSE RACE!" if INTENSE else "Apna colour chuno!", 540, 185, 50, (255, 70, 70) if INTENSE else (255, 230, 80), stroke=8)
-            num = str(3 - int(t))
+            text(cv, "INTENSE RACE!" if INTENSE else cfg.get("sub_hook", "Apna colour chuno!"), 540, 185, 50, (255, 70, 70) if INTENSE else (255, 230, 80), stroke=8)
+            text(cv, "Finish se pehle comment karo!", 540, 1680, 46, (255, 255, 255), stroke=7)
+            num = str(int(COUNT) - int(t))
             sz = 260 * (1.3 - (t % 1) * 0.3)
             text(cv, num, 540, 1500, sz, (255, 230, 80), stroke=14)
         elif t < COUNT + 0.7:
@@ -386,11 +389,24 @@ def render(cfg, c, frames, events, finish, tmp):
             text(cv, "PHOTO FINISH!", 540, 700, 92, (255, 255, 255), stroke=12)
         if n >= len(tl) - end_hold:
             w = order_final[0]
-            cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 120)))
+            cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 165)))
             text(cv, f"{BALLS[w][1]} JEET GAYA!", 540, 880, 120, BALLS[w][0], stroke=14)
             for r_, i in enumerate(order_final):
                 text(cv, f"{['1st', '2nd', '3rd'][r_]}  {BALLS[i][1]}  {finish[i] - COUNT:0.2f}s", 540, 1010 + r_ * 80, 58, BALLS[i][0], stroke=8)
-            text(cv, cfg.get("cta", "Tumhara colour jeeta? Comment karo!"), 540, 1330, 52, (255, 255, 255), stroke=8)
+            text(cv, cfg.get("cta", "Tumhara colour jeeta? Comment karo!"), 540, 1300, 52, (255, 255, 255), stroke=8)
+            # subscribe button (on-video CTA)
+            cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(250, 1390, 830, 1500), 28, 28), skia.Paint(Color=C((230, 30, 40)), AntiAlias=True))
+            text(cv, "SUBSCRIBE", 540, 1466, 64, (255, 255, 255), stroke=0)
+            text(cv, cfg.get("sub_line", "Roz nayi race!"), 540, 1570, 46, (255, 230, 80), stroke=7)
+        # series badge + handle (consistent branding on every frame)
+        if cfg.get("series") and (t < COUNT or n >= len(tl) - end_hold):
+            text(cv, cfg["series"], 540, 250, 40, (180, 200, 255), stroke=6)
+        text(cv, "@bouncebhaiofficial", 540, 1880, 34, (200, 200, 220), stroke=5)
+        if n == 0:
+            first_img = surf.makeImageSnapshot()
+        elif first_img is not None and n >= len(tl) - fade:
+            a = (n - (len(tl) - fade) + 1) / fade
+            cv.drawImage(first_img, 0, 0, skia.SamplingOptions(), skia.Paint(Alphaf=a))
         img = surf.makeImageSnapshot()
         img.save(f"{tmp}/f{n:05d}.jpg", skia.kJPEG, 92)
         seq.append(t)
@@ -468,7 +484,7 @@ if __name__ == "__main__":
         if best is None or sc[0] > best[0]:
             best = (sc[0], seed, c, fr, ev, fin, sc[1])
         b = best[6]
-        if b["changes"] >= (8 if INTENSE else 4) and b["gap"] < (0.5 if INTENSE else 0.8) and 28 <= b["dur"] <= 48 and b["spread"] <= 5 and b["win"] >= 12: break
+        if b["changes"] >= (8 if INTENSE else 4) and b["gap"] < (0.5 if INTENSE else 0.8) and 22 <= b["dur"] <= 34 and b["spread"] <= 5 and b["win"] >= 10: break
         if time.time() - t_start > cfg.get("budget", 150) and best: break
     if not best: raise SystemExit("no race found")
     _, seed, c, fr, ev, fin, info = best
