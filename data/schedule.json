@@ -1,22 +1,15 @@
 {
  "hours_ist": [
-  6,
   7,
-  8,
   9,
-  10,
   11,
-  12,
   13,
   14,
-  15,
   16,
-  17,
   18,
   19,
   20,
-  21,
-  22
+  21
  ],
- "note": "IST hours when a scheduled run may post (runs start ~:40). The dashboard chat agent can change this."
+ "note": "IST hours when a scheduled run may post (runs start ~:40). 10/day since 2026-10-28 (was 17): YouTube caps ~10-13 uploads/day and back-to-back hourly posts were starving each other (3 hourly escapes on 2026-10-28: 208, 0, 0 views). Evening-weighted for Indian viewers. The dashboard chat agent can change this."
 }
