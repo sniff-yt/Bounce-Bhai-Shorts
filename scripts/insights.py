@@ -55,7 +55,7 @@ def videos():
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
         fmt = h.get("format") or ("promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
-                                  "race" if re.search(r"kaun jeetega|race shuru|🏁|🟢", v["title"], re.I) else
+                                  "race" if re.search(r"kaun jeetega|race|winner|🏁|🟢", v["title"], re.I) else
                                   "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
         out.append({"id": v["id"], "title": v["title"], "views": v.get("views", 0), "likes": v.get("likes", 0),
@@ -78,23 +78,32 @@ def promo_due(hours=20):
     return time.time() - last > hours * 3600
 
 
-RACE_TRIAL_UNTIL = os.environ.get("BB_RACE_TRIAL_UNTIL", "2026-10-29")   # head-to-head: race vs ball-escape
+RACE_SHARE = float(os.environ.get("BB_RACE_SHARE", "0.85"))   # owner (2026-10-28): race Shorts get the most views -> lean in
 
 
 ALLOWED_FORMATS = ("race", "sim")   # OWNER'S STRICT RULE (2026-10-25): only ball-race, ball-escape and the daily Bhai Drive game promo. No stories.
 
 
 def pick_format(rng=random):
+    """~85% races, ~15% ball-escapes, plus one Bhai Drive promo a day.
+    Stats check (2026-10-28, videos >= 6 h old): race median 220 views (8 of 11 >= 100), sim median 8 overall /
+    ~150 since 2026-10-22, promo 183. Escapes only take over if they clearly beat races on recent videos."""
     forced = os.environ.get("BB_FORMAT")
     if forced in ALLOWED_FORMATS + ("promo",):
         return forced
     if promo_due():
         return "promo"
-    if time.strftime("%Y-%m-%d", time.gmtime()) <= RACE_TRIAL_UNTIL:
-        return "race" if rng.random() < 0.8 else "sim"   # race is winning: mostly races, a few escapes to keep testing
-    vs = videos()
-    ranked = sorted(ALLOWED_FORMATS, key=lambda f: _score([v for v in vs if v["format"] == f])[0], reverse=True)
-    return ranked[0] if rng.random() < 0.7 else ranked[1]
+    share = RACE_SHARE
+    cutoff = time.time() - 7 * 86400
+    vs = [v for v in videos() if _ts_pub(v) >= cutoff]
+    (rs, rn), (ss, sn) = (_score([v for v in vs if v["format"] == f]) for f in ("race", "sim"))
+    if rn >= 5 and sn >= 5 and ss > rs + 0.7:   # escapes clearly winning lately (~2x views): rebalance, still keep races
+        share = 0.5
+    return "race" if rng.random() < share else "sim"
+
+
+def _ts_pub(v):
+    return time.time() - v["age_h"] * 3600
 
 
 def genre_weights(genres):
