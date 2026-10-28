@@ -134,8 +134,15 @@ def render(cfg, frames, esc, tmpdir):
         # texts (hook on frame 1)
         text_center(dr, 200, cfg["hook"], 66, stroke=4)
         text_center(dr, 420, f"Bounces: {b}", 76, fill=col, stroke=4)
+        if cfg.get("series"):
+            text_center(dr, 115, cfg["series"], 38, fill=(180, 200, 255), stroke=3)
+        text_center(dr, 1840, "@bouncebhaiofficial", 32, fill=(200, 200, 220), stroke=3)
         if esc is not None and t >= esc:
             text_center(dr, 1420, cfg.get("win", "BAHAR NIKAL GAYI!"), 70, fill=(255, 220, 60), stroke=5)
+            if t >= esc + 0.5:   # on-video subscribe CTA on the end beat
+                dr.rounded_rectangle([290*SS, 1560*SS, 790*SS, 1660*SS], radius=26*SS, fill=(230, 30, 40))
+                text_center(dr, 1578, "SUBSCRIBE", 58, stroke=0)
+                text_center(dr, 1690, "Roz naye challenges!", 42, fill=(255, 220, 60), stroke=3)
         else:
             text_center(dr, 1420, cfg["cta"], 46, fill=(220,220,230), stroke=3)
         img = img.resize((W, H), Image.LANCZOS)
