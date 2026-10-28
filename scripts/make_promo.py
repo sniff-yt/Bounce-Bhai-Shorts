@@ -35,6 +35,7 @@ def main(out):
                      "hi": f"भाई ड्राइव फ्री में खेलो 👉 {GAME_URL}"},
         "tags": ["shorts", "car game", "parking game", "android game", "indie game", "car parking", "bhai drive", "gaming"],
         "genre_tag": "#gaming",
+        "hashtags": "#shorts #cargame #parkinggame #indiegame #androidgame #gaming #bhaidrive",
     }
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(cfg, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

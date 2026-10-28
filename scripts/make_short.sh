@@ -150,7 +150,8 @@ except FileNotFoundError:
 history.append({"date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "title": story.get("title", name), "hook": story.get("hook", ""),
                 "video_id": story.get("video_id"), "seed": story.get("seed"),
-                "format": story.get("format", "story"), "genre": story.get("genre"), "topic": story.get("topic")})
+                "format": story.get("format", "story"), "genre": story.get("genre"), "topic": story.get("topic"),
+                "yt_title": (story.get("yt_title") or {}).get("hi_roman"), "series": story.get("series")})
 with open(history_path, "w", encoding="utf-8") as stream:
     json.dump(history, stream, ensure_ascii=False, indent=1)
     stream.write("\n")

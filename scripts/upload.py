@@ -87,8 +87,13 @@ if c.get("format") == "promo":
             "te": "భాయ్ డ్రైవ్: బౌన్స్ భాయ్ సొంత ఫ్రీ కార్ పార్కింగ్ గేమ్. ఆండ్రాయిడ్ + బ్రౌజర్, ఆఫ్‌లైన్, యాడ్స్ లేవు."}
 GAME_URL = os.environ.get("BB_GAME_URL", "https://sniff-yt.github.io/Bounce-Bhai-Shorts/game/")
 FOOT = {k: f"{v}\n🎮 Bhai Drive FREE game: {GAME_URL}" for k, v in FOOT.items()}
-tags_line = f"#shorts #animation #story {c.get('genre_tag', '#facts')}"
-desc = lambda k: f"{c['question'][k]} 👇\n{FOOT[k]}\n{tags_line}"
+tags_line = c.get("hashtags") or f"#shorts #animation #story {c.get('genre_tag', '#facts')}"
+SUB = {"hi_roman": "🔔 Subscribe karo: roz naye physics races & challenges 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
+       "hi": "🔔 सब्सक्राइब करो: रोज़ नई फिज़िक्स रेस और चैलेंज 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
+       "en": "🔔 Subscribe for a new physics race & challenge every day 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
+       "te": "🔔 సబ్‌స్క్రైబ్ చేయండి: రోజూ కొత్త ఫిజిక్స్ రేస్ & ఛాలెంజ్ 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1"}
+_q = lambda k: c["question"][k] if c["question"][k].rstrip().endswith("👇") else f"{c['question'][k]} 👇"
+desc = lambda k: f"{_q(k)}\n{SUB[k]}\n{FOOT[k]}\n{tags_line}"
 yt_t = c["yt_title"]
 
 body = {
@@ -133,7 +138,7 @@ if _live:
 
 # Optionally post a comment (if credentials allow)
 try:
-    comment = c.get("question", {}).get("hi_roman", "")
+    comment = c.get("comment") or c.get("question", {}).get("hi_roman", "")   # API can't pin; this is the first comment
     if comment:
         yt.commentThreads().insert(part="snippet", body={
             "snippet": {"videoId": resp["id"], "topLevelComment": {"snippet": {"textOriginal": comment}}}
