@@ -950,5 +950,21 @@
   "series": "BALL RACE #28",
   "names": null,
   "variant": "classic"
+ },
+ {
+  "date": "2026-10-30T14:09:20.531902+00:00",
+  "title": "Ball escape 20261030_1406",
+  "hook": "Is gap se nikal paayegi?",
+  "video_id": "ggpBrYUc_Rw",
+  "seed": 5366,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Is gap se nikal paayegi? 🔴 | Ball Escape #15 #shorts",
+  "series": "BALL ESCAPE #15",
+  "names": [
+   "GODSON"
+  ],
+  "variant": "gap"
  }
 ]
