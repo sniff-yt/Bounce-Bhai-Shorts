@@ -17,8 +17,12 @@ def hsv(h, s=0.85, v=1.0):
     r, g, b = colorsys.hsv_to_rgb(h % 1, s, v)
     return (int(r*255), int(g*255), int(b*255))
 
-def simulate(seed, gap, spin, grow, max_t=40.0):
+NSEG = 24                 # "break" variant: the ring is 24 bricks; each hit cracks one, at 0 hp it shatters
+
+def simulate(seed, gap, spin, grow, max_t=40.0, mode="gap"):
     rnd = random.Random(seed)
+    hp = [rnd.randint(2, 4) for _ in range(NSEG)] if mode == "break" else None
+    if mode == "break": gap = 360 / NSEG
     sub = 12; dt = 1.0/(FPS*sub)
     p = [CX + rnd.uniform(-60, 60), CY - rnd.uniform(80, 200)]
     ang = rnd.uniform(0, 2*math.pi); sp = rnd.uniform(500, 800)
@@ -39,6 +43,12 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
                 a = math.degrees(math.atan2(dy, dx))
                 diff = (a - gc + 180) % 360 - 180
                 half_ball = math.degrees(r/R)
+                if hp is not None:
+                    rel = (a - gc) % 360; kb = int(rel // gap) % NSEG; ctr = (kb + 0.5) * gap
+                    dd = abs(((rel - ctr) + 180) % 360 - 180)
+                    # passes through a shattered brick (or two neighbouring ones)
+                    lo_ok = hp[kb] <= 0 and (dd < gap/2 - half_ball or hp[(kb + (1 if rel > ctr else -1)) % NSEG] <= 0)
+                    diff = 0.0 if lo_ok else 999
                 if abs(diff) < gap/2 - half_ball:
                     pass  # flying through the gap
                 elif d < rin + 4 or abs(diff) >= gap/2:
@@ -55,13 +65,18 @@ def simulate(seed, gap, spin, grow, max_t=40.0):
                         v = [v[0]/spd*target, v[1]/spd*target]
                         bounces += 1; r = min(r + grow, r_max)
                         events.append((t, bounces))
+                        if hp is not None and hp[kb] > 0:
+                            hp[kb] -= 1
+                            if hp[kb] == 0: events.append((t, -1 - kb))      # brick shattered
                     p = [CX + nx*(rin - r), CY + ny*(rin - r)]
             if escaped_at is None and d - r > R + TH/2:
                 escaped_at = t
-        frames.append((p[0], p[1], r, (g0 + spin*t) % 360, bounces))
+        frames.append((p[0], p[1], r, (g0 + spin*t) % 360, bounces, tuple(hp) if hp else None))
         if escaped_at is not None and t > escaped_at + 2.2:
             break
     return frames, events, escaped_at
+
+def _hits(ev): return [e for e in ev if e[1] > 0]
 
 def find(cfg):
     lo, hi = cfg.get("target", [22, 28])
@@ -69,13 +84,13 @@ def find(cfg):
     import time
     best, best_d, t0 = None, 1e9, time.time()
     for seed in range(s0, s0 + 4000):
-        fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"])
-        if len(ev) > 160:
+        fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"], mode=cfg.get("variant", "gap"))
+        if len(_hits(ev)) > 160:
             continue
-        if esc and lo <= esc <= hi and len(ev) >= 25:
+        if esc and lo <= esc <= hi and len(_hits(ev)) >= 25:
             return seed, fr, ev, esc
         if esc and esc >= 12:  # remember the closest usable escape so a run never fails here
-            d = (lo - esc if esc < lo else esc - hi if esc > hi else 0) + max(0, 25 - len(ev))
+            d = (lo - esc if esc < lo else esc - hi if esc > hi else 0) + max(0, 25 - len(_hits(ev)))
             if d < best_d:
                 best, best_d = (seed, fr, ev, esc), d
         if time.time() - t0 > 600 and best:
@@ -107,11 +122,15 @@ def text_center(dr, y, txt, size, fill=(255,255,255), stroke=0, max_w=960):
         dr.text(((W*SS - w)/2, (y + i*size*1.18)*SS), l, font=f, fill=fill,
                 stroke_width=stroke*SS, stroke_fill=(0,0,0))
 
-def render(cfg, frames, esc, tmpdir):
+def render(cfg, frames, esc, tmpdir, events=()):
     os.makedirs(tmpdir, exist_ok=True)
     trail = []
     gap = cfg["gap_deg"]
-    for i, (x, y, r, gc, b) in enumerate(frames):
+    jelly = bool(cfg.get("jelly"))
+    hit_t = [e[0] for e in events if e[1] > 0]
+    breaks = [(e[0], -1 - e[1]) for e in events if e[1] < 0]
+    name = (cfg.get("names") or [None])[0]
+    for i, (x, y, r, gc, b, hp) in enumerate(frames):
         t = i / FPS
         img = Image.new("RGB", (W*SS, H*SS), (10, 10, 18))
         dr = ImageDraw.Draw(img)
@@ -120,7 +139,24 @@ def render(cfg, frames, esc, tmpdir):
         # ring
         bb = [(CX-R)*SS, (CY-R)*SS, (CX+R)*SS, (CY+R)*SS]
         ring_col = hsv(hue + 0.5, 0.6, 1.0)
-        if esc is None or t < esc:
+        if hp is not None:
+            sg = 360 / NSEG
+            for k, h in enumerate(hp):
+                if h <= 0: continue
+                cc = ring_col if h >= 3 else (255, 200, 80) if h == 2 else (255, 90, 70)   # cracked bricks heat up
+                dr.arc(bb, gc + k*sg + 1.2, gc + (k + 1)*sg - 1.2, fill=cc, width=TH*SS)
+            for (bt, k) in breaks:                     # shards fly off a shattered brick
+                age = t - bt
+                if not (0 <= age < 1.0): continue
+                rs = random.Random(int(bt*1000) + k)
+                a0 = math.radians(gc + (k + 0.5)*sg)
+                for _ in range(14):
+                    sp_ = rs.uniform(150, 520); da = rs.uniform(-0.5, 0.5)
+                    px = CX + math.cos(a0)*R + math.cos(a0 + da)*sp_*age
+                    py = CY + math.sin(a0)*R + math.sin(a0 + da)*sp_*age + 900*age*age
+                    q = rs.uniform(5, 11)*(1 - age)
+                    dr.polygon([((px - q)*SS, (py - q)*SS), ((px + q)*SS, (py - q*0.3)*SS), ((px - q*0.2)*SS, (py + q)*SS)], fill=ring_col)
+        elif esc is None or t < esc:
             dr.arc(bb, gc + gap/2, gc + 360 - gap/2, fill=ring_col, width=TH*SS)
         # trail
         trail.append((x, y, r, col)); trail[:] = trail[-14:]
@@ -129,13 +165,24 @@ def render(cfg, frames, esc, tmpdir):
             c = tuple(int(10 + (cc-10)*k*0.55) for cc in tc)
             rr = tr*(0.5+0.5*k)
             dr.ellipse([(tx-rr)*SS, (ty-rr)*SS, (tx+rr)*SS, (ty+rr)*SS], fill=c)
-        dr.ellipse([(x-r)*SS, (y-r)*SS, (x+r)*SS, (y+r)*SS], fill=col,
+        sx_ = sy_ = 1.0
+        if jelly:     # jelly ball: squash + damped wobble after every bounce, glossy translucent core
+            lh = max([h for h in hit_t if h <= t] or [-9]); age = t - lh
+            if age < 0.8:
+                a_ = 0.28*math.exp(-age*7)*math.cos(age*34); sx_, sy_ = 1 + a_, 1 - a_*0.9
+        dr.ellipse([(x-r*sx_)*SS, (y-r*sy_)*SS, (x+r*sx_)*SS, (y+r*sy_)*SS], fill=col,
                    outline=(255,255,255), width=3*SS)
+        if jelly:
+            lc = tuple(min(255, cc + 90) for cc in col)
+            dr.ellipse([(x-r*sx_*0.55+r*0.1)*SS, (y-r*sy_*0.55+r*0.15)*SS, (x+r*sx_*0.55+r*0.1)*SS, (y+r*sy_*0.55+r*0.15)*SS], fill=lc)
+            dr.ellipse([(x-r*0.55)*SS, (y-r*0.6)*SS, (x-r*0.15)*SS, (y-r*0.3)*SS], fill=(255, 255, 255))
         # texts (hook on frame 1)
         text_center(dr, 200, cfg["hook"], 66, stroke=4)
         text_center(dr, 420, f"Bounces: {b}", 76, fill=col, stroke=4)
         if cfg.get("series"):
             text_center(dr, 115, cfg["series"], 38, fill=(180, 200, 255), stroke=3)
+        if name:
+            text_center(dr, 515, f"{name} KI BALL", 38, fill=col, stroke=3)
         text_center(dr, 1840, "@bouncebhaiofficial", 32, fill=(200, 200, 220), stroke=3)
         if esc is not None and t >= esc:
             text_center(dr, 1420, cfg.get("win", "BAHAR NIKAL GAYI!"), 70, fill=(255, 220, 60), stroke=5)
@@ -153,7 +200,13 @@ def audio(events, n_frames, esc, path):
     sr = 44100; n = int(n_frames/FPS*sr) + sr
     buf = np.zeros(n, dtype=np.float32)
     scale = [0, 2, 4, 7, 9]  # pentatonic
+    R_ = np.random.RandomState(5)
     for (t, b) in events:
+        if b < 0:      # brick shatter: short bright noise burst
+            L = int(0.35*sr); tt = np.arange(L)/sr
+            x = R_.randn(L)*np.exp(-tt*14); s = int(t*sr)
+            buf[s:s+L] += 0.35*x[:max(0, min(L, n-s))]
+            continue
         note = 60 + scale[b % 5] + 12*((b//5) % 3)
         fr = 440*2**((note-69)/12)
         L = int(0.22*sr); tt = np.arange(L)/sr
@@ -172,10 +225,10 @@ def audio(events, n_frames, esc, path):
 if __name__ == "__main__":
     cfg = json.load(open(sys.argv[1]))
     seed, frames, events, esc = find(cfg)
-    print("seed", seed, "escape", round(esc, 2), "bounces", len(events), "frames", len(frames))
+    print("seed", seed, "escape", round(esc, 2), "bounces", len(_hits(events)), "frames", len(frames))
     tmp = cfg["out"] + ".frames"
     subprocess.run(["rm", "-rf", tmp])
-    n = render(cfg, frames, esc, tmp)
+    n = render(cfg, frames, esc, tmp, events)
     wav = cfg["out"] + ".wav"; audio(events, n, esc, wav)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{tmp}/f%05d.png",
                     "-i", wav, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium",

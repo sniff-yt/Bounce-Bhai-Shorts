@@ -12,6 +12,11 @@ HOOKS = [
     ("Sirf 1 gap... bahar nikal paayegi? 🔴", "Only 1 gap... can it get out? 🔴", "ఒకే గ్యాప్... బయటపడుతుందా? 🔴", "सिर्फ 1 गैप... बाहर निकल पाएगी? 🔴"),
     ("Guess karo: kab nikalegi? ⏱️", "Guess when it escapes ⏱️", "ఎప్పుడు బయటపడుతుందో ఊహించండి ⏱️", "गेस करो: कब निकलेगी? ⏱️"),
 ]
+BREAK_HOOKS = [
+    ("Deewar tod ke nikal paayegi? 🧱", "Can it smash its way out? 🧱", "గోడ పగలగొట్టి బయటపడుతుందా? 🧱", "दीवार तोड़ के निकल पाएगी? 🧱"),
+    ("Koi gap nahi... phir bhi bahar? 😱", "No gap... can it still escape? 😱", "గ్యాప్ లేదు... అయినా బయటకు? 😱", "कोई गैप नहीं... फिर भी बाहर? 😱"),
+    ("Kitne hit mein deewar tootegi? 🧱", "How many hits to break the wall? 🧱", "ఎన్ని హిట్లలో గోడ పగులుతుంది? 🧱", "कितने हिट में दीवार टूटेगी? 🧱"),
+]
 CTAS = ["Comment karo: kitne bounce?", "Apna guess comment karo!", "Pehle guess karo, phir dekho!"]   # on-screen font has no emoji
 
 
@@ -28,6 +33,10 @@ def main(out):
     recent = [h.get("yt_title") or h.get("hook", "") for h in hist if h.get("format") == "sim"][-2:]
     cands = [h for h in HOOKS if not any(r.startswith(h[0].rsplit(" ", 1)[0]) for r in recent)] or HOOKS
     hr, en, te, hd = rng.choice(cands)
+    variant = "break" if rng.random() < 0.35 else "gap"     # ~1 in 3: no gap, the ball must SMASH its way out
+    if variant == "break":
+        hr, en, te, hd = rng.choice(BREAK_HOOKS)
+    jelly = rng.random() < 0.35
     name = os.path.splitext(os.path.basename(out))[0]
     ep = 1 + sum(1 for h in hist if h.get("format") == "sim" and h.get("video_id") and not h.get("deleted"))
     series = f"Ball Escape #{ep}"
@@ -36,7 +45,7 @@ def main(out):
         "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 99999),
         "hook": hr.rsplit(" ", 1)[0], "cta": rng.choice(CTAS),
         "gap_deg": rng.randint(24, 40), "spin": rng.randint(40, 110), "grow": round(rng.uniform(0.8, 2.0), 2),
-        "target": [22, 30],
+        "target": [22, 30], "variant": variant, "jelly": jelly,
         "series": series.upper(),
         "yt_title": {k: f"{v} | {series} #shorts" for k, v in (("hi_roman", hr), ("en", en), ("te", te), ("hi", hd))},
         "question": {"hi_roman": "Tumhara guess kya tha? Kitne bounce? 👇", "en": "What was your guess? How many bounces? 👇",

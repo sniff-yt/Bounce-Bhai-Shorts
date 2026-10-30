@@ -21,10 +21,12 @@ CX, CY, CR = 540, 420, 290
 GAP = 21                  # arena exit gap (deg)
 COUNT = 2.0               # countdown seconds (gate closed): short, so the race starts ~2 s in (Shorts hook)
 INTENSE = False           # "intense" races: harder physics, closer finishes, red pulse, faster beat
+JELLY = False             # "jelly" races: soft-body look (balls squash and wobble on every hit), bouncier walls
+NAMES = [b[1] for b in BALLS]   # labels on screen; cfg "names" swaps in commenter names (fan-named balls)
 
 # ---------------- course ----------------
 def make_course(rnd):
-    segs, bars, sliders, bumpers, pads = [], [], [], [], []
+    segs, bars, sliders, bumpers, pads, glass, sand = [], [], [], [], [], [], []
     n = 90
     a0, a1 = 90 + GAP / 2, 450 - GAP / 2
     pts = [(CX + CR * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
@@ -34,11 +36,14 @@ def make_course(rnd):
     y = CY + CR * math.cos(math.radians(GAP / 2))
     segs += [((CX - gx, y), (CX - gx, 1000)), ((CX + gx, y), (CX + gx, 1000))]
     y = 1000
-    pool = ["zigzag", "spinners", "bumpers", "slider", "funnel", "pads"]
+    pool = ["zigzag", "spinners", "bumpers", "slider", "funnel", "pads", "glass", "sand"]
     kinds = []
     while len(kinds) < rnd.randint(6, 8):   # tight ~22-34 s races (Shorts retention; 10-12 sections made 35-45 s)
         k = rnd.choice(pool)
+        if k in ("glass", "sand") and kinds.count(k) >= (2 if k == "glass" else 1): continue
         if not kinds or k != kinds[-1]: kinds.append(k)
+    if not any(k in ("glass", "sand") for k in kinds):     # every race gets a new-physics section (variety)
+        kinds.insert(rnd.randint(1, len(kinds) - 1), rnd.choice(["glass", "glass", "sand"]))
     for k in kinds:
         if k == "zigzag":
             d = rnd.choice([-1, 1])
@@ -63,6 +68,15 @@ def make_course(rnd):
         elif k == "funnel":
             segs += [((XL, y + 40), (480, y + 260)), ((XR, y + 40), (600, y + 260))]
             y += 360
+        elif k == "glass":
+            # breakable glass floor (two panes): balls pile on it until enough hits shatter a pane
+            gy = y + 190
+            glass.append(dict(seg=(XL, gy, 540, gy), hp=rnd.uniform(1900, 2600)))
+            glass.append(dict(seg=(540, gy, XR, gy), hp=rnd.uniform(1900, 2600)))
+            y += 400
+        elif k == "sand":
+            sand.append((XL, y + 60, XR, y + 380))          # sand pit: heavy drag, balls plough through it
+            y += 440
         elif k == "pads":
             pads.append((XL, y + 220, 470, y + 300))   # joined to the walls: no slot for a ball to wedge into
             pads.append((610, y + 300, XR, y + 220))
@@ -71,7 +85,8 @@ def make_course(rnd):
     y += 420                 # open sprint straight before the line: chasers can close in -> photo finishes
     finish = y
     segs += [((XL, 1000), (XL, finish + 400)), ((XR, 1000), (XR, finish + 400)), ((XL, finish + 400), (XR, finish + 400))]
-    return dict(segs=segs, bars=bars, sliders=sliders, bumpers=bumpers, pads=pads, finish=finish, kinds=kinds)
+    return dict(segs=segs, bars=bars, sliders=sliders, bumpers=bumpers, pads=pads, glass=glass, sand=sand,
+                finish=finish, kinds=kinds)
 
 def moving(c, t):
     """Moving walls at time t: list of (x1,y1,x2,y2, vx_fn) as segments + their angular data."""
@@ -170,7 +185,7 @@ def simulate(seed, max_t=70.0):
                 p[0] += v[0] * dt; p[1] += v[1] * dt
                 near = [sg for sg in statics if min(sg[1], sg[3]) - 80 < p[1] < max(sg[1], sg[3]) + 80]
                 for sg in near:
-                    hit = collide_seg(p, v, *sg, rad, 0.72)
+                    hit = collide_seg(p, v, *sg, rad, 0.8 if JELLY else 0.72)
                     if hit > 320: events.append((ts, "wall", i, hit))
                 if ts < COUNT:
                     hit = collide_seg(p, v, CX - 70, CY + CR - 4, CX + 70, CY + CR - 4, rad, 0.72)
@@ -197,6 +212,23 @@ def simulate(seed, max_t=70.0):
                         # full-strength upward kicks trapped balls pinballing for 10+ s (dead air, huge gaps)
                         v[0] += nx * KICK; v[1] += ny * KICK * (0.45 if ny < 0 else 1.0)
                         events.append((ts, "bump", i, (bx, by)))
+                for (x1, y1, x2, y2) in c["sand"]:
+                    if x1 < p[0] < x2 and y1 < p[1] < y2:       # sand: strong drag, a little sideways wobble
+                        k = 5.0 * dt; v[0] *= 1 - k; v[1] *= 1 - k
+                        v[0] += rnd.uniform(-1, 1) * 900 * dt
+                for gl in c["glass"]:
+                    if gl.get("broke") is not None: continue
+                    x1, y1, x2, y2 = gl["seg"]
+                    if abs(p[1] - y1) > rad + 4: continue
+                    hit = collide_seg(p, v, x1, y1, x2, y2, rad, 0.55)
+                    if hit > 0 and ts > COUNT:
+                        gl.setdefault("first", ts)
+                        if hit > 120:
+                            gl["dmg"] = gl.get("dmg", 0) + hit; gl.setdefault("hits", []).append(ts)
+                        # shatters on enough damage, or after ~1.8 s of sitting on it (no stuck races)
+                        if gl.get("dmg", 0) > gl["hp"] or ts - gl["first"] > 1.8:
+                            gl["broke"] = ts; v[1] += 250
+                            events.append((ts, "glass", i, ((x1 + x2) / 2, y1)))
                 for (x1, y1, x2, y2) in c["pads"]:
                     before = v[1]
                     above = p[1] < y1 + (y2 - y1) * max(0.0, min(1.0, (p[0] - x1) / (x2 - x1)))
@@ -397,11 +429,16 @@ class Look:
         self.vig = skia.Paint(Shader=skia.GradientShader.MakeRadial((540, 900), 1250, [C((0, 0, 0), 0), C((0, 0, 0), 0), C((0, 0, 0), 175)], [0.0, 0.55, 1.0]))
         self.bg = skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, H)], [C((30, 10, 58)), C((4, 16, 40))]))
 
-def ball(cv, x, y, col, vx, vy, lead):
-    """Cel-shaded anime ball: bold outline, hard shadow crescent, rim light, specular highlight, speed smear."""
+def ball(cv, x, y, col, vx, vy, lead, wob=None):
+    """Cel-shaded anime ball: bold outline, hard shadow crescent, rim light, specular highlight, speed smear.
+    wob = (age, strength) of the last hit: jelly balls squash and wobble (damped spring)."""
     sp = math.hypot(vx, vy)
     cv.save(); cv.translate(x, y)
-    if sp > 700:       # squash & stretch along the motion = motion smear
+    if wob is not None:
+        age, st_ = wob
+        a_ = st_ * math.exp(-age * 7) * math.cos(age * 34)
+        cv.scale(1 + a_, 1 - a_ * 0.9)
+    elif sp > 700:       # squash & stretch along the motion = motion smear
         ang = math.degrees(math.atan2(vy, vx)); st = min(0.28, (sp - 700) / 6000)
         cv.rotate(ang); cv.scale(1 + st, 1 - st * 0.55); cv.rotate(-ang)
     cv.drawCircle(0, 0, BR + 16, skia.Paint(Color=C(col, 150), AntiAlias=True, MaskFilter=skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, 16)))
@@ -411,6 +448,10 @@ def ball(cv, x, y, col, vx, vy, lead):
     cv.save(); cv.clipPath(skia.Path().addCircle(0, 0, BR), skia.ClipOp.kIntersect, True)
     cv.drawCircle(0, 0, BR, skia.Paint(Color=C(darken(col, 0.58)), AntiAlias=True))        # shadow tone
     cv.drawCircle(-BR * 0.2, -BR * 0.22, BR * 0.93, skia.Paint(Color=C(col), AntiAlias=True))  # lit tone (hard cel edge)
+    if JELLY:   # jelly: translucent glossy core + inner bubbles
+        cv.drawCircle(BR * 0.1, BR * 0.15, BR * 0.6, skia.Paint(Color=C(lighten(col, 90), 120), AntiAlias=True, MaskFilter=skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, 8)))
+        for (bx_, by_, br_) in ((0.35, 0.3, 0.12), (-0.1, 0.45, 0.08), (0.45, -0.05, 0.07)):
+            cv.drawCircle(BR * bx_, BR * by_, BR * br_, skia.Paint(Color=C((255, 255, 255), 150), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=2))
     cv.drawArc(skia.Rect(-BR + 3, -BR + 3, BR - 3, BR - 3), 15, 95, False,
                skia.Paint(Color=C(lighten(col, 150), 230), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=4, StrokeCap=skia.Paint.kRound_Cap))  # rim light
     cv.restore()
@@ -464,7 +505,7 @@ def build(cfg, c, frames, events, finish):
             held_from = t
     impact_t = [te for (te, pt, st) in hits] + [f1]
     shake_ev = [(te, 1.0 if kind == "clash" else 0.6) for (te, kind, i, d) in events
-                if kind in ("bump", "pad") or (kind == "clash" and d[3] > 450 and te > COUNT)]
+                if kind in ("bump", "pad", "glass") or (kind == "clash" and d[3] > 450 and te > COUNT)]
     fy = c["finish"]
     # camera pass: tracking + push-ins on the leading pack, close-up push during the photo-finish replay
     cam, slots = [], []
@@ -578,6 +619,54 @@ def draw_shot(n, look):
         cv.drawLine(x1, y1, x2, y2, skia.Paint(Color=C((90, 255, 120), 160), AntiAlias=True, StrokeWidth=T + 22, StrokeCap=rc, MaskFilter=blur(14)))
         cv.drawLine(x1, y1, x2, y2, skia.Paint(Color=C((8, 6, 18)), AntiAlias=True, StrokeWidth=T + 9, StrokeCap=rc))
         cv.drawLine(x1, y1, x2, y2, skia.Paint(Color=C((110, 255, 130)), AntiAlias=True, StrokeWidth=T, StrokeCap=rc))
+    for (x1, y1, x2, y2) in c["sand"]:
+        if y2 < vy0 or y1 > vy1: continue
+        rr_s = random.Random(int(y1))
+        cv.drawRect(skia.Rect(x1, y1, x2, y2), skia.Paint(Shader=skia.GradientShader.MakeLinear(
+            [(0, y1), (0, y2)], [C((236, 196, 120), 215), C((176, 128, 64), 235)])))
+        for _ in range(140):                                   # grains
+            gx, gy = rr_s.uniform(x1, x2), rr_s.uniform(y1, y2)
+            cv.drawCircle(gx, gy, rr_s.uniform(1.5, 3.5), skia.Paint(Color=C((120, 84, 40) if rr_s.random() < .5 else (255, 230, 170), 160), AntiAlias=True))
+        cv.drawLine(x1, y1, x2, y1, skia.Paint(Color=C((255, 226, 150), 230), AntiAlias=True, StrokeWidth=6))
+        if live and not (fx and fx[0] == "flash") and t < f1:
+            text(cv, "SAND", 540, y1 - 18, 40, (255, 214, 130), stroke=6, alpha=200)
+        for i in range(3):                                     # dust kicked up by balls ploughing through
+            if x1 < P[i][0] < x2 and y1 < P[i][1] < y2:
+                rd = random.Random(n * 7 + i)
+                for _ in range(10):
+                    a_ = rd.uniform(math.pi, 2 * math.pi); d_ = rd.uniform(20, 90)
+                    cv.drawCircle(P[i][0] + math.cos(a_) * d_, P[i][1] + math.sin(a_) * d_ * 0.6, rd.uniform(3, 7),
+                                  skia.Paint(Color=C((250, 220, 160), 170), AntiAlias=True))
+    for gl in c["glass"]:
+        x1, y1, x2, y2 = gl["seg"]
+        if y1 < vy0 or y1 > vy1: continue
+        broke = gl.get("broke")
+        if broke is None or t < broke:
+            nh = sum(1 for h in gl.get("hits", []) if h <= t)
+            cv.drawLine(x1, y1, x2, y2, skia.Paint(Color=C((120, 240, 255), 150), AntiAlias=True, StrokeWidth=T + 26, MaskFilter=blur(14)))
+            cv.drawLine(x1, y1, x2, y2, skia.Paint(Color=C((190, 248, 255), 150), AntiAlias=True, StrokeWidth=T + 4))
+            cv.drawLine(x1, y1 - 6, x2, y2 - 6, skia.Paint(Color=C((255, 255, 255), 230), AntiAlias=True, StrokeWidth=4))
+            rc_ = random.Random(int(x1 + y1))
+            for q in range(min(nh, 10)):                        # cracks spread with every hit
+                cx_ = rc_.uniform(x1 + 40, x2 - 40); L_ = rc_.uniform(40, 120)
+                for _ in range(3):
+                    a_ = rc_.uniform(-0.6, 0.6)
+                    cv.drawLine(cx_, y1 - 12, cx_ + math.cos(a_) * L_ * rc_.choice([-1, 1]), y1 - 12 + math.sin(a_) * 22,
+                                skia.Paint(Color=C((255, 255, 255), 235), AntiAlias=True, StrokeWidth=3))
+            if live and nh == 0 and not (fx and fx[0] == "flash") and t < f1 and x1 == XL:
+                text(cv, "GLASS", 540, y1 - 34, 40, (170, 240, 255), stroke=6, alpha=200)
+        elif t - broke < 1.2:                                   # shards fly and fall
+            age = t - broke; rs = random.Random(int(x1 * 3 + y1))
+            for _ in range(26):
+                sx0 = rs.uniform(x1, x2); vx_ = rs.uniform(-260, 260); vy_ = rs.uniform(-420, 80); rot = rs.uniform(-8, 8)
+                px_, py_ = sx0 + vx_ * age, y1 + vy_ * age + 1500 * age * age
+                sz = rs.uniform(10, 24); a_ = rot * age
+                pth_ = skia.Path(); pth_.moveTo(px_ + math.cos(a_) * sz, py_ + math.sin(a_) * sz)
+                pth_.lineTo(px_ + math.cos(a_ + 2.3) * sz * .7, py_ + math.sin(a_ + 2.3) * sz * .7)
+                pth_.lineTo(px_ + math.cos(a_ + 4.1) * sz * .9, py_ + math.sin(a_ + 4.1) * sz * .9); pth_.close()
+                cv.drawPath(pth_, skia.Paint(Color=C((200, 250, 255), 230 * (1 - age / 1.2)), AntiAlias=True))
+            if age < 0.12:
+                cv.drawCircle((x1 + x2) / 2, y1, 160, skia.Paint(Color=C((220, 250, 255), 200 * (1 - age / 0.12)), AntiAlias=True, MaskFilter=blur(40)))
     if fy - 60 < vy1 and kind != "end":          # nothing from the course shows through the end card
         for q in range(0, 1000 // 40):
             for r2 in range(2):
@@ -625,7 +714,12 @@ def draw_shot(n, look):
                 ll = L * (0.6 + 0.4 * ((hash((n // 2, i, off_)) % 100) / 100))
                 cv.drawLine(bx_, by_, bx_ - ux * ll, by_ - uy * ll, skia.Paint(Color=C((255, 255, 255), min(170, (sp - 1250) * 0.25)), AntiAlias=True, StrokeWidth=3.5, StrokeCap=rc))
     for i in sorted(range(3), key=lambda i: i == leader):
-        ball(cv, P[i][0], P[i][1], PAL[i], *vel[i], i == leader and t > COUNT + 0.6 and kind != "end")
+        wob = None
+        if JELLY:
+            hs = _R["imp"].get(i, [])
+            k_ = next((q for q in range(len(hs) - 1, -1, -1) if hs[q][0] <= t), None)
+            if k_ is not None and t - hs[k_][0] < 0.8: wob = (t - hs[k_][0], hs[k_][1])
+        ball(cv, P[i][0], P[i][1], PAL[i], *vel[i], i == leader and t > COUNT + 0.6 and kind != "end", wob)
     cv.restore()
     # ---- grade (contrast + saturation) and bloom ----
     img = surf.makeImageSnapshot()
@@ -690,8 +784,8 @@ def draw_shot(n, look):
         if la > 0:
             o = B["ords"][min(int(tk / 2), len(B["ords"]) - 1)]; sy_ = B["slots"][n]
             for r_ in range(3):
-                i = o[r_]; col, name = PAL[i], BALLS[i][1]; y0 = sy_[i]
-                rect = skia.Rect(28, y0 - 23, 232, y0 + 23)
+                i = o[r_]; col, name = PAL[i], NAMES[i]; y0 = sy_[i]
+                rect = skia.Rect(28, y0 - 23, max(232, 136 + 19 * len(name)), y0 + 23)
                 cv.drawRRect(skia.RRect.MakeRectXY(rect, 23, 23), skia.Paint(Color=C((0, 0, 0), 0.62 * la), AntiAlias=True))
                 if r_ == 0:
                     cv.drawRRect(skia.RRect.MakeRectXY(rect, 23, 23), skia.Paint(Color=C((255, 214, 60), la), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=3))
@@ -724,9 +818,13 @@ def draw_shot(n, look):
         cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 215)))
         if cfg.get("series"):      # same spot as on frame 1, so the loop cross-fade doesn't double it
             text(cv, cfg["series"], 540, 175, 40, (190, 205, 255), stroke=6)
-        text(cv, f"{BALLS[w][1]} JEET GAYA!", 540, 880, 120, PAL[w], stroke=14)
+        wl = f"{NAMES[w]} JEET GAYA!"
+        text(cv, wl, 540, 880, min(120, int(1700 / max(1, len(wl)))), PAL[w], stroke=14)
         for r_, i in enumerate(B["order_final"]):
-            text(cv, f"{['1st', '2nd', '3rd'][r_]}  {BALLS[i][1]}  {finish[i] - COUNT:0.2f}s", 540, 1010 + r_ * 80, 58, lighten(PAL[i], 20), stroke=8)
+            rl = f"{['1st', '2nd', '3rd'][r_]}  {NAMES[i]}  {finish[i] - COUNT:0.2f}s"
+            text(cv, rl, 540, 1010 + r_ * 80, min(58, int(1650 / max(1, len(rl)))), lighten(PAL[i], 20), stroke=8)
+        if NAMES != [b[1] for b in BALLS]:
+            text(cv, "Comment karo, agli race mein tumhari ball!", 540, 1250, 40, (220, 220, 235), stroke=6)
         cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(250, 1330, 830, 1440), 28, 28), skia.Paint(Color=C((230, 30, 40)), AntiAlias=True))
         text(cv, "SUBSCRIBE", 540, 1406, 64, (255, 255, 255), stroke=0)
         text(cv, cfg.get("sub_line", "Roz nayi race!"), 540, 1520, 46, (255, 226, 70), stroke=7)
@@ -754,7 +852,14 @@ def render(cfg, c, frames, events, finish, tmp, workers=1):
     bump_t = {}
     for (te, kind, i, data) in events:
         if kind == "bump": bump_t.setdefault(data, []).append(te)
-    _R.update(cfg=cfg, c=c, frames=frames, events=events, finish=finish, B=B, bump_t=bump_t,
+    imp = {}
+    for (te, kind, i, data) in events:   # per-ball hit times + strength for the jelly wobble
+        if kind in ("wall", "kick", "bump", "pad", "clash", "glass"):
+            stv = data if isinstance(data, (int, float)) else (data[3] if kind == "clash" else 900)
+            imp.setdefault(i, []).append((te, min(0.32, 0.08 + stv / 6000)))
+            if kind == "clash": imp.setdefault(data[0], []).append((te, min(0.32, 0.08 + data[3] / 6000)))
+    for i in imp: imp[i].sort()
+    _R.update(cfg=cfg, c=c, frames=frames, events=events, finish=finish, B=B, bump_t=bump_t, imp=imp,
               clashes=[(te, i, d) for (te, kind, i, d) in events if kind == "clash" and d[3] > 300 and te > COUNT])
     N = len(B["shots"]); step = 60
     chunks = [(lo, min(N, lo + step), tmp) for lo in range(0, N, step)]
@@ -846,6 +951,9 @@ def audio(events, finish, B, path):
             last[i] = te; add(tone([523.3, 659.3, 784.0][i] * (1.5 if kind == "kick" else 1), 0.12, 26), o, 0.12)
         elif kind == "bump":
             sw = np.arange(int(0.25 * sr)) / sr; add(np.sin(2 * np.pi * (300 * sw + 900 * sw ** 2)) * np.exp(-sw * 10), o, 0.24)
+        elif kind == "glass":       # shatter: bright noise burst + glassy tinkles
+            add(crash(0.9), o, 0.5)
+            for h in range(5): add(tone(2600 + 700 * h, 0.25, 14), o + 0.03 * h, 0.07)
         elif kind == "pad":
             sw = np.arange(int(0.35 * sr)) / sr; add(np.sin(2 * np.pi * (200 * sw + 1400 * sw ** 2)) * np.exp(-sw * 7), o, 0.22)
     lw = -9
@@ -892,7 +1000,8 @@ def good_enough(b):
 if __name__ == "__main__":
     import multiprocessing as mp
     cfg = json.load(open(sys.argv[1]))
-    INTENSE = bool(cfg.get("intense"))
+    INTENSE = bool(cfg.get("intense")); JELLY = bool(cfg.get("jelly"))
+    if cfg.get("names") and len(cfg["names"]) == 3: NAMES = [str(x)[:12] for x in cfg["names"]]
     s0 = cfg.get("seed", random.randint(1, 10 ** 6))
     best, t_start, n_ok = None, time.time(), 0
     workers = max(1, min(8, os.cpu_count() or 1))

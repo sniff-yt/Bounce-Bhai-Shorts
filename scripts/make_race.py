@@ -41,6 +41,7 @@ def pick_hook(rng, pool, hist):
 def main(out):
     rng = random.Random()
     intense = rng.random() < 0.35   # ~1 in 3 races is an "intense" one
+    jelly = rng.random() < 0.35     # ~1 in 3 races uses soft jelly balls (variety: new physics look)
     hist = _history()
     _, hr, en, te, hd, sub = pick_hook(rng, INTENSE_HOOKS if intense else HOOKS, hist)
     name = os.path.splitext(os.path.basename(out))[0]
@@ -50,7 +51,8 @@ def main(out):
         "format": "race", "title": f"Ball race {name[-13:]}", "topic": "ball race",
         # parallel search (all runner cores) for the closest, most contested race; on-screen text is only the hook
         "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 400, "budget": 170,
-        "hook": "KAUN JEETEGA?", "intense": intense,
+        "hook": "JELLY RACE!" if jelly else "KAUN JEETEGA?", "intense": intense, "jelly": jelly,
+        "variant": "jelly" if jelly else ("intense" if intense else "classic"),
         "series": series.upper(), "sub_line": "Roz nayi race!",
         "yt_title": {k: f"{v} | {series} #shorts" for k, v in (("hi_roman", hr), ("en", en), ("te", te), ("hi", hd))},
         "question": {"hi_roman": "Tumhara colour kaunsa tha? 👇", "en": "Which colour did you pick? 👇",
@@ -65,7 +67,7 @@ def main(out):
     }
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(cfg, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print("race:", "INTENSE" if intense else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"])
+    print("race:", "INTENSE" if intense else "", "JELLY" if jelly else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"])
 
 
 if __name__ == "__main__":

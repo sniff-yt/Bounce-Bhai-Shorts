@@ -110,11 +110,13 @@ animate_and_post() {
     echo "::notice title=timing::render promo $((SECONDS - T))s"
   elif [ "$FORMAT" = "race" ]; then
     live stage "Racing the balls through the parkour" --pct 40
+    python scripts/fan_names.py "out/$NAME.json" || true
     python engine/sim_race.py "out/$NAME.json"
     cp "out/$NAME.mp4" "out/${NAME}_final.mp4"
     echo "::notice title=timing::render race $((SECONDS - T))s; $(cat "out/$NAME.mp4.json" 2>/dev/null)"
   elif [ "$FORMAT" = "sim" ]; then
     live stage "Simulating the ball escape" --pct 40
+    python scripts/fan_names.py "out/$NAME.json" || true
     python engine/sim_escape.py "out/$NAME.json"
     cp "out/$NAME.mp4" "out/${NAME}_final.mp4"
     echo "::notice title=timing::render sim $((SECONDS - T))s"
@@ -151,7 +153,8 @@ history.append({"date": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 "title": story.get("title", name), "hook": story.get("hook", ""),
                 "video_id": story.get("video_id"), "seed": story.get("seed"),
                 "format": story.get("format", "story"), "genre": story.get("genre"), "topic": story.get("topic"),
-                "yt_title": (story.get("yt_title") or {}).get("hi_roman"), "series": story.get("series")})
+                "yt_title": (story.get("yt_title") or {}).get("hi_roman"), "series": story.get("series"),
+                "names": story.get("names"), "variant": story.get("variant")})
 with open(history_path, "w", encoding="utf-8") as stream:
     json.dump(history, stream, ensure_ascii=False, indent=1)
     stream.write("\n")
