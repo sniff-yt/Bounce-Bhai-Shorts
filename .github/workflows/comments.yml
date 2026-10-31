@@ -1,0 +1,27 @@
+name: Comment tool
+on:
+  workflow_dispatch:
+    inputs:
+      mode: {description: "list or reply", default: "list"}
+      parent: {description: "comment id to reply to", default: ""}
+      text: {description: "reply text", default: ""}
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -q google-api-python-client google-auth
+      - env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          MODE: ${{ inputs.mode }}
+          PARENT: ${{ inputs.parent }}
+          TEXT: ${{ inputs.text }}
+        run: cd scripts && if [ "$MODE" = reply ]; then python comment_tool.py reply "$PARENT" "$TEXT"; else python comment_tool.py list; fi
