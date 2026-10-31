@@ -268,7 +268,11 @@ def simulate(seed, max_t=70.0):
                 if stall[i] > 1.5:
                     V[i][0] += (1 if P[i][0] < CX else -1) * 650; V[i][1] -= 250; stall[i] = 0
             if i not in finish and P[i][1] > c["finish"]:
-                finish[i] = t; events.append((t, "finish", i, len(finish)))
+                # exact crossing time (interpolated inside the frame): finish used to be quantized to 1/30 s,
+                # so two balls crossing in the same frame got the same time and the lower index (RED) always won
+                vy = max(1.0, V[i][1])
+                tc = t + 1 / FPS - min(1 / FPS, max(0.0, (P[i][1] - c["finish"]) / vy))
+                finish[i] = tc; events.append((tc, "finish", i, len(finish)))
         frames.append([tuple(p) for p in P])
         if len(finish) == 3 and t > max(finish.values()) + 0.5:
             break
@@ -300,6 +304,18 @@ def rank_track(frames, finish):
                     cur[p], cur[p + 1] = cur[p + 1], cur[p]; changed = True
         out.append(tuple(cur))
     return out
+
+TIE_GAP = 0.02            # finishes closer than this are a dead heat (a tie: same place, same time)
+
+def placings(finish):
+    """ball -> place (1-based). Balls within TIE_GAP of their group's first finisher share the place."""
+    order = sorted(finish, key=finish.get)
+    pl, place, lead = {}, 0, None
+    for k, i in enumerate(order):
+        if lead is None or finish[i] - finish[lead] >= TIE_GAP:
+            place, lead = k + 1, i
+        pl[i] = place
+    return pl
 
 def plan(frames, finish):
     """Live footage until just after 2nd place crosses, then (if close) a slow-mo replay of the finish."""
@@ -565,7 +581,7 @@ def build(cfg, c, frames, events, finish):
             for r_ in range(3): slot_y[o[r_]] += (slot[r_] - slot_y[o[r_]]) * 0.16
         slots.append(dict(slot_y))
     return dict(F=F, shots=shots, cam=cam, slots=slots, ords=ords, pops=pops, lead_changes=lead_changes,
-                k_cut=k_cut, kc=kc, rep=rep, rep_start=rep_start, photo=photo, f1=f1, win_i=win_i, order_final=order_final, n_end=n_end, P_at=P_at)
+                k_cut=k_cut, kc=kc, rep=rep, rep_start=rep_start, photo=photo, f1=f1, win_i=win_i, order_final=order_final, places=placings(finish), n_end=n_end, P_at=P_at)
 
 # ---------------- drawing ----------------
 _R = {}
@@ -783,8 +799,10 @@ def draw_shot(n, look):
         la = 0 if t < COUNT + 0.9 else min(255, (t - COUNT - 0.9) / 0.4 * 255)
         if la > 0:
             o = B["ords"][min(int(tk / 2), len(B["ords"]) - 1)]; sy_ = B["slots"][n]
+            pl_ = B["places"]
             for r_ in range(3):
                 i = o[r_]; col, name = PAL[i], NAMES[i]; y0 = sy_[i]
+                if i in finish and finish[i] <= t and pl_[i] - 1 < r_: r_ = pl_[i] - 1   # tied finishers share the number
                 rect = skia.Rect(28, y0 - 23, max(232, 136 + 19 * len(name)), y0 + 23)
                 cv.drawRRect(skia.RRect.MakeRectXY(rect, 23, 23), skia.Paint(Color=C((0, 0, 0), 0.62 * la), AntiAlias=True))
                 if r_ == 0:
@@ -815,13 +833,22 @@ def draw_shot(n, look):
             cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((255, 255, 255), 230 * (1 - ri / 8))))
     else:
         w = B["order_final"][0]
+        pl = B["places"]
         cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 215)))
         if cfg.get("series"):      # same spot as on frame 1, so the loop cross-fade doesn't double it
             text(cv, cfg["series"], 540, 175, 40, (190, 205, 255), stroke=6)
-        wl = f"{NAMES[w]} JEET GAYA!"
-        text(cv, wl, 540, 880, min(120, int(1700 / max(1, len(wl)))), PAL[w], stroke=14)
+        tied = [i for i in B["order_final"] if pl[i] == 1]
+        if len(tied) > 1:          # dead heat: nobody is declared the winner
+            text(cv, "TIE!", 540, 780, 130, (255, 226, 70), stroke=14)
+            wl = " & ".join(NAMES[i] for i in tied) + " BARABAR!"
+            text(cv, wl, 540, 900, min(96, int(1700 / max(1, len(wl)))), (255, 255, 255), stroke=12)
+        else:
+            wl = f"{NAMES[w]} JEET GAYA!"
+            text(cv, wl, 540, 880, min(120, int(1700 / max(1, len(wl)))), PAL[w], stroke=14)
+        lead_t = {}
+        for i in B["order_final"]: lead_t.setdefault(pl[i], finish[i])
         for r_, i in enumerate(B["order_final"]):
-            rl = f"{['1st', '2nd', '3rd'][r_]}  {NAMES[i]}  {finish[i] - COUNT:0.2f}s"
+            rl = f"{['1st', '2nd', '3rd'][pl[i] - 1]}  {NAMES[i]}  {lead_t[pl[i]] - COUNT:0.2f}s"
             text(cv, rl, 540, 1010 + r_ * 80, min(58, int(1650 / max(1, len(rl)))), lighten(PAL[i], 20), stroke=8)
         if NAMES != [b[1] for b in BALLS]:
             text(cv, "Comment karo, agli race mein tumhari ball!", 540, 1250, 40, (220, 220, 235), stroke=6)
@@ -1036,6 +1063,6 @@ if __name__ == "__main__":
                     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", cfg["out"]], check=True)
     if not cfg.get("keep_frames"): subprocess.run(["rm", "-rf", tmp])
     subprocess.run(["rm", "-f", wav])
-    json.dump({"seed": seed, **info, "photo": B["photo"], "lead_changes": len(B["lead_changes"]), "popups": len(B["pops"]),
+    json.dump({"seed": seed, **info, "photo": B["photo"], "tie": sum(1 for v in B["places"].values() if v == 1) > 1, "lead_changes": len(B["lead_changes"]), "popups": len(B["pops"]),
                "fps": OUT_FPS, "frames": len(B["shots"])}, open(cfg["out"] + ".json", "w"))
     print("done", cfg["out"], "photo" if B["photo"] else "", len(B["lead_changes"]), "lead changes", len(B["pops"]), "pop-ups")
