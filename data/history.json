@@ -1064,5 +1064,21 @@
   "series": "BALL RACE #33",
   "names": null,
   "variant": "jelly"
+ },
+ {
+  "date": "2026-10-31T10:45:05.616806+00:00",
+  "title": "Ball escape 20261031_1043",
+  "hook": "Deewar tod ke nikal paayegi?",
+  "video_id": "GgpBeUIbx8I",
+  "seed": 17308,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Deewar tod ke nikal paayegi? 🧱 | Ball Escape #17 #shorts",
+  "series": "BALL ESCAPE #17",
+  "names": [
+   "THELEGENDARY"
+  ],
+  "variant": "break"
  }
 ]
