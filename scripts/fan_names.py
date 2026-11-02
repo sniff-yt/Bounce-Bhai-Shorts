@@ -37,6 +37,18 @@ def main(path):
         hist = json.load(open(os.path.join(ROOT, "data", "history.json"), encoding="utf-8"))
         used = {n for h in hist[-12:] for n in (h.get("names") or [])}
         fresh = [n for n in names if n not in used]
+        pin = {}
+        try: pin = json.load(open(os.path.join(ROOT, "data", "pin_names.json"), encoding="utf-8"))
+        except Exception: pass
+        red = (pin.get("red") or "").strip().upper()[:12]
+        if red and cfg.get("format") == "race" and red not in used:
+            # owner-pinned name for the RED ball (used once: it expires when it shows up in history)
+            others = [n for n in fresh if n != red][:2]
+            pick = [red] + (others if len(others) == 2 else ["BLUE", "GREEN"])
+            cfg["names"] = pick
+            cfg["comment"] = (cfg.get("comment", "") + f"\n🏷️ Aaj RED ball ka naam: {red}! Comment karo, agli baar tumhara naam ball pe hoga 👇").strip()
+            json.dump(cfg, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            print("fan names (pinned red):", ", ".join(pick)); return
         pool = fresh if len(fresh) >= need else []
         if not pool:
             print(f"fan names: only {len(fresh)} new commenters, balls keep their colours"); return

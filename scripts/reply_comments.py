@@ -9,13 +9,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from yt_client import youtube, CHANNEL
 import write_story as WS
 
+HINGLISH = re.compile(r"\b(bhai|bro+|hai|hain|kya|kyu|nahi|nhi|tha|thi|yaar|yar|mast|accha|acha|kaise|kaun|mein|aur|bhi|toh|kar|karo|ho|gaya|gayi|jeet|jeetega|ab|sahi|bahut|bohot|wala|wali|ke|ka|ki|ko|se|hum|tum|mera|meri|tera)\b", re.I)
+
+
+def lang_of(text):
+    """Reply in the viewer's language: English comment -> English reply (owner rule 2026-11-02)."""
+    if re.search(r"[\u0C00-\u0C7F]", text): return "Telugu"
+    if re.search(r"[\u0900-\u097F]", text): return "Hindi (Devanagari)"
+    words = re.findall(r"[A-Za-z']+", text)
+    hits = [w for w in words if HINGLISH.fullmatch(w) and w.lower() not in ("bro", "broo", "brooo")]
+    if not words: return "Hinglish (Roman script)"
+    return "Hinglish (Roman script)" if hits else "simple, natural English only (no Hindi words)"
+
+
 MAX = int(os.environ.get("BB_MAX_REPLIES", "10"))
 PROMPT = """You run the YouTube Shorts channel "Bounce Bhai" (fun Hinglish micro-stories and ball-escape physics clips).
 A viewer commented on the Short titled: "{title}"
 Comment: "{text}"
 
-Write a short, warm, playful reply in Hinglish (Roman script), max 20 words, 0-1 emoji.
-Match their language if they wrote in English or Telugu. Never ask for subscriptions in every reply; never argue.
+Write a short, warm, playful reply in {lang}, max 20 words, 0-1 emoji. Never ask for subscriptions in every reply; never argue.
 If the comment is spam, abusive, sexual, political, or asks for personal info, set skip to true.
 Return ONLY JSON: {{"skip": false, "reply": "..."}}"""
 
@@ -49,7 +61,7 @@ def main(path):
             if re.search(r"https?://|www\.", text):
                 done.add(cid); continue
             try:
-                out = WS.post_story(PROMPT.format(title=title, text=text))
+                out = WS.post_story(PROMPT.format(title=title, text=text, lang=lang_of(text)))
             except Exception as e:
                 print("AI failed:", e); break
             done.add(cid)
