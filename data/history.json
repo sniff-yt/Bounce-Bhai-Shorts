@@ -1294,5 +1294,23 @@
   "series": null,
   "names": null,
   "variant": null
+ },
+ {
+  "date": "2026-11-02T03:43:04.063146+00:00",
+  "title": "Ball race 20261102_0335",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "QtLsYQ-vK18",
+  "seed": 126445,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Kaun jeetega? Apna colour chuno! 🔴🔵🟢 | Ball Race #46 #shorts",
+  "series": "BALL RACE #46",
+  "names": [
+   "HAJIZAR",
+   "HAJIZAROFFIC",
+   "THELEGENDARY"
+  ],
+  "variant": "classic"
  }
 ]
