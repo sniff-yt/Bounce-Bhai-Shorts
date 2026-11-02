@@ -13,6 +13,7 @@ BAD = re.compile(r"(http|www\.|\.com|sex|porn|fuck|bitch|chut|madar|bhosd|lund|g
 def clean(name):
     n = re.sub(r"^@", "", name or "").strip()
     n = re.sub(r"-[a-z0-9]{2,5}$", "", n)            # auto handles like @user-xy7k -> user
+    if len(n) > 12 and "-" in n: n = n.split("-")[0]   # @Hajizar-Official13 -> Hajizar
     n = re.sub(r"[^A-Za-z0-9_ .]", "", n).strip(" ._")
     if not n or BAD.search(n) or len(n) < 3: return None
     n = n.split(" ")[0] if len(n) > 12 else n
@@ -43,7 +44,7 @@ def main(path):
         red = (pin.get("red") or "").strip().upper()[:12]
         if red and cfg.get("format") == "race" and red not in used:
             # owner-pinned name for the RED ball (used once: it expires when it shows up in history)
-            others = [n for n in fresh if n != red][:2]
+            others = [n for n in fresh if not (n.startswith(red) or red.startswith(n))][:2]
             pick = [red] + (others if len(others) == 2 else ["BLUE", "GREEN"])
             cfg["names"] = pick
             cfg["comment"] = (cfg.get("comment", "") + f"\n🏷️ Aaj RED ball ka naam: {red}! Comment karo, agli baar tumhara naam ball pe hoga 👇").strip()
