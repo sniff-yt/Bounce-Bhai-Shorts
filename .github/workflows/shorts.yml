@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       format:
-        description: 'Force a format (race, sim, promo); empty = auto'
+        description: 'Force a format (race, sim, promo, multiply); empty = auto'
         required: false
         default: ''
 

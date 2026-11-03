@@ -54,7 +54,7 @@ def videos():
     out = []
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
-        fmt = h.get("format") or ("promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
+        fmt = h.get("format") or ("multiply" if re.search(r"multiply|\+1 ball|500 ball", v["title"], re.I) else "promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
                                   "race" if re.search(r"kaun jeetega|race|winner|🏁|🟢", v["title"], re.I) else
                                   "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
@@ -89,7 +89,7 @@ def pick_format(rng=random):
     Stats check (2026-10-28, videos >= 6 h old): race median 220 views (8 of 11 >= 100), sim median 8 overall /
     ~150 since 2026-10-22, promo 183. Escapes only take over if they clearly beat races on recent videos."""
     forced = os.environ.get("BB_FORMAT")
-    if forced in ALLOWED_FORMATS + ("promo",):
+    if forced in ALLOWED_FORMATS + ("promo", "multiply"):   # multiply = manual trial only (owner 2026-11-03), never auto-picked
         return forced
     if promo_due():
         return "promo"
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         print(pick_format())
     else:
         vs = videos()
-        for f in ("story", "sim", "race"):
+        for f in ("story", "sim", "race", "multiply"):
             s, n = _score([v for v in vs if v["format"] == f])
             print(f"{f}: score {s:.2f} from {n} videos")
         print(prompt_block())

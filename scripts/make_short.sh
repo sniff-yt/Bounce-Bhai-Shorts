@@ -30,6 +30,13 @@ prepare_models() {
     echo "Setup complete: out/$NAME.json"
     return 0
   fi
+  if [ "$FORMAT" = "multiply" ]; then
+    live stage "Setting up a ball-multiply challenge" --pct 5
+    python scripts/make_multiply.py "out/$NAME.json"
+    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
+    echo "Setup complete: out/$NAME.json"
+    return 0
+  fi
   if [ "$FORMAT" = "sim" ]; then
     live stage "Setting up a ball-escape challenge" --pct 5
     python scripts/make_sim.py "out/$NAME.json"
@@ -114,6 +121,11 @@ animate_and_post() {
     python engine/sim_race.py "out/$NAME.json"
     cp "out/$NAME.mp4" "out/${NAME}_final.mp4"
     echo "::notice title=timing::render race $((SECONDS - T))s; $(cat "out/$NAME.mp4.json" 2>/dev/null)"
+  elif [ "$FORMAT" = "multiply" ]; then
+    live stage "Multiplying the balls" --pct 40
+    python engine/sim_multiply.py "out/$NAME.json"
+    cp "out/$NAME.mp4" "out/${NAME}_final.mp4"
+    echo "::notice title=timing::render multiply $((SECONDS - T))s; $(cat "out/$NAME.mp4.json" 2>/dev/null)"
   elif [ "$FORMAT" = "sim" ]; then
     live stage "Simulating the ball escape" --pct 40
     python scripts/fan_names.py "out/$NAME.json" || true
