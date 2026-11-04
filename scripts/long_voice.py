@@ -13,15 +13,28 @@ import asyncio, json, os, re, subprocess, sys, time, wave
 import numpy as np
 
 SR = 44100
-VOICES = {   # (female, male)
+VOICES = {   # (female, male) native voices
     "te": ("te-IN-ShrutiNeural", "te-IN-MohanNeural"),
     "hi": ("hi-IN-SwaraNeural", "hi-IN-MadhurNeural"),
     "en": ("en-IN-NeerjaNeural", "en-IN-PrabhatNeural"),
 }
-# type -> (gender, base pitch Hz, base rate %)
-TYPE_VOICE = {"man": ("m", 0, 0), "oldman": ("m", -14, -10), "woman": ("f", 4, 2), "oldwoman": ("f", -16, -10),
-              "boy": ("f", 22, 6), "girl": ("f", 34, 8)}
-VARIANTS = [(0, 0), (-9, -4), (9, 5), (-4, 8), (14, -2), (-15, 3)]   # extra (pitch, rate) per same-type character
+# extra voices for supporting characters: Microsoft multilingual neural voices read Telugu / Hindi text natively.
+# They are only used after a speech-recognition check (Groq Whisper) shows they are understood about as well as the
+# native voice (see check_extra_voices), so a voice that mangles the language never reaches an episode.
+EXTRA = {
+    "f": ["fr-FR-VivienneMultilingualNeural", "en-US-AvaMultilingualNeural", "en-US-EmmaMultilingualNeural",
+          "de-DE-SeraphinaMultilingualNeural"],
+    "m": ["en-US-BrianMultilingualNeural", "en-AU-WilliamMultilingualNeural", "de-DE-FlorianMultilingualNeural"],
+}
+EXTRA_EN = {"f": ["en-IN-NeerjaExpressiveNeural"], "m": []}
+CHECK_TEXT = {"te": "అమ్మమ్మ, రాజు దగ్గర అప్పు తీసుకుంటే మనకు కష్టాలు తప్పవు కదా?",
+              "hi": "दादी, साहूकार से कर्ज़ लेना ठीक नहीं होगा, हम मेहनत करके पैसे जोड़ेंगे।",
+              "en": "Grandma, borrowing money from the moneylender will only bring us more trouble."}
+# type -> (gender, base pitch Hz, base rate %, formant factor). The formant factor scales the voice's resonances
+# (asetrate + atempo, duration unchanged): >1 younger / smaller, <1 older / bigger.
+TYPE_VOICE = {"man": ("m", 0, 0, 1.0), "oldman": ("m", -14, -12, 0.93), "woman": ("f", 4, 2, 1.0),
+              "oldwoman": ("f", -18, -12, 0.92), "boy": ("f", 18, 6, 1.12), "girl": ("f", 26, 8, 1.16)}
+VARIANTS = [(0, 0, 1.0), (-9, -4, 0.96), (9, 5, 1.05), (-4, 8, 0.98), (14, -2, 1.07), (-15, 3, 0.94)]
 GAP = {"same": 0.32, "switch": 0.5, "emotional": 0.7}
 SCENE_IN, SCENE_OUT = 0.9, 0.7
 LEAD = 0.6
@@ -35,23 +48,102 @@ def clean(text):
     return t
 
 
-def assign_voices(story):
+def _norm(s):
+    return re.sub(r"[\W_]+", "", s.lower())
+
+
+def _transcribe(path, lang):
+    import requests
+    key = os.environ.get("GROQ_API_KEY")
+    r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions", headers={"Authorization": f"Bearer {key}"},
+                      files={"file": (os.path.basename(path), open(path, "rb"), "audio/mpeg")},
+                      data={"model": "whisper-large-v3", "language": lang, "response_format": "json", "temperature": "0"},
+                      timeout=60)
+    r.raise_for_status()
+    return r.json().get("text", "")
+
+
+async def _synth_plain(text, voice, path):
+    import edge_tts
+    c = edge_tts.Communicate(text, voice)
+    audio = bytearray()
+    async for ch in c.stream():
+        if ch["type"] == "audio":
+            audio += ch["data"]
+    if len(audio) < 2000:
+        raise RuntimeError("no audio")
+    open(path, "wb").write(bytes(audio))
+
+
+async def check_extra_voices(lang, workdir):
+    """Keep the extra voices whose speech Whisper understands nearly as well as the native voice's."""
+    import difflib
+    if os.environ.get("BB_EXTRA_VOICES", "1") == "0":
+        return {"f": [], "m": []}
+    pool = EXTRA_EN if lang == "en" else EXTRA
+    if lang == "en":
+        return pool   # Indian-English expressive variant needs no check
+    if not os.environ.get("GROQ_API_KEY"):
+        print("::notice title=voices::no GROQ_API_KEY for the speech check; using native voices only", flush=True)
+        return {"f": [], "m": []}
+    text = CHECK_TEXT[lang]
+    fem, mal = VOICES[lang]
+    scores = {}
+    for v in [fem, mal] + pool["f"] + pool["m"]:
+        p = os.path.join(workdir, f"check_{v}.mp3")
+        try:
+            await _synth_plain(text, v, p)
+            heard = await asyncio.to_thread(_transcribe, p, lang)
+            scores[v] = difflib.SequenceMatcher(None, _norm(text), _norm(heard)).ratio()
+        except Exception as e:
+            print(f"voice check {v}: {type(e).__name__} {str(e)[:120]}", flush=True)
+        finally:
+            if os.path.exists(p):
+                os.remove(p)
+    base = min([scores[v] for v in (fem, mal) if v in scores] or [0.0])
+    if base == 0.0:
+        return {"f": [], "m": []}
+    ok = {g: [v for v in pool[g] if scores.get(v, 0) >= max(0.55, base - 0.08)] for g in ("f", "m")}
+    print("::notice title=voice check::" + ", ".join(f"{v.split('-')[2][:-6]}={scores[v]:.2f}" for v in scores) +
+          f" | native {base:.2f} | using extra: {ok['f'] + ok['m'] or 'none'}", flush=True)
+    return ok
+
+
+def assign_voices(story, extra=None):
+    """narrator + one voice per character. The lead character of each gender keeps the native voice (with its own
+    pitch / rate / formant styling); further characters get a verified extra voice when there is one, else a native
+    voice with a clearly different pitch, rate and formant."""
     lang = story.get("lang", "hi")
     fem, mal = VOICES.get(lang, VOICES["hi"])
-    out = {"narrator": {"voice": fem if story.get("narrator_gender", "f") == "f" else mal, "pitch": -6, "rate": -6}}
+    extra = extra or {"f": [], "m": []}
+    pool = {"f": list(extra.get("f", [])), "m": list(extra.get("m", []))}
+    out = {"narrator": {"voice": fem if story.get("narrator_gender", "f") == "f" else mal, "pitch": -6, "rate": -6,
+                        "formant": 0.97}}
     used = {}
-    for ch in story["characters"]:
-        g, p, r = TYPE_VOICE.get(ch.get("type", "man"), ("m", 0, 0))
+    seen_g = {"f": 0, "m": 0}
+    order = sorted(story["characters"], key=lambda c: (0 if c.get("role") in ("hero", "elder") else 1))
+    for ch in order:
+        g, p, r, f = TYPE_VOICE.get(ch.get("type", "man"), ("m", 0, 0, 1.0))
         k = used.get(ch.get("type"), 0)
         used[ch.get("type")] = k + 1
-        dp, dr = VARIANTS[k % len(VARIANTS)]
+        dp, dr, df = VARIANTS[k % len(VARIANTS)]
         if ch.get("role") in ("greedy", "villain") and g == "m":
             dp -= 6
-        out[ch["id"]] = {"voice": fem if g == "f" else mal, "pitch": p + dp, "rate": r + dr}
-    # narrator must differ from any same-voice character with near pitch
+            df *= 0.97
+        voice = fem if g == "f" else mal
+        kid = ch.get("type") in ("boy", "girl")
+        if seen_g[g] >= 1 and pool[g] and not kid:   # second+ adult of this gender: a different speaker entirely
+            voice = pool[g].pop(0)
+            dp, dr = dp // 2, dr // 2
+        if not kid:
+            seen_g[g] += 1
+        out[ch["id"]] = {"voice": voice, "pitch": p + dp, "rate": r + dr, "formant": round(f * df, 3)}
+    # narrator must differ from any same-voice character with near pitch and formant
     for cid, v in out.items():
-        if cid != "narrator" and v["voice"] == out["narrator"]["voice"] and abs(v["pitch"] - out["narrator"]["pitch"]) < 6:
+        if cid != "narrator" and v["voice"] == out["narrator"]["voice"] and abs(v["pitch"] - out["narrator"]["pitch"]) < 8 \
+                and abs(v["formant"] - 1.0) < 0.03:
             v["pitch"] += 10
+            v["formant"] = 1.05
     return out
 
 
@@ -83,8 +175,11 @@ async def _tts(text, v, path, sem):
     return None
 
 
-def decode(path):
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
+def decode(path, formant=1.0):
+    af = []
+    if abs(formant - 1.0) > 0.005:   # shift resonances (and pitch) by `formant`, keep the duration
+        af = ["-af", f"aresample={SR},asetrate={SR * formant:.0f},aresample={SR},atempo={1 / formant:.5f}"]
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, *af, "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.float32).copy()
 
@@ -112,7 +207,8 @@ async def main_async(path):
     story = json.load(open(path, encoding="utf-8"))
     base = path[:-5]
     os.makedirs(base + "_vo", exist_ok=True)
-    voices = assign_voices(story)
+    extra = await check_extra_voices(story.get("lang", "hi"), base + "_vo")
+    voices = assign_voices(story, extra)
     story["voices"] = voices
     jobs, sem = [], asyncio.Semaphore(4)
     for si, sc in enumerate(story["scenes"]):
@@ -125,20 +221,21 @@ async def main_async(path):
             ln["text"] = text
             p = f"{base}_vo/s{si:02d}_l{li:02d}"
             ln["audio"] = p + ".wav"
-            ln["voice"] = f"{v['voice']} {v['pitch']:+d}Hz {v['rate']:+d}%"
-            jobs.append((ln, p, _tts(text, v, p, sem)))
+            ln["voice"] = f"{v['voice']} {v['pitch']:+d}Hz {v['rate']:+d}% f{v.get('formant', 1.0)}"
+            jobs.append((ln, p, _tts(text, v, p, sem), v.get("formant", 1.0)))
     t0 = time.time()
     res = await asyncio.gather(*[j[2] for j in jobs])
+    jobs = [(ln, p, f) for ln, p, _, f in jobs]
     print(f"tts: {len(jobs)} lines in {time.time() - t0:.0f}s", flush=True)
-    failed = [ln for (ln, p, _), words in zip(jobs, res) if words is None]
+    failed = [ln for (ln, p, _f), words in zip(jobs, res) if words is None]
     if len(failed) > max(3, len(jobs) // 20):
         raise SystemExit(f"edge-tts failed for {len(failed)} of {len(jobs)} lines")
     for sc in story["scenes"]:
         sc["lines"] = [ln for ln in sc["lines"] if not any(ln is f for f in failed)]
-    for (ln, p, _), words in zip(jobs, res):
+    for (ln, p, fm), words in zip(jobs, res):
         if words is None:
             continue
-        a = decode(p + ".mp3")
+        a = decode(p + ".mp3", fm)
         a, off = trim(a)
         peak = np.max(np.abs(a)) or 1
         a = a / peak * 0.85

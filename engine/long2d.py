@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import long_cast as LC
 import long_props as LP
 import long_sets as LS
+import visemes as VZ
 from toon2d import rgb, C, paint, stroke, fill_ink, oval, rrect, poly, smooth_closed, INK
 
 FPS = 24
@@ -326,7 +327,7 @@ def plan_shots(story, sc, plan, looks):
     def head_y(cid):
         return FLOOR - 640 * SCALE * looks[cid]["height"] + 90
 
-    shots.append((t0, "wide") + wide(t0 + 1.0))
+    shots.append((t0, "wide") + keep_inside(wide(t0 + 1.0), "wide", t0 + 1.0, tracks, plan, looks, set()))
     last_kind = "wide"
     md = 0
     for li, ln in enumerate(sc["lines"]):
@@ -354,7 +355,7 @@ def plan_shots(story, sc, plan, looks):
             tx = _x_at(tracks[tgt], t) if tgt else ax
             if kind == "close":
                 face = 1 if tx >= ax else -1
-                shot = (ax + face * 50, head_y(actor) + 70, 2.05)
+                shot = (ax + face * 50, head_y(actor) + 60, 2.25)
             elif kind == "medium":
                 shot = (ax * 0.72 + tx * 0.28, head_y(actor) + 150, 1.5)
             else:
@@ -368,11 +369,81 @@ def plan_shots(story, sc, plan, looks):
             tops = [head_y(c) - 120 for c, tr in tracks.items() if abs(_x_at(tr, t + 0.2) - cx_) < hw_ + 60]
             if tops:
                 shot = (cx_, min(cy_, min(tops) - 40 + H / 2 / z_), z_)
+        must = {c for c in ((actor,) if kind == "close" else (actor, ln.get("target"))) if c in tracks}
+        shot = keep_inside(shot, kind, t + 0.2, tracks, plan, looks, must)
         shots.append((t - 0.05, kind) + shot)
         last_kind = kind
     if sc.get("moral_card"):
         shots.append((sc["lines"][-1]["start"] - 0.05, "wide") + wide(sc["lines"][-1]["start"]))
     return shots
+
+
+def prop_extent(kind, name, px, owner=None, looks=None):
+    """World x-extent (left, right) of a stage prop or cart."""
+    n = (name or "").lower()
+    if kind == "cart":
+        dx = 20 if not looks or not owner or looks[owner]["height"] >= 0.8 else (-1 if px < W / 2 else 1) * 250 * SCALE
+        return px + dx - 235 * SCALE, px + dx + 235 * SCALE
+    if LP.cart_kind(n):
+        return px - 235, px + 235
+    half, off = 120, 0
+    for key, h, o in (("scale", 190, 0), ("weigh", 190, 0), ("well", 140, 0), ("charpai", 210, 0), ("cot", 210, 0),
+                      ("sack", 170, 45), ("grain", 170, 45), ("tree", 270, 0), ("pot", 115, 0), ("matka", 115, 0)):
+        if key in n:
+            half, off = h, o
+            break
+    return px + off - half, px + off + half
+
+
+def keep_inside(shot, kind, t, tracks, plan, looks, must):
+    """Nudge a shot so nothing is cut by the frame edge: every character / prop is either fully inside the safe area or
+    fully outside the frame. The speaker and the person spoken to (only the speaker in a close shot) stay fully in;
+    wide / two / medium shots may zoom out to fit. Picks the smallest camera move that satisfies everything."""
+    cx0, cy, z0 = shot
+    ents = []   # (left, right, must)
+    for cid, tr in tracks.items():
+        x = _x_at(tr, t)
+        if -150 < x < W + 150:
+            ents.append((x - 125 * SCALE, x + 125 * SCALE, cid in must))
+    for pk, name, px, own in plan["props"]:
+        l_, r_ = prop_extent(pk, name, px, own, looks)
+        ents.append((l_, r_, False))
+    if not ents:
+        return shot
+
+    def cost(cx, z):
+        vin = W / 2 / z / 1.04 - (40 if kind == "wide" else 20) / z     # safe area (push-in + wide drift)
+        vout = W / 2 / z + (40 if kind == "wide" else 8) / z             # the frame itself
+        Li, Ri, Lo, Ro = cx - vin, cx + vin, cx - vout, cx + vout
+        c = 0.0
+        for l_, r_, m in ents:
+            full = l_ >= Li and r_ <= Ri
+            if m and not full:
+                c += 100 if kind != "close" else (0 if Lo < (l_ + r_) / 2 < Ro else 100)
+            elif not m and not full and r_ > Lo and l_ < Ro:
+                c += 1
+        return c, vin, vout
+
+    zs = [z0] + ([z0 * k for k in (0.92, 0.85, 0.78, 0.7) if z0 * k >= 1.0] + ([1.0] if z0 > 1.0 else [])
+                 if kind in ("wide", "two", "medium") else [])
+    best = None
+    for zi, z in enumerate(zs):
+        _, vin, vout = cost(cx0, z)
+        cands = {0.0}
+        for l_, r_, m in ents:
+            cands |= {l_ + vin - cx0, r_ - vin - cx0, r_ + vout - cx0 + 1, l_ - vout - cx0 - 1}
+        for dx in cands:
+            if abs(dx) > 700 / z:
+                continue
+            c = cost(cx0 + dx, z)[0]
+            key = (c, zi, abs(dx))
+            if best is None or key < best[0]:
+                best = (key, cx0 + dx, z)
+        if best and best[0][0] == 0:
+            break
+    if best is None or best[0][0] >= cost(cx0, z0)[0]:
+        return shot
+    return (best[1], cy, best[2])
 
 
 def clamp_cam(cx, cy, z):
@@ -413,6 +484,8 @@ def _rgba_to_skimage(im):
 
 
 def wrap(draw, text, fnt, maxw):
+    if "\n" in text:
+        return [r for part in text.split("\n") for r in wrap(draw, part, fnt, maxw)]
     words, rows, cur = text.split(), [], ""
     for w_ in words:
         cand = (cur + " " + w_).strip()
@@ -452,20 +525,91 @@ def text_card(text, lang, size, maxw, fill=(255, 255, 255), stroke_col=(0, 0, 0)
     return im
 
 
+SENT_END = tuple(".!?।॥")
+CLAUSE_END = tuple(",;:–—")
+
+
+def _split_balanced(toks, maxc):
+    """Split a token list longer than maxc at the word boundary nearest its middle (each half >= 2 words)."""
+    if len(" ".join(toks)) <= maxc or len(toks) < 4:
+        return [toks]
+    tot = len(" ".join(toks))
+    best, bk = None, None
+    for k in range(2, len(toks) - 1):
+        d = abs(len(" ".join(toks[:k])) - tot / 2)
+        if toks[k - 1][-1:] in CLAUSE_END + SENT_END:
+            d -= 6   # prefer a comma near the middle
+        if best is None or d < best:
+            best, bk = d, k
+    return _split_balanced(toks[:bk], maxc) + _split_balanced(toks[bk:], maxc)
+
+
+def chunk_tokens(text, maxc):
+    """Subtitle chunks on sentence / clause boundaries, each at most maxc characters (two lines), never a lone word."""
+    toks = text.split()
+    if not toks:
+        return []
+    clauses, cur = [], []
+    for tk in toks:
+        cur.append(tk)
+        if tk[-1:] in SENT_END + CLAUSE_END:
+            clauses.append((cur, tk[-1:] in SENT_END)); cur = []
+    if cur:
+        clauses.append((cur, True))
+    pieces = []
+    for cl, sent in clauses:
+        parts = _split_balanced(cl, maxc)
+        for k, pt in enumerate(parts):
+            pieces.append((pt, sent and k == len(parts) - 1))
+    chunks, cur, cur_end = [], [], False
+    for pt, sent in pieces:
+        n_new = len(" ".join(cur + pt))
+        if cur and (n_new > maxc or (cur_end and len(" ".join(cur)) >= maxc * 0.45)):
+            chunks.append(cur); cur = []
+        cur = cur + pt
+        cur_end = sent
+    if cur:
+        chunks.append(cur)
+    # no lone-word (or tiny) chunks: merge into a neighbour, splitting again only when it gets too long
+    k = 0
+    while len(chunks) > 1 and k < len(chunks):
+        c = chunks[k]
+        if len(c) >= 2 and len(" ".join(c)) >= 10:
+            k += 1
+            continue
+        if k > 0 and (k == len(chunks) - 1 or len(" ".join(chunks[k - 1])) <= len(" ".join(chunks[k + 1]))):
+            merged = chunks[k - 1] + c; at = k - 1
+        else:
+            merged = c + chunks[k + 1]; at = k
+        repl = [merged] if len(" ".join(merged)) <= maxc * 1.25 or len(merged) < 5 else _split_balanced(merged, maxc)
+        if any(len(x) < 2 for x in repl):
+            repl = [merged]
+        chunks[at:at + 2] = repl
+        k = 0 if len(repl) > 1 else at + 1
+    return chunks
+
+
+def two_lines(text, max_one=40):
+    """Break a chunk into 1-2 balanced lines (explicit newline)."""
+    toks = text.split()
+    if len(text) <= max_one or len(toks) < 2:
+        return text
+    best, bk = None, 1
+    for k in range(1, len(toks)):
+        d = abs(len(" ".join(toks[:k])) - len(" ".join(toks[k:])))
+        if toks[k - 1][-1:] in CLAUSE_END + SENT_END:
+            d -= 8   # a comma near the middle is the natural break
+        if best is None or d < best:
+            best, bk = d, k
+    return " ".join(toks[:bk]) + "\n" + " ".join(toks[bk:])
+
+
 def subtitle_chunks(ln, maxc):
     """Split a line into subtitle chunks timed by its word boundaries."""
     text = ln["text"]
     toks = text.split()
     words = ln.get("words") or []
-    chunks, cur = [], []
-    for tk in toks:
-        if cur and len(" ".join(cur + [tk])) > maxc:
-            chunks.append(cur); cur = []
-        cur.append(tk)
-        if tk[-1:] in ".!?।" and len(" ".join(cur)) > maxc * 0.5:
-            chunks.append(cur); cur = []
-    if cur:
-        chunks.append(cur)
+    chunks = chunk_tokens(text, maxc)
     out = []
     n_tok = max(1, len(toks))
     ls, le = ln["start"], ln["end"]
@@ -508,12 +652,25 @@ class Renderer:
         self.names = {c["id"]: c.get("name", c["id"]) for c in story["characters"]}
         # subtitle chunks
         self.subchunks = []
-        maxc = 56 if self.lang != "en" else 64
+        maxc = 80 if self.lang != "en" else 88   # two balanced lines of ~40 characters
         for sc in self.scenes:
             for ln in sc["lines"]:
                 for a, b, s in subtitle_chunks(ln, maxc):
                     self.subchunks.append((a, b, s, ln.get("speaker")))
         self._vig = None
+        # viseme lip-sync timeline per line (edge-tts word boundaries split into aksharas / letters)
+        self.vis = {}
+        for si, sc in enumerate(self.scenes):
+            for li, ln in enumerate(sc["lines"]):
+                words = ln.get("words") or []
+                if not words and ln.get("text") and "start" in ln:   # no boundaries: share the line by word length
+                    toks = ln["text"].split()
+                    tot = sum(len(x) for x in toks) or 1
+                    t, words = ln["start"], []
+                    for x in toks:
+                        d = (ln["end"] - ln["start"]) * len(x) / tot
+                        words.append([t, t + d * 0.92, x]); t += d
+                self.vis[(si, li)] = VZ.Track(VZ.line_keys(words, self.lang))
 
     # ---------------------------------------------------------------- audio envelope for lip-sync
     def load_env(self):
@@ -537,18 +694,21 @@ class Renderer:
         self.env = out
 
     def mouth(self, t, sc, cid):
+        """Viseme vector for a speaking character at time t (None when not speaking). The text-driven shape is
+        scaled by the speech envelope so the mouth closes in pauses and opens wider on loud syllables."""
         tr = self.plans[sc]["tracks"][cid]
         for a, b, li in tr["speak"]:
-            if a - 0.02 <= t <= b:
+            if a - 0.06 <= t <= b + 0.08:
+                v = self.vis[(sc, li)].sample(t)
                 f = int(t * FPS)
-                e = self.env[f] if self.env is not None and f < len(self.env) else 0.5
-                words = self.scenes[sc]["lines"][li].get("words") or []
-                inword = any(w0 - 0.03 <= t <= w1 + 0.02 for w0, w1, _ in words) if words else True
-                if not inword:
-                    return e * 0.3
-                jaw = 0.5 + 0.5 * math.sin(t * 2 * math.pi * 5.2)   # syllable flap keeps the mouth moving
-                return max(0.0, min(1.0, e * (0.65 + 0.35 * jaw) + 0.12))
-        return 0.0
+                e = self.env[f] if self.env is not None and f < len(self.env) else 0.6
+                if self.env is not None:
+                    e = max(e, self.env[f + 1] if f + 1 < len(self.env) else 0)   # one frame look-ahead
+                g = max(0.0, min(1.0, (e - 0.04) / 0.22))
+                v = VZ.blend(VZ.REST, v, g)
+                v["open"] *= 0.75 + 0.35 * min(1.0, e)
+                return v
+        return None
 
     def speaking(self, t, sc, cid):
         return any(a - 0.1 <= t <= b + 0.1 for a, b, _ in self.plans[sc]["tracks"][cid]["speak"])
@@ -589,13 +749,22 @@ class Renderer:
         P["head_tilt"] = {"sad": 6, "cry": 8, "ashamed": 9, "proud": -5, "thinking": 6, "greedy": -3, "worried": 4}.get(ename, 0)
         P["head_tilt"] += 1.5 * math.sin(t * 0.9 + bs * 4)
         speaking = self.speaking(t, sc_i, cid)
-        P["mouth"] = self.mouth(t, sc_i, cid)
-        if ename == "laugh":
+        vis = self.mouth(t, sc_i, cid)
+        P["vis"] = vis
+        P["mouth"] = vis["open"] if vis else 0.0
+        if vis is None:   # listeners: lips closed, an occasional small idle part of the lips
+            ph = (t + self.blink_seed[cid] * 11) % 9.0
+            if 4.0 < ph < 4.7 and P.get("o_mouth", 0) < 0.2 and P.get("grin", 0) < 0.5:
+                P["mouth"] = 0.0
+                P["vis"] = dict(VZ.REST, open=0.07 * math.sin((ph - 4.0) / 0.7 * math.pi), width=0.95)
+        if ename == "laugh" and not speaking:
+            P["vis"] = None
             P["mouth"] = max(P["mouth"], 0.45 + 0.3 * math.sin(t * 22))
             P["bob"] += 6 * abs(math.sin(t * 11))
         if ename == "cry":
             P["bob"] += 3 * math.sin(t * 17)
             if not speaking:
+                P["vis"] = None
                 P["mouth"] = max(P["mouth"], 0.2 + 0.1 * math.sin(t * 9))
         if ename == "scared":
             P["x"] += 2.5 * math.sin(t * 47)
@@ -825,7 +994,7 @@ class Renderer:
 
     def _subtitle(self, s, sp):
         name = self.names.get(sp) if sp and sp != "narrator" else None
-        card = text_card(s, self.lang, 48, 1500, sw=6, name=name)
+        card = text_card(two_lines(s, 40 if self.lang != "en" else 46), self.lang, 48, 1500, sw=6, name=name)
         bg = Image.new("RGBA", card.size, (0, 0, 0, 0))
         d = ImageDraw.Draw(bg)
         d.rounded_rectangle([0, 0, card.width - 1, card.height - 1], radius=26, fill=(10, 8, 20, 120))

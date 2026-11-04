@@ -528,7 +528,10 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
     grin = P.get("grin", 0.0)
     my = cy + r * 0.66
     mw = r * (0.25 + 0.07 * mo + 0.12 * grin) * (1 - 0.4 * om)
-    if grin > 0.5 and mo < 0.3:   # toothy greedy grin
+    vis = P.get("vis")
+    if vis is not None:   # viseme lip-sync (speaking characters)
+        draw_viseme_mouth(cv, vis, fx, my, r, sm)
+    elif grin > 0.5 and mo < 0.3:   # toothy greedy grin
         p = skia.Path()
         p.moveTo(fx - mw, my - r * 0.08); p.quadTo(fx, my + r * 0.05, fx + mw, my - r * 0.08)
         p.quadTo(fx, my + r * 0.36, fx - mw, my - r * 0.08); p.close()
@@ -584,6 +587,70 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
         cv.drawPath(d, paint(rgb("9ad8ff"), int(230 * P["sweat"])))
         cv.drawPath(d, stroke(INK, 3, a=int(230 * P["sweat"])))
     draw_hair_front(cv, look, cx, cy, r, turn)
+
+
+MOUTH_IN, TONGUE, LIP = rgb("5a1e24"), rgb("e0646e"), rgb("8a3434")
+
+
+def draw_viseme_mouth(cv, v, fx, my, r, smile=0.3):
+    """A mouth drawn from a blended viseme vector (see engine/visemes.py): open, width, round, teeth_up, teeth_dn,
+    tongue, tongue_up, bite, press. Every in-between value is drawable, so shapes morph smoothly."""
+    o = max(0.0, min(1.0, v["open"]))
+    ro = max(0.0, min(1.0, v["round"]))
+    sm = max(-1.0, min(1.0, smile)) * (1 - 0.7 * ro) * (1 - 0.6 * o)
+    mw = r * 0.30 * v["width"]
+    mh = r * (0.015 + 0.40 * o)                 # inner opening height
+    lift = sm * r * 0.07                          # smiling corners rise
+    top = my - mh * (0.30 + 0.25 * ro)            # upper lip edge (centre)
+    bot = my + mh * (0.95 + 0.15 * ro)            # lower lip edge (centre)
+    press = v["press"]
+    if o < 0.06 or press > 0.6:   # closed: a lip line; pressed lips bulge a little (m b p)
+        p = skia.Path()
+        p.moveTo(fx - mw, my - lift)
+        p.quadTo(fx, my + sm * r * 0.16 + press * r * 0.02, fx + mw, my - lift)
+        if press > 0.3:
+            cv.drawPath(p, stroke(LIP, 9 + 4 * press, a=int(120 + 100 * press)))
+        cv.drawPath(p, stroke(rgb("4a1a1a"), 5.5))
+        if press > 0.3:   # tucked lower lip
+            q = skia.Path(); q.moveTo(fx - mw * 0.45, my + r * 0.07); q.quadTo(fx, my + r * 0.12, fx + mw * 0.45, my + r * 0.07)
+            cv.drawPath(q, stroke(shade(LIP, 0.8), 3, a=160))
+        return
+    # corner handles: sharp lens shape when spread, vertical tangents (ellipse) when round
+    hx = mw * (0.25 + 0.30 * ro)
+    cvy = mh * 0.55 * ro
+    p = skia.Path()
+    p.moveTo(fx - mw, my - lift)
+    p.cubicTo(fx - mw + hx * (1 - ro) * 0.5, my - lift - cvy - mh * 0.15 * (1 - ro), fx - hx, top, fx, top)
+    p.cubicTo(fx + hx, top, fx + mw - hx * (1 - ro) * 0.5, my - lift - cvy - mh * 0.15 * (1 - ro), fx + mw, my - lift)
+    p.cubicTo(fx + mw - hx * (1 - ro) * 0.3, my - lift + cvy + mh * 0.5, fx + hx * 1.1, bot, fx, bot)
+    p.cubicTo(fx - hx * 1.1, bot, fx - mw + hx * (1 - ro) * 0.3, my - lift + cvy + mh * 0.5, fx - mw, my - lift)
+    p.close()
+    cv.drawPath(p, paint(MOUTH_IN))
+    cv.save(); cv.clipPath(p, doAntiAlias=True)
+    h = bot - top
+    if v["tongue"] > 0.05:
+        ty = bot - h * 0.12 - v["tongue_up"] * h * 0.55
+        cv.drawPath(oval(fx, ty, mw * (0.5 + 0.1 * v["tongue_up"]), h * (0.28 + 0.1 * v["tongue_up"])),
+                    paint(TONGUE, int(255 * min(1.0, v["tongue"] + 0.2))))
+    tu = v["teeth_up"]
+    if tu > 0.05:
+        th = min(h * 0.55, r * 0.09) * min(1.0, tu + 0.2) + (h * 0.15 if v["bite"] > 0.5 else 0)
+        cv.drawRect(skia.Rect.MakeLTRB(fx - mw, top - r * 0.05, fx + mw, top + th), paint((250, 250, 246)))
+    td = v["teeth_dn"]
+    if td > 0.05:
+        th = min(h * 0.45, r * 0.07) * td
+        cv.drawRect(skia.Rect.MakeLTRB(fx - mw, bot - th, fx + mw, bot + r * 0.05), paint((244, 244, 240)))
+    cv.restore()
+    cv.drawPath(p, stroke(INK, 4))
+    if v["bite"] > 0.3:   # f / v: lower lip tucked under the top teeth
+        q = skia.Path(); q.moveTo(fx - mw * 0.8, bot - h * 0.1); q.quadTo(fx, bot + r * 0.06, fx + mw * 0.8, bot - h * 0.1)
+        cv.drawPath(q, stroke(LIP, 7, a=int(230 * min(1, v["bite"]))))
+        cv.drawPath(q, stroke(INK, 3, a=int(230 * min(1, v["bite"]))))
+    if ro > 0.5:   # pursed-lip creases for o / u
+        for sd in (-1, 1):
+            q = skia.Path(); q.moveTo(fx + sd * (mw + r * 0.02), my - lift - r * 0.04); q.lineTo(fx + sd * (mw + r * 0.07), my - lift)
+            q.lineTo(fx + sd * (mw + r * 0.02), my - lift + r * 0.04)
+            cv.drawPath(q, stroke(shade(LIP, 0.8), 2.5, a=int(200 * (ro - 0.5) * 2)))
 
 
 def draw_hair_front(cv, look, cx, cy, r, turn):

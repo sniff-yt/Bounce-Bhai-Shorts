@@ -46,8 +46,8 @@ print(f"::notice title=video::{dur / 60:.2f} min, {v['width']}x{v['height']}, au
       f"title={s['title']}, moral={s['moral']}")
 if not has_audio or v["width"] != 1920:
     raise SystemExit("bad output video")
-if not (7.5 * 60 <= dur <= 11.5 * 60):
-    print(f"::warning title=length::video is {dur / 60:.1f} min (target 8-10)")
+if not (9.0 * 60 <= dur <= 10.0 * 60):
+    print(f"::warning title=length::video is {dur / 60:.2f} min (target 9-10)")
 s["video"] = mp4
 json.dump(s, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 PY
