@@ -56,12 +56,15 @@ def assign_voices(story):
 
 
 async def _tts(text, v, path, sem):
+    """edge-tts with patient retries (run 41851447734 lost one line to a transient failure after 5 quick tries).
+    After 4 failures the line is retried with plain prosody; if it still fails, None (the caller drops the line)."""
     import edge_tts
+    last = ""
     async with sem:
-        for attempt in range(5):
+        for attempt in range(8):
             try:
-                c = edge_tts.Communicate(text, v["voice"], rate=f"{v['rate']:+d}%", pitch=f"{v['pitch']:+d}Hz",
-                                         boundary="WordBoundary")
+                rate, pitch = (f"{v['rate']:+d}%", f"{v['pitch']:+d}Hz") if attempt < 4 else ("+0%", "+0Hz")
+                c = edge_tts.Communicate(text, v["voice"], rate=rate, pitch=pitch, boundary="WordBoundary")
                 words, audio = [], bytearray()
                 async for ch in c.stream():
                     if ch["type"] == "audio":
@@ -73,9 +76,11 @@ async def _tts(text, v, path, sem):
                 open(path + ".mp3", "wb").write(bytes(audio))
                 return words
             except Exception as e:
-                print(f"tts retry {attempt + 1} for {os.path.basename(path)}: {str(e)[:120]}", flush=True)
-                await asyncio.sleep(2 + attempt * 3)
-        raise RuntimeError(f"edge-tts failed for: {text[:60]}")
+                last = f"{type(e).__name__}: {str(e)[:160]}"
+                print(f"tts retry {attempt + 1} for {os.path.basename(path)}: {last}", flush=True)
+                await asyncio.sleep(min(40, 3 + attempt * 6))
+    print(f"::warning title=tts::dropped a line after 8 tries ({last}): {text[:60]}", flush=True)
+    return None
 
 
 def decode(path):
@@ -109,7 +114,7 @@ async def main_async(path):
     os.makedirs(base + "_vo", exist_ok=True)
     voices = assign_voices(story)
     story["voices"] = voices
-    jobs, sem = [], asyncio.Semaphore(6)
+    jobs, sem = [], asyncio.Semaphore(4)
     for si, sc in enumerate(story["scenes"]):
         for li, ln in enumerate(sc["lines"]):
             sp = ln.get("speaker", "narrator")
@@ -125,7 +130,14 @@ async def main_async(path):
     t0 = time.time()
     res = await asyncio.gather(*[j[2] for j in jobs])
     print(f"tts: {len(jobs)} lines in {time.time() - t0:.0f}s", flush=True)
+    failed = [ln for (ln, p, _), words in zip(jobs, res) if words is None]
+    if len(failed) > max(3, len(jobs) // 20):
+        raise SystemExit(f"edge-tts failed for {len(failed)} of {len(jobs)} lines")
+    for sc in story["scenes"]:
+        sc["lines"] = [ln for ln in sc["lines"] if not any(ln is f for f in failed)]
     for (ln, p, _), words in zip(jobs, res):
+        if words is None:
+            continue
         a = decode(p + ".mp3")
         a, off = trim(a)
         peak = np.max(np.abs(a)) or 1
