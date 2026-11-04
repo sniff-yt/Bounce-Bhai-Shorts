@@ -27,7 +27,7 @@ concurrency:
 
 permissions:
   contents: write
-  models: read      # GitHub Models (GPT-4.1 / GPT-4o) for the story writer and native editor
+  models: read      # unused since GitHub Models was retired (2026-07-30); harmless
 
 jobs:
   long:

@@ -203,6 +203,51 @@ def write_wav(path, a, sr=SR):
 EMO = {"cry", "angry", "surprised", "scared", "sad", "shocked"}
 
 
+MAX_MIN = float(os.environ.get("BB_LONG_MAX_MIN", "9.85"))   # video length incl. end screen (target 9-10 min)
+FILLER = {"laugh", "surprised", "shrug", "scratch", "think", "nod", "wave", "greet", "hips", "proud", "celebrate"}
+
+
+def _gap(sc, li):
+    ln, prev = sc["lines"][li], sc["lines"][li - 1]
+    g = GAP["emotional"] if (ln.get("emotion") in EMO or prev.get("emotion") in EMO) else \
+        GAP["same"] if ln.get("speaker") == prev.get("speaker") else GAP["switch"]
+    return g + (0.25 if ln.get("action") in ("walk", "enter", "exit", "give", "run") else 0)
+
+
+def _total(story):
+    """Same arithmetic as the timeline below: the finished video's length in seconds."""
+    t = LEAD
+    for sc in story["scenes"]:
+        t += SCENE_IN + sum(ln["dur"] for ln in sc["lines"]) + sum(_gap(sc, li) for li in range(1, len(sc["lines"])))
+        t += SCENE_OUT + (1.6 if sc.get("moral_card") else 0)
+    return t + 5.0
+
+
+def cap_length(story):
+    """The writer's length estimate is only approximate (run 41869713268: estimated 9.76 min, voiced 10.29 min with the
+    extra multilingual voices), so after synthesis drop filler lines until the video fits. Never a scene's first 2 or
+    last 3 lines, objects / gives / entries / exits, or the moral."""
+    dropped = 0
+    while _total(story) > MAX_MIN * 60:
+        best = None
+        for si, sc in enumerate(story["scenes"]):
+            ls = sc["lines"]
+            if len(ls) <= 6:
+                continue
+            for li in range(2, len(ls) - 3):
+                l = ls[li]
+                if l.get("object") or l.get("to") or l.get("action") in ("give", "take", "show", "enter", "exit", "walk", "run"):
+                    continue
+                score = (len(ls), l.get("action") in FILLER, l.get("speaker") == "narrator", -l["dur"])
+                if best is None or score > best[0]:
+                    best = (score, si, li)
+        if not best:
+            break
+        del story["scenes"][best[1]]["lines"][best[2]]
+        dropped += 1
+    return dropped
+
+
 async def main_async(path):
     story = json.load(open(path, encoding="utf-8"))
     base = path[:-5]
@@ -243,6 +288,10 @@ async def main_async(path):
         os.remove(p + ".mp3")
         ln["dur"] = len(a) / SR
         ln["words_rel"] = [[max(0, w0 - off), max(0, w1 - off), w] for w0, w1, w in words]
+    cut = cap_length(story)
+    if cut:
+        print(f"::notice title=length::voiced story was over {MAX_MIN} min: dropped {cut} filler lines "
+              f"-> {_total(story) / 60:.2f} min", flush=True)
     # ---- timeline
     t = LEAD
     speech = []

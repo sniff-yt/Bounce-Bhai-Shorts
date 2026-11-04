@@ -33,8 +33,11 @@ LANG_GUIDE = {
            "gender and respect (మీరు / నువ్వు). No bookish Sanskrit words, no invented or misspelt words, no "
            "word-by-word translation from English, no English words in Telugu script unless villagers use them (బస్సు). "
            "Use the common word for things: pot = కుండ, money-lender = వడ్డీ వ్యాపారి, clever = తెలివైన, greed = అత్యాశ, "
-           "magic = మాయ, loan = అప్పు, interest = వడ్డీ. Never write like this earlier bad script: 'బాణి' for a pot, the "
-           "non-word 'చతుర్తి', the awkward moral 'బుద్ధి వృద్ధి వలన లాభం', a hook asking if a man turns into a golden pig."),
+           "magic = మాయ, loan = అప్పు, interest = వడ్డీ, stick = కర్ర, fruit = పండ్లు, kindness = దయ (never 'దయా' on its own; "
+           "kind person = దయ ఉన్నవాడు / మంచి మనసున్నవాడు). Address a woman with అమ్మా / అక్కా, never ఏమయ్యా. Never write like these "
+           "earlier bad scripts: 'బాణి' or 'కడవు' for a pot or stick, the non-words 'చతుర్తి' and 'కాంచం', the awkward moral 'బుద్ధి "
+           "వృద్ధి వలన లాభం', 'అత్యాశ నన్ను కోల్పోయింది' (say 'అత్యాశ వల్ల అన్నీ పోగొట్టుకున్నా'), 'మీ మాటలు మమ్మల్ని బలవంతం "
+           "చేస్తాయి' (say 'మీ మాటలు మాకు ధైర్యం ఇస్తాయి'), 'మనసులో ముద్దు పడి పోయారు', a hook asking if a man turns into a golden pig."),
     "hi": ("Write natural spoken Hindi the way families in small towns of UP / MP / Bihar talk (अरे, देखो, चलो, बेटा, "
            "अम्मा, भैया, दादी): short simple sentences, everyday words, common Hinglish only where people really use it "
            "(मोबाइल, बस). No shuddh / bookish Hindi, no heavy Urdu poetry, no invented words, no translation-ese. Use "
@@ -95,16 +98,17 @@ SFX = "none, coins, knock, door, thunder, magic, boing, pop, splash, thud, laugh
 
 # ======================================================================================== LLM plumbing
 GROQ, NV = "https://api.groq.com/openai/v1", "https://integrate.api.nvidia.com/v1"
-GH = "https://models.github.ai/inference"           # GitHub Models (GITHUB_TOKEN with models: read)
+GEM = "https://generativelanguage.googleapis.com/v1beta/openai"   # Gemini, OpenAI-compatible (GEMINI_API_KEY)
 NARA = os.environ.get("NARA_API_URL", "https://router.bynara.id/v1/chat/completions").rsplit("/chat/completions", 1)[0]
-# Strongest free models first. GitHub Models' GPT-4.1 / GPT-4o write far more natural Telugu and Hindi than gpt-oss
-# (run 41852353516's Telugu had invented words); the editor role prefers a different model than the writer.
+# Strongest free models first. GitHub Models (models.github.ai) was retired on 2026-07-30 and is no longer tried.
+# Gemini writes far more natural Telugu / Hindi than gpt-oss (run 41869713268, gpt-oss-120b only: invented words,
+# "కడవు" for a stick, duplicated lines); the editor role prefers a different model than the writer.
 PREFS = {
-    "github": {"write": ["openai/gpt-4.1", "openai/gpt-4o", "deepseek/deepseek-v3-0324", "openai/gpt-4.1-mini"],
-               "edit": ["openai/gpt-4o", "openai/gpt-4.1", "deepseek/deepseek-v3-0324", "openai/gpt-4.1-mini"]},
-    "nvidia": {"write": ["deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "kimi-k2", "qwen3-235b", "llama-3.1-405b",
+    "gemini": {"write": ["gemini-2.5-pro", "gemini-3-pro", "gemini-3-flash", "gemini-2.5-flash"],
+               "edit": ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-pro", "gemini-3-pro"]},
+    "nvidia": {"write": ["deepseek-v4", "deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "kimi-k2", "qwen3-235b", "llama-3.1-405b",
                          "mistral-large", "qwen3-next", "gpt-oss-120b", "llama-4-maverick", "llama-3.3-70b"],
-               "edit": ["kimi-k2", "deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "qwen3-235b", "llama-3.1-405b",
+               "edit": ["deepseek-v4", "kimi-k2", "deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "qwen3-235b", "llama-3.1-405b",
                         "mistral-large", "gpt-oss-120b"]},
     "groq": {"write": ["kimi-k2", "gpt-oss-120b", "llama-4-maverick", "qwen3", "llama-3.3-70b"],
              "edit": ["kimi-k2", "gpt-oss-120b", "llama-4-maverick", "qwen3"]},
@@ -122,9 +126,8 @@ def _get(url, key):
 def list_models(base, key):
     if base not in _MODELS:
         try:
-            if base == GH:
-                d = _get("https://models.github.ai/catalog/models", key)
-                _MODELS[base] = [m["id"] for m in (d if isinstance(d, list) else d.get("data", []))]
+            if base == GEM:
+                _MODELS[base] = [m["id"].split("models/")[-1] for m in _get(base + "/models", key)["data"]]
             else:
                 _MODELS[base] = [m["id"] for m in _get(base + "/models", key)["data"]]
         except Exception as e:
@@ -144,12 +147,13 @@ def _pick(ids, prefs, n=6):
 
 def candidates(role="write"):
     out = []
-    gh = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_MODELS_TOKEN")
-    if gh:
-        ids = list_models(GH, gh)
-        prefs = PREFS["github"][role]
-        picked = [m for m in prefs if m in ids] if ids else prefs[:2]
-        out += [("github", GH, gh, m) for m in picked[:3]]
+    # GitHub Models (models.github.ai) was retired on 2026-07-30: it only answers "OK", so it is not tried any more.
+    gk = os.environ.get("GEMINI_API_KEY")
+    if gk:
+        ids = [i for i in list_models(GEM, gk) if not any(w in i for w in ("tts", "image", "embed", "live", "audio", "lite"))]
+        prefs = PREFS["gemini"][role]
+        out += [("gemini", GEM, gk, m) for m in [next((i for i in ids if i == p), None) or next((i for i in ids if i.startswith(p)), None)
+                                                 for p in prefs] if m][:2]
     n = os.environ.get("NVIDIA_API_KEY")
     if n:
         out += [("nvidia", NV, n, i) for i in _pick(list_models(NV, n), PREFS["nvidia"][role], 5)]
@@ -167,14 +171,13 @@ def report_models():
     """One notice listing the strong models each provider offers right now (for the run log / report)."""
     want = ("deepseek", "qwen3-235b", "405b", "kimi", "mistral-large", "gpt-4", "gpt-oss", "llama-4", "gemini", "grok")
     parts = []
-    for name, base, env in (("github", GH, "GITHUB_TOKEN"), ("nvidia", NV, "NVIDIA_API_KEY"), ("groq", GROQ, "GROQ_API_KEY")):
+    for name, base, env in (("gemini", GEM, "GEMINI_API_KEY"), ("nvidia", NV, "NVIDIA_API_KEY"), ("groq", GROQ, "GROQ_API_KEY")):
         key = os.environ.get(env)
         if not key:
             parts.append(f"{name}: no key")
             continue
         ids = [i for i in list_models(base, key) if any(w in i.lower() for w in want)]
         parts.append(f"{name}: {', '.join(ids[:14]) or 'none listed'}")
-    parts.append("gemini: " + ("key present" if os.environ.get("GEMINI_API_KEY") else "no key"))
     print("::notice title=models available::" + " | ".join(parts)[:3500], flush=True)
     print("writer order:", [f"{c[0]}:{c[3]}" for c in candidates("write")], flush=True)
     print("editor order:", [f"{c[0]}:{c[3]}" for c in candidates("edit")], flush=True)
@@ -199,21 +202,25 @@ def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="",
 def _chat_once(prompt, system, validate, max_tokens, tries_per_model, label, effort, role):
     cands = candidates(role)
     if not cands:
-        raise SystemExit("No LLM keys (GITHUB_TOKEN / GROQ_API_KEY / NVIDIA_API_KEY / NARA_API_KEY)")
+        raise SystemExit("No LLM keys (GEMINI_API_KEY / GROQ_API_KEY / NVIDIA_API_KEY / NARA_API_KEY)")
     errs = []
     for prov, base, key, model in cands:
         for attempt in range(tries_per_model + 1):
-            cap = {"groq": 8000, "github": 4000}.get(prov, max_tokens)
+            cap = {"groq": 8000, "gemini": 30000}.get(prov, max_tokens)
             body = {"model": model, "temperature": 0.8 if role == "write" else 0.4, "max_tokens": min(max_tokens, cap),
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"}}
             if "gpt-oss" in model:
                 body["reasoning_effort"] = effort
+            if prov == "gemini":   # thinking tokens count against max_tokens: give room, keep thinking light
+                body["max_tokens"] = max(16000, min(max_tokens * 2, 30000))
+                if "flash" in model:
+                    body["reasoning_effort"] = "low"
             if "qwen3" in model and prov != "groq":
                 body["chat_template_kwargs"] = {"thinking": False}
             t0 = time.time()
             hdr = {"Content-Type": "application/json", "Authorization": f"Bearer {key}", "User-Agent": "bouncebhai-long"}
-            tmo = {"groq": 240, "github": 300}.get(prov, 600)
+            tmo = {"groq": 240, "gemini": 300, "nvidia": 180}.get(prov, 600)
             try:
                 req = urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(), headers=hdr)
                 try:
@@ -245,6 +252,9 @@ def _chat_once(prompt, system, validate, max_tokens, tries_per_model, label, eff
                 print(f"  {label} ok: {prov}:{model} in {time.time() - t0:.0f}s", flush=True)
                 return obj, f"{prov}:{model}"
             except Exception as e:
+                if isinstance(e, (TimeoutError, ConnectionError, urllib.error.URLError)) or "Remote end closed" in str(e) \
+                        or "timed out" in str(e):
+                    _DEAD.add((prov, model))   # run 41869713268: nvidia mistral-large-4 hung ~4 min on every call
                 msg = f"{prov}:{model}: {str(e)[:220]}"
                 errs.append(msg)
                 print(f"::warning title=llm {label}::{msg[:300]}", flush=True)
@@ -303,6 +313,12 @@ Rules:
   his house or shop with a coin_bag / weighing_scale and never sells at a cart. The twist must be ONE simple idea a child
   can explain in one sentence (no fake-object-inside-fake-object tricks), shown or hinted to the viewer in an earlier
   scene (setup_scene) before it pays off (twist_scene); the ending is the clear result of the characters' choices.
+- CAST: every person who speaks or does anything in any scene MUST be one of the characters (with an id) and in that
+  scene's cast - never an unnamed or extra person (no "farmer Gopi" who is not in characters). The narrator only
+  narrates in the third person; he never speaks for a character.
+- ONE magic object (if any), always called by the same plain word; title_en, title and every scene must agree on what
+  it is (a pot is a pot everywhere, never a stick in one place and a pot in another).
+- No two scenes show the same event again; every scene moves the story forward. Write what_happens in English.
 - Vary sets and times: use at least 5 different sets and at least one night or rain scene.
 - Each scene lists who is on screen (2 to 4 characters, rarely 1, max 4) with positions as fractions 0.1-0.9.
 - WORDS: title, thumbnail_text, moral and names use only plain everyday {lang_name} words a village child knows
@@ -425,7 +441,9 @@ Check this story outline strictly and fix it:
    food; a money-lender lends from his house/shop, never sells at a cart; a child does not run a business alone).
 2. TWIST: one simple idea, planted in an earlier scene (setup_scene) and paid off later (twist_scene); no muddled
    double tricks. 3. CAUSE -> EFFECT: every scene follows from the one before; the ending results from the characters'
-   choices and shows the moral. 4. WORDS: title, thumbnail_text and moral must be natural, idiomatic {lang_name} that a
+   choices and shows the moral; no scene repeats an earlier scene's event; anyone who speaks or acts is one of the
+   characters and in that scene's cast (add them to cast or rewrite the scene); the magic object is the same thing
+   with the same name everywhere; what_happens stays in English. 4. WORDS: title, thumbnail_text and moral must be natural, idiomatic {lang_name} that a
    village child understands - real words only, no invented, misspelt or bookish words. Titles like {title_ex}; morals
    like {moral_ex}. {guide}
 OUTLINE: {outline}
@@ -556,6 +574,7 @@ Write natively in {lang_name} {script_hint} - natural, simple, spoken {lang_name
 translation. Numbers as words. {guide}
 Every line must make sense: it answers or reacts to the line before, fits the speaker's job and character, and moves
 the scene's plan forward. Keep names, objects and facts consistent with the plan (the same pot stays the same pot).
+Never repeat a line, or an event, from an earlier scene.
 
 STORY: "{title}" - theme: {theme}. Moral: {moral_en}
 SYNOPSIS: {synopsis}
@@ -567,7 +586,8 @@ Now write scenes {first} to {last} only. LENGTH MATTERS: every scene needs {line
 characters with back-and-forth reactions, small jokes, feelings and details of village life (at most 1 in 4 lines is
 narrator); each line 1-3 sentences.{hook}
 Each line object:
-- speaker: "narrator" or a character id
+- speaker: "narrator" or a character id from CHARACTERS - nobody else may speak (no extra villagers); the narrator
+  only describes in the third person and never says a character's words or "I / me / my"
 - text: the spoken words in {lang_name} only (no stage directions, no speaker names, no quotes, no emoji)
 - emotion: one of {exprs}
 - action (optional, the speaker's acting; for narrator lines use "actor" to name who acts): one of {actions}
@@ -615,7 +635,14 @@ def validate_dialogue(o, lang, ids, idx_range, min_lines=4):
                 continue
             sp = slug(ln.get("speaker"))
             if sp not in ids:
+                raw = sp
                 sp = next((k2 for k2 in ids if sp and sp != "narrator" and (sp in k2 or k2 in sp)), "narrator")
+                if raw and raw != "narrator" and sp == "narrator":
+                    # run 41869713268: an uncast "farmer Gopi" got his lines spoken by the narrator in the first person
+                    raise ValueError(f"scene {i}: speaker '{raw}' is not a character (use only {sorted(ids)})")
+            text = fix_words(text, lang)
+            if sp == "narrator" and FIRST_PERSON.get(lang) and FIRST_PERSON[lang].search(text) and not re.search(r"[\"“”]", text):
+                raise ValueError(f"scene {i}: narrator speaks in the first person: {text[:50]}")
             a = (ln.get("action") or "talk").lower().strip()
             a = a if a in ACTION_OK else "talk"
             item = {"speaker": sp, "text": text, "emotion": LC.expr_name(ln.get("emotion")), "action": a}
@@ -647,6 +674,43 @@ def validate_dialogue(o, lang, ids, idx_range, min_lines=4):
     if missing:
         raise ValueError(f"missing scenes {missing}")
     return got
+
+
+FIRST_PERSON = {"te": re.compile(r"(?:^|[\s,.!?])(నేను|నాకు|నన్ను|నా|నాది|మేము|మాకు)(?=[\s,.!?]|$)"),
+                "hi": re.compile(r"(?:^|[\s,.!?])(मैं|मुझे|मेरा|मेरी|मेरे|हम|हमें)(?=[\s,.!?।]|$)"),
+                "en": re.compile(r"\b(I|me|my|I'm|I'll)\b")}
+
+
+def fix_words(text, lang):
+    """Deterministic fixes for errors the models keep making."""
+    if lang == "te":
+        text = re.sub(r"దయా(?=[\s,.!?]|$)", "దయ", text)          # 'దయా కలిగిన' / 'దయా బలం' -> దయ
+        text = text.replace("దయ కలిగినవారికి", "దయ ఉన్నవాళ్లకి").replace("దయ కలిగినవాడివి", "దయ ఉన్నవాడివి")
+    return text
+
+
+def _norm(t):
+    return re.sub(r"[\s,.!?।'\"“”‘’-]+", " ", t).strip()
+
+
+def dedupe_lines(story):
+    """Drop a line that repeats (nearly) word for word any earlier line: run 41869713268 copied whole exchanges from
+    scene 5 into scene 6 and narrator lines from scene 8 into scenes 9 and 11. Keeps each scene's first line and the moral."""
+    import difflib
+    seen, dropped = [], 0
+    for sc in story["scenes"]:
+        keep = []
+        for li, ln in enumerate(sc["lines"]):
+            n = _norm(ln["text"])
+            dup = len(n) > 12 and any(n == s or (abs(len(n) - len(s)) < 0.25 * len(n) and
+                                                 difflib.SequenceMatcher(None, n, s).ratio() > 0.85) for s in seen)
+            if dup and li > 0 and not (sc.get("moral_card") and li == len(sc["lines"]) - 1):
+                dropped += 1
+                continue
+            seen.append(n)
+            keep.append(ln)
+        sc["lines"] = keep
+    return dropped
 
 
 def estimate_secs(story, lang):
@@ -796,6 +860,14 @@ def main(out, lang):
         story["scenes"].append(s)
     story["scenes"][-1]["lines"].append({"speaker": "narrator", "text": story["moral"], "emotion": "happy", "action": "talk"})
     story["scenes"][-1]["moral_card"] = True
+    for sc in story["scenes"]:
+        for ln in sc["lines"]:
+            ln["text"] = fix_words(ln["text"], lang)
+    dd = dedupe_lines(story)
+    if dd:
+        print(f"::notice title=dedupe::dropped {dd} repeated lines", flush=True)
+    for k in ("title", "thumbnail_text", "moral"):
+        story[k] = fix_words(story[k], lang)
     # ---- length window 9-10 min: lengthen the shortest scenes once if short, drop filler lines if long
     if real_minutes(story, lang) < MIN_REAL:
         short = sorted(range(n), key=lambda i: sum(len(l["text"]) for l in story["scenes"][i]["lines"]))[:3]
