@@ -588,7 +588,8 @@ class Set:
             cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((255, 214, 178)), BlendMode=skia.BlendMode.kMultiply))
         if self.weather in ("rain", "rain_in"):
             if self.weather == "rain":
-                cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((175, 185, 205)), BlendMode=skia.BlendMode.kMultiply))
+                cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((175, 185, 205) if self.time != "night" else (225, 230, 240)),
+                                                             BlendMode=skia.BlendMode.kMultiply))
                 for x, y, s in self.rain:
                     yy = (y + t * 1500 * s) % (H + 100) - 50
                     xx = x - (t * 300 * s) % 400 + 200 - 0.25 * (yy)

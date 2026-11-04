@@ -26,6 +26,17 @@ def rd_wav(p):
     return a
 
 
+def add(buf, i, s):
+    """buf[i:i+len(s)] += s, clipped to the buffer (never raises)."""
+    i = int(i)
+    if s is None or i >= len(buf) or i + len(s) <= 0:
+        return
+    if i < 0:
+        s, i = s[-i:], 0
+    m = min(len(s), len(buf) - i)
+    buf[i:i + m] += s[:m]
+
+
 def env_adsr(n, a=0.01, d=0.2, s=0.0, r=0.05):
     t = np.arange(n) / SR
     e = np.where(t < a, t / max(a, 1e-4), np.exp(-(t - a) / max(d, 1e-4)) * (1 - s) + s)
@@ -156,7 +167,7 @@ def music_segment(mood, dur, seed):
         f = drone[k % 4]
         s = PLUCK(f, 2.4, 0.3) * 0.22
         i = int(t * SR)
-        out[i:i + len(s)] += s[:len(out) - i]
+        add(out, i, s)
         t += beat * 2 if mood != "sad" else beat * 2.5
         k += 1
     # melody phrases
@@ -175,7 +186,7 @@ def music_segment(mood, dur, seed):
             else:
                 s = flute(f, d * 1.1) * (0.13 if mood != "tense" else 0.1)
             i = int(t * SR)
-            out[i:i + len(s)] += s[:len(out) - i]
+            add(out, i, s)
             t += d
         t += beat * r.integers(2, 5)
     # percussion
@@ -193,14 +204,14 @@ def music_segment(mood, dur, seed):
                 s = None
             if s is not None:
                 i = int(t * SR)
-                out[i:i + len(s)] += s[:len(out) - i]
+                add(out, i, s)
             t += beat / 2
             k += 1
     if mood == "tense":   # low heartbeat pulse
         t = 0.0
         while t < dur:
             s = tabla_dha(0.5) * 0.25
-            i = int(t * SR); out[i:i + len(s)] += s[:len(out) - i]
+            i = int(t * SR); add(out, i, s)
             t += beat * 2
     return out[:n]
 
@@ -219,14 +230,14 @@ def sfx(name, x=0.0):
             f = rng.uniform(2600, 4200)
             s = sum(np.sin(2 * math.pi * f * m * t) / (j + 1) for j, m in enumerate([1, 1.52, 2.31, 3.1])) * np.exp(-t * 14)
             i = int(rng.uniform(0, 0.45) * SR)
-            out[i:i + n] += s[:len(out) - i] * 0.22
+            add(out, i, s * 0.22)
         return out
     if name in ("knock", "door_knock"):
         out = np.zeros(int(0.9 * SR), np.float32)
         for k in range(3):
             n = int(0.12 * SR); t = np.arange(n) / SR
             s = np.sin(2 * math.pi * 140 * t) * np.exp(-t * 35) + lp_fast(noise(n), 6) * np.exp(-t * 70) * 0.4
-            i = int(k * 0.22 * SR); out[i:i + n] += s * 0.8
+            add(out, int(k * 0.22 * SR), s * 0.8)
         return out
     if name in ("door", "creak", "door_creak"):
         n = int(0.9 * SR); t = np.arange(n) / SR
@@ -255,7 +266,7 @@ def sfx(name, x=0.0):
         out = np.zeros(int(2.2 * SR), np.float32)
         for k in range(9):
             s = bell(SA * 4 * 2 ** (SCALES["magical"][k % 9] / 12), 1.4) * 0.14
-            i = int(k * 0.09 * SR); out[i:i + len(s)] += s[:len(out) - i]
+            i = int(k * 0.09 * SR); add(out, i, s)
         return out
     if name in ("ding", "bell"):
         return bell(SA * 6, 2.0) * 0.3
@@ -271,7 +282,7 @@ def sfx(name, x=0.0):
         out = np.zeros(int(1.5 * SR), np.float32)
         for k in range(40):
             n = int(0.03 * SR); s = lp_fast(noise(n), 2) * np.exp(-np.arange(n) / SR * 120)
-            i = int(rng.uniform(0, 1.4) * SR); out[i:i + n] += s[:len(out) - i] * 0.25
+            add(out, int(rng.uniform(0, 1.4) * SR), s * 0.25)
         return out
     return None
 
@@ -292,7 +303,7 @@ def ambience(name, dur):
             s = np.sin(2 * math.pi * np.cumsum(f) / SR) * np.sin(math.pi * tt / 0.12)
             for rep in range(int(rng.integers(1, 4))):
                 i = int((k + rep * 0.16) * SR)
-                out[i:i + m] += s[:len(out) - i] * 0.035
+                add(out, i, s * 0.035)
             k += rng.uniform(1.5, 4.5)
         return out
     if name == "crickets":
@@ -309,7 +320,7 @@ def ambience(name, dur):
         out = lp_fast(noise(n), 50) * 0.02
         for k in range(int(dur * 6)):
             i = int(rng.uniform(0, dur) * SR); m = 200
-            out[i:i + m] += (noise(m) * np.exp(-np.arange(m) / 30))[:len(out) - i] * 0.12
+            add(out, i, noise(m) * np.exp(-np.arange(m) / 30) * 0.12)
         return out.astype(np.float32)
     return np.zeros(n, np.float32)
 
@@ -331,9 +342,7 @@ def main(path):
         fade = int(1.5 * SR)
         e = np.ones(len(seg), np.float32)
         e[:fade] = np.linspace(0, 1, fade); e[-fade:] = np.linspace(1, 0, fade)
-        i = int(a0 * SR)
-        m_ = min(len(seg), n - i)
-        music[i:i + m_] += (seg * e)[:m_]
+        add(music, a0 * SR, seg * e)
     music = music / (np.max(np.abs(music)) + 1e-6) * 0.5
     # ---- duck under speech
     hop = 441
@@ -354,14 +363,12 @@ def main(path):
                 f_ = int(0.5 * SR)
                 if len(a) > 2 * f_:
                     a[:f_] *= np.linspace(0, 1, f_); a[-f_:] *= np.linspace(1, 0, f_)
-                i = int(c["t"] * SR)
-                fx[i:i + len(a)] += a[:n - i]
+                add(fx, c["t"] * SR, a)
             continue
         s = sfx(c["type"], c.get("x", 0))
         if s is None:
             continue
-        i = max(0, int(c["t"] * SR))
-        fx[i:i + len(s)] += s[:n - i]
+        add(fx, c["t"] * SR, s)
     mix = speech * 0.95 + music + fx * 0.9
     # gentle limiter
     pk = np.max(np.abs(mix)) + 1e-6

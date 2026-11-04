@@ -67,7 +67,7 @@ ACTIONS = ("talk, walk, run, enter, exit, point, give, take, wave, cry, laugh, a
 EXPRS = "neutral, happy, laugh, sad, cry, angry, surprised, scared, greedy, sly, thinking, proud, worried, ashamed"
 OBJECTS = ("coin, coins, coin_bag, money, gold_pot, pot, magic_pot, mango, roti, letter, basket, umbrella, stick, gift, "
            "bowl, plate, flower, key, lamp, samosa, pani_puri, chai, momos, rice_sack, book, necklace, fish, jar")
-PROPS = ("pani_puri_cart, samosa_cart, chai_cart, momos_cart, fruit_cart, vegetable_cart, jalebi_cart, ice_cream_cart, "
+PROPS = ("weighing_scale, pani_puri_cart, samosa_cart, chai_cart, momos_cart, fruit_cart, vegetable_cart, jalebi_cart, ice_cream_cart, "
          "dosa_cart, idli_cart, vada_pav_cart, well, charpai, magic_pot, pot, sacks, tree, none")
 SFX = "none, coins, knock, door, thunder, magic, boing, pop, splash, thud, laugh, ding"
 
@@ -119,7 +119,7 @@ def candidates():
     return out
 
 
-def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label=""):
+def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="", effort="low"):
     """Try live models in order until one returns JSON that passes validate(obj) -> obj (raise to reject)."""
     cands = candidates()
     if not cands:
@@ -131,7 +131,7 @@ def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="")
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"}}
             if "gpt-oss" in model:
-                body["reasoning_effort"] = "low"
+                body["reasoning_effort"] = effort
             if "qwen3" in model and prov != "groq":
                 body["chat_template_kwargs"] = {"thinking": False}
             t0 = time.time()
@@ -216,8 +216,10 @@ Rules:
   payoff, and a clear moral. Gentle humour in several scenes. The last scene shows the happy ending.
 - Vary sets and times: use at least 5 different sets and at least one night or rain scene.
 - Each scene lists who is on screen (2 to 4 characters, rarely 1, max 4) with positions as fractions 0.1-0.9.
-- title: in {lang_name} {script_hint}, click-worthy in the niche's style, 3 to 7 words, e.g. "<adjective> <food> seller"
-  or "<character>'s magic pot". thumbnail_text: 2 to 4 punchy {lang_name} words (shock/greed/emotion), different from the title.
+- title: in {lang_name} {script_hint}, click-worthy in the niche's style, 3 to 7 words, e.g. "<greedy/honest/clever> <food>
+  seller", "<character>'s magic pot", "the poor family's rain night". thumbnail_text: ONE punchy exclamation of 2 to 4
+  {lang_name} words that makes people click (shock, greed, tears, a secret), ending with "!" or "?", e.g. the {lang_name}
+  for "Greed's Price!", "Magic Pot Secret?", "Mother's Tears!" - a phrase, never a comma list, different from the title.
 - moral: one short sentence in {lang_name}. description: 2-3 sentences in {lang_name} (no spoilers of the twist).
 
 Allowed values:
@@ -247,6 +249,8 @@ def validate_outline(o, lang):
         raise ValueError("need 2-6 characters")
     if not isinstance(o.get("scenes"), list) or len(o["scenes"]) < 8:
         raise ValueError(f"need >= 8 scenes, got {len(o.get('scenes') or [])}")
+    tt = re.sub(r"\s*[,،;/|]\s*", " ", (o.get("thumbnail_text") or "").strip()).strip()
+    o["thumbnail_text"] = tt if tt[-1:] in "!?" else (tt + "!" if tt else tt)
     for k in ("title", "moral", "thumbnail_text"):
         if not (o.get(k) or "").strip():
             raise ValueError(f"missing {k}")
@@ -301,9 +305,10 @@ STORY: "{title}" - theme: {theme}. Moral: {moral_en}
 CHARACTERS (speaker ids): {chars}
 FULL SCENE PLAN (for context): {plan}
 {previous}
-Now write scenes {first} to {last} only. Per scene about {lines_lo}-{lines_hi} lines totalling about {chars_target}
-{lang_name} characters of spoken text ({secs} seconds of audio per scene). Mostly DIALOGUE between characters (at most
-1 in 4 lines is narrator), each line 1-2 short sentences, so the actors can react.{hook}
+Now write scenes {first} to {last} only. LENGTH MATTERS: every scene needs {lines_lo}-{lines_hi} lines and AT LEAST
+{chars_target} {lang_name} characters of spoken text in total ({secs} seconds of audio). Mostly lively DIALOGUE between
+characters with back-and-forth reactions, small jokes, feelings and details of village life (at most 1 in 4 lines is
+narrator); each line 1-3 sentences.{hook}
 Each line object:
 - speaker: "narrator" or a character id
 - text: the spoken words in {lang_name} only (no stage directions, no speaker names, no quotes, no emoji)
@@ -317,6 +322,14 @@ Each line object:
 Use movement (enter/walk/exit), giving objects, pointing, crying, laughing, anger, surprise and humour naturally.
 
 Return ONLY JSON: {{"scenes": [{{"index": {first}, "lines": [{{"speaker": "...", "text": "...", "emotion": "...", "action": "..."}}]}}]}}"""
+
+EXPAND = """These scenes of the {lang_name} animated moral story "{title}" are TOO SHORT for the video. Rewrite each one
+in {lang_name} {script_hint} with the same events, order and ending, but richer: more back-and-forth dialogue, reactions,
+gentle humour, feelings and small village-life details, so each scene has {lines_lo}-{lines_hi} lines and AT LEAST
+{chars_target} {lang_name} characters of spoken text. Keep the same JSON line format (speaker, text, emotion, action,
+target, object, to, sfx, reactions) and speaker ids. CHARACTERS: {chars}
+SCENES: {scenes}
+Return ONLY JSON: {{"scenes": [{{"index": <same index>, "lines": [...]}}]}}"""
 
 ACTION_OK = set(a.strip() for a in ACTIONS.split(","))
 
@@ -388,7 +401,7 @@ def main(out, lang):
     used = "; ".join(t.get("theme", "") for t in topics[-40:]) or "none yet"
     lang_name = LANG_NAME[lang]
     script_hint = {"te": "(Telugu script)", "hi": "(Devanagari script)", "en": "(simple Indian English)"}[lang]
-    n_scenes = 12 if TARGET_MIN <= 9.5 else 14
+    n_scenes = 13 if TARGET_MIN <= 9.5 else 15
     sysmsg = "You are an award-winning Indian children's and family story writer. Reply with strictly valid JSON only."
     print(f"long story: lang={lang} seed='{seed}'", flush=True)
     o, model1 = chat(OUTLINE.format(minutes=TARGET_MIN, lang_name=lang_name, seed=seed, used=used, n_scenes=n_scenes,
@@ -402,7 +415,7 @@ def main(out, lang):
     per_scene = secs_total / n
     speech_secs = per_scene - 4.5     # ~9 line gaps per scene
     chars_target = int(speech_secs * CHARS_PER_SEC[lang])
-    lines_lo, lines_hi = 7, 11
+    lines_lo, lines_hi = 10, 14
     plan = json.dumps([{"index": i, "set": s["set"], "time": s["time"], "on_screen": [c["id"] for c in s["cast"]],
                         "prop": s.get("prop"), "what_happens": s.get("what_happens", "")} for i, s in enumerate(scenes)],
                       ensure_ascii=False)
@@ -416,8 +429,9 @@ def main(out, lang):
         rng_ = list(range(b0, min(n, b0 + batch)))
         hook = ""
         if b0 == 0:
-            hook = ("\nSCENE 0 MUST OPEN WITH A HOOK: the first line is the narrator asking the viewer a gripping question or"
-                    " teasing the shocking twist, in under 15 seconds, then the story starts.")
+            hook = ("\nSCENE 0 MUST OPEN WITH A HOOK: the first line is the narrator speaking to the viewer, teasing the most"
+                    " shocking moment of THIS story as a gripping question (e.g. 'How did one small lie turn a rich man into a"
+                    " beggar overnight? Watch till the end!'), under 15 seconds, then the story starts.")
         if rng_[-1] == n - 1:
             hook += ("\nThe LAST scene ends with the happy ending and the characters' feelings; do NOT state the moral as a"
                      " narrator line, it is added separately.")
@@ -427,9 +441,28 @@ def main(out, lang):
                                  first=rng_[0], last=rng_[-1], lines_lo=lines_lo, lines_hi=lines_hi,
                                  chars_target=chars_target, secs=int(per_scene), hook=hook, exprs=EXPRS,
                                  actions=ACTIONS, objects=OBJECTS, sfx=SFX)
-        got, m = chat(prompt, sysmsg, lambda x, r=rng_: validate_dialogue(x, lang, ids, r), max_tokens=9000,
-                      tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}")
+        got, m = chat(prompt, sysmsg, lambda x, r=rng_: validate_dialogue(x, lang, ids, r), max_tokens=12000,
+                      tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}", effort="medium")
         models.append(m)
+        short = [i for i in rng_ if sum(len(l["text"]) for l in got[i]) < 0.8 * chars_target]
+        if short:   # one expansion pass for scenes that came out too short
+            cur = {i: got[i] for i in short}
+            ep = EXPAND.format(lang_name=lang_name, script_hint=script_hint, title=o["title"], chars=chars_desc,
+                               scenes=json.dumps([{"index": i, "what_happens": scenes[i].get("what_happens", ""),
+                                                   "chars_now": sum(len(l["text"]) for l in cur[i]), "lines": cur[i]}
+                                                  for i in short], ensure_ascii=False),
+                               chars_target=chars_target, lines_lo=lines_lo, lines_hi=lines_hi + 2)
+            try:
+                more, m2 = chat(ep, sysmsg, lambda x, r=short: validate_dialogue(x, lang, ids, r, min_lines=6),
+                                max_tokens=12000, tries_per_model=1, label=f"expand {short}", effort="medium")
+                for i in short:
+                    if sum(len(l["text"]) for l in more[i]) > sum(len(l["text"]) for l in got[i]):
+                        got[i] = more[i]
+                models.append(m2)
+            except Exception as e:
+                print(f"::warning title=expand::could not lengthen scenes {short}: {str(e)[:200]}", flush=True)
+        for i in rng_:
+            print(f"  scene {i}: {len(got[i])} lines, {sum(len(l['text']) for l in got[i])} chars (target {chars_target})", flush=True)
         written.update(got)
         last = got[rng_[-1]]
         prev_tail = json.dumps(last[-3:], ensure_ascii=False)

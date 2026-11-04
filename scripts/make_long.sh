@@ -6,6 +6,9 @@ set -Eeuo pipefail
 trap 'echo "::error::make_long failed at line $LINENO: $BASH_COMMAND"' ERR
 cd "$(dirname "$0")/.."
 LANG_CODE="${1:-te}"
+# run a step; on failure surface its last lines as an annotation (raw logs are hard to reach)
+run() { local log; log=$(mktemp); set +e; "$@" 2>&1 | tee "$log"; local rc=${PIPESTATUS[0]}; set -e
+  if [ "$rc" -ne 0 ]; then echo "::error title=$(basename "$2")::$(tail -n 6 "$log" | tr '\n' ' ' | cut -c1-900)"; exit "$rc"; fi; }
 PUBLISH="${2:-}"
 NAME="long_${LANG_CODE}_$(date -u +%Y%m%d_%H%M)"
 J="out/$NAME.json"
@@ -15,15 +18,15 @@ python -c "from PIL import features; import sys; sys.exit(0 if features.check('r
   echo "::error::Pillow has no raqm text shaping: Telugu/Devanagari text would render broken"; exit 1; }
 
 T=$SECONDS
-python scripts/write_long_story.py "$J" "$LANG_CODE"
+run python scripts/write_long_story.py "$J" "$LANG_CODE"
 echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
-python scripts/long_voice.py "$J"
+run python scripts/long_voice.py "$J"
 echo "::notice title=timing::voices $((SECONDS - T))s"; T=$SECONDS
-python engine/long2d.py plan "$J"
-python scripts/long_audio.py "$J"
+run python engine/long2d.py plan "$J"
+run python scripts/long_audio.py "$J"
 echo "::notice title=timing::plan+music+sfx $((SECONDS - T))s"; T=$SECONDS
-python scripts/long_thumb.py "$J"
-python engine/long2d.py render "$J" --audio "out/${NAME}_mix.wav"
+run python scripts/long_thumb.py "$J"
+run python engine/long2d.py render "$J" --audio "out/${NAME}_mix.wav"
 echo "::notice title=timing::render $((SECONDS - T))s"; T=$SECONDS
 
 # ---- sanity checks on the finished file
@@ -50,7 +53,7 @@ json.dump(s, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 PY
 
 if [ "$PUBLISH" = "publish" ]; then
-  python scripts/upload_long.py "$J"
+  run python scripts/upload_long.py "$J"
   echo "::notice title=timing::upload $((SECONDS - T))s"
 else
   echo "::notice title=publish::publish=false: not uploaded; mp4 + thumbnail + story json are in the workflow artifact"

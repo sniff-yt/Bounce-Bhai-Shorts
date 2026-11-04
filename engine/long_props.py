@@ -253,6 +253,23 @@ def draw_stage_prop(cv, name, x, y, t=0.0):
     if k:
         draw_cart(cv, k, x, y, t)
         return True
+    if "scale" in n or "tarazu" in n or "taraju" in n or "weigh" in n or "balance" in n:
+        fill_ink(cv, rrect(x - 170, y - 190, x + 170, y - 160, 6), rgb("8b5a34"))
+        for px in (x - 150, x + 150):
+            fill_ink(cv, rrect(px - 12, y - 165, px + 12, y, 4), rgb("6b4426"), w=4)
+        tilt = 8 * math.sin(t * 1.3)
+        cv.drawPath(poly([(x, y - 190), (x, y - 330)], close=False), stroke(INK, 12))
+        cv.drawPath(poly([(x, y - 190), (x, y - 330)], close=False), stroke(rgb("c8901a"), 7))
+        cv.save(); cv.translate(x, y - 330); cv.rotate(tilt)
+        cv.drawPath(poly([(-110, 0), (110, 0)], close=False), stroke(INK, 10))
+        cv.drawPath(poly([(-110, 0), (110, 0)], close=False), stroke(rgb("c8901a"), 6))
+        for sx in (-110, 110):
+            cv.save(); cv.translate(sx, 0); cv.rotate(-tilt)
+            cv.drawPath(poly([(-34, 80), (0, 0), (34, 80)], close=False), stroke(rgb("6b6f78"), 3))
+            fill_ink(cv, smooth_closed([(-46, 80), (46, 80), (30, 100), (-30, 100)]), rgb("c8901a"), w=4)
+            cv.restore()
+        cv.restore()
+        return True
     if "well" in n:
         fill_ink(cv, rrect(x - 130, y - 150, x + 130, y, 10), rgb("b9b2a6"))
         for r_ in range(3):
