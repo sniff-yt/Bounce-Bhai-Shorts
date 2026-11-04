@@ -1720,5 +1720,21 @@
   "series": "BALL RACE #67",
   "names": null,
   "variant": "classic"
+ },
+ {
+  "date": "2026-11-04T16:01:10.737923+00:00",
+  "title": "Ball escape 20261104_1559",
+  "hook": "Kitne bounce mein bahar?",
+  "video_id": "QX7jCSdKmwk",
+  "seed": 50411,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Kitne bounce mein bahar? 🤯 | Ball Escape #23 #shorts",
+  "series": "BALL ESCAPE #23",
+  "names": [
+   "NOTHIN_STRIK"
+  ],
+  "variant": "gap"
  }
 ]
