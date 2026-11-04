@@ -114,7 +114,7 @@ def candidates():
         out += [("nvidia", NV, n, i) for i in picked[:6]]
     k = os.environ.get("NARA_API_KEY")
     if k:
-        for m in [m.strip() for m in os.environ.get("NARA_MODELS", "laguna-s-2.1,nemotron-3.5-lightning-free").split(",") if m.strip()]:
+        for m in [m.strip() for m in os.environ.get("NARA_MODELS", "laguna-s-2.1").split(",") if m.strip()]:
             out.append(("nara", NARA, k, m))
     return out
 
@@ -230,6 +230,9 @@ Rules:
   payoff, and a clear moral. Gentle humour in several scenes. The last scene shows the happy ending.
 - Vary sets and times: use at least 5 different sets and at least one night or rain scene.
 - Each scene lists who is on screen (2 to 4 characters, rarely 1, max 4) with positions as fractions 0.1-0.9.
+- WORDS: title, thumbnail_text, moral and names use only plain everyday {lang_name} words a village child knows
+  (e.g. Telugu "వడ్డీ వ్యాపారి", "మాయా కుండ", "అత్యాశ"), never invented, misspelt or bookish words; give their English
+  meaning in title_en and thumbnail_text_en.
 - title: in {lang_name} {script_hint}, click-worthy in the niche's style, 3 to 7 words, e.g. "<greedy/honest/clever> <food>
   seller", "<character>'s magic pot", "the poor family's rain night". thumbnail_text: ONE punchy exclamation of 2 to 4
   {lang_name} words that makes people click (shock, greed, tears, a secret), ending with "!" or "?", e.g. the {lang_name}
@@ -246,7 +249,7 @@ Allowed values:
 
 Return ONLY JSON:
 {{"theme": "<one-line English summary of THIS story's theme>",
-  "title": "...", "thumbnail_text": "...", "moral": "...", "moral_en": "...", "description": "...",
+  "title": "...", "title_en": "...", "thumbnail_text": "...", "thumbnail_text_en": "...", "moral": "...", "moral_en": "...", "description": "...",
   "tags": ["8-14 tags mixing {lang_name} and English, e.g. moral story, kahani, cartoon"],
   "thumbnail": {{"character": "<id>", "expression": "greedy|surprised|cry|angry|scared", "object": "<object or none>"}},
   "characters": [{{"id": "ramu", "name": "<name in {lang_name} script>", "name_en": "Ramu", "type": "man", "costume": "lungi",
@@ -406,6 +409,39 @@ def validate_dialogue(o, lang, ids, idx_range, min_lines=4):
     return got
 
 
+def estimate_secs(story, lang):
+    # measured on run 41845024685 (te): 12.5 chars/s spoken + gaps; this slightly over-estimates (14.3 est vs 13.4 real)
+    est = sum(len(l["text"]) for s in story["scenes"] for l in s["lines"]) / CHARS_PER_SEC[lang]
+    return est + sum(len(s["lines"]) for s in story["scenes"]) * 0.45 + len(story["scenes"]) * 1.6 + 8
+
+
+FILLER_ACTIONS = {"laugh", "surprised", "shrug", "scratch", "think", "nod", "wave", "greet", "hips", "proud", "celebrate"}
+
+
+def trim_to_length(story, lang, max_min):
+    """Hard cap on length: drop filler lines (reactions, short asides) from the middle of the longest scenes.
+    Never touches a scene's first 2 or last 3 lines, the hook, gives/takes (objects) or the moral."""
+    dropped = 0
+    while estimate_secs(story, lang) > max_min * 60:
+        best = None
+        for si, sc in enumerate(story["scenes"]):
+            ls = sc["lines"]
+            if len(ls) <= 7:
+                continue
+            for li in range(2, len(ls) - 3):
+                l = ls[li]
+                if l.get("object") or l.get("to") or l.get("action") in ("give", "take", "show", "enter", "exit", "walk", "run"):
+                    continue
+                score = (len(ls), l.get("action") in FILLER_ACTIONS, -len(l["text"]))
+                if best is None or score > best[0]:
+                    best = (score, si, li)
+        if not best:
+            break
+        del story["scenes"][best[1]]["lines"][best[2]]
+        dropped += 1
+    return dropped
+
+
 def main(out, lang):
     if lang not in LANG_NAME:
         raise SystemExit("lang must be te, hi or en")
@@ -429,7 +465,7 @@ def main(out, lang):
     per_scene = secs_total / n
     speech_secs = per_scene - 4.5     # ~9 line gaps per scene
     chars_target = int(speech_secs * CHARS_PER_SEC[lang])
-    lines_lo, lines_hi = 10, 14
+    lines_lo, lines_hi = 8, 11   # run 41845024685: 10-14 lines gave 13.4 min for a 9 min target
     plan = json.dumps([{"index": i, "set": s["set"], "time": s["time"], "on_screen": [c["id"] for c in s["cast"]],
                         "prop": s.get("prop"), "what_happens": s.get("what_happens", "")} for i, s in enumerate(scenes)],
                       ensure_ascii=False)
@@ -458,7 +494,7 @@ def main(out, lang):
         got, m = chat(prompt, sysmsg, lambda x, r=rng_: validate_dialogue(x, lang, ids, r), max_tokens=12000,
                       tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}", effort="low")
         models.append(m)
-        short = [i for i in rng_ if sum(len(l["text"]) for l in got[i]) < 0.8 * chars_target]
+        short = [i for i in rng_ if sum(len(l["text"]) for l in got[i]) < 0.7 * chars_target]
         if short:   # one expansion pass for scenes that came out too short
             cur = {i: got[i] for i in short}
             ep = EXPAND.format(lang_name=lang_name, script_hint=script_hint, title=o["title"], chars=chars_desc,
@@ -482,7 +518,7 @@ def main(out, lang):
         prev_tail = json.dumps(last[-3:], ensure_ascii=False)
     # ---- assemble
     story = {"lang": lang, "format": "long_story", "seed": rng.randint(1, 10 ** 6), "theme": o.get("theme"),
-             "seed_theme": seed, "title": o["title"].strip(), "thumbnail_text": o["thumbnail_text"].strip(),
+             "seed_theme": seed, "title": o["title"].strip(), "title_en": (o.get("title_en") or "").strip(), "thumbnail_text": o["thumbnail_text"].strip(),
              "moral": o["moral"].strip(), "moral_en": o.get("moral_en", ""), "description": o.get("description", ""),
              "tags": o.get("tags", []), "thumbnail": o["thumbnail"], "characters": o["characters"], "models": models,
              "scenes": []}
@@ -493,9 +529,10 @@ def main(out, lang):
         story["scenes"].append(s)
     story["scenes"][-1]["lines"].append({"speaker": "narrator", "text": story["moral"], "emotion": "happy", "action": "talk"})
     story["scenes"][-1]["moral_card"] = True
-    est = sum(len(l["text"]) for s in story["scenes"] for l in s["lines"]) / CHARS_PER_SEC[lang]
-    est += sum(len(s["lines"]) for s in story["scenes"]) * 0.45 + len(story["scenes"]) * 1.6 + 8
-    story["estimated_minutes"] = round(est / 60, 1)
+    trimmed = trim_to_length(story, lang, TARGET_MIN + 1.0)
+    if trimmed:
+        print(f"::notice title=trim::dropped {trimmed} filler lines to stay near {TARGET_MIN:.0f} min", flush=True)
+    story["estimated_minutes"] = round(estimate_secs(story, lang) / 60, 1)
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(story, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"::notice title=story::{story['title']} | {len(story['scenes'])} scenes, "

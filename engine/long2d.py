@@ -362,6 +362,12 @@ def plan_shots(story, sc, plan, looks):
                 span = abs(ax - tx) + 520
                 z = max(1.0, min(1.35, W / span))
                 shot = (cx, 560 - (z - 1) * 60, z)
+        if kind in ("medium", "two"):   # keep every visible head inside the frame (a tall man next to a child)
+            cx_, cy_, z_ = shot
+            hw_ = W / 2 / z_
+            tops = [head_y(c) - 120 for c, tr in tracks.items() if abs(_x_at(tr, t + 0.2) - cx_) < hw_ + 60]
+            if tops:
+                shot = (cx_, min(cy_, min(tops) - 40 + H / 2 / z_), z_)
         shots.append((t - 0.05, kind) + shot)
         last_kind = kind
     if sc.get("moral_card"):
@@ -703,7 +709,9 @@ class Renderer:
             if cid == owner and not endscreen:
                 for kind, name, px, own in plan["props"]:
                     if kind == "cart":
-                        LP.draw_cart(cv, name, px + 20, FLOOR + 30, t, s=SCALE)
+                        # a child owner would vanish behind the counter: stand the cart beside them instead
+                        dx = 20 if self.looks[cid]["height"] >= 0.8 else (-1 if px < W / 2 else 1) * 250 * SCALE
+                        LP.draw_cart(cv, name, px + dx, FLOOR + 30, t, s=SCALE)
         if not endscreen:
             for gs, ge, obj, a, b in plan["gives"]:
                 if gs <= t <= ge and a in poses and b in poses:
