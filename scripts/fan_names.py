@@ -35,7 +35,8 @@ def main(path):
             if s.get("authorChannelId", {}).get("value") == CHANNEL: continue
             n = clean(s.get("authorDisplayName"))
             if n and n not in names: names.append(n)
-        hist = json.load(open(os.path.join(ROOT, "data", "history.json"), encoding="utf-8"))
+        hist = [h for h in json.load(open(os.path.join(ROOT, "data", "history.json"), encoding="utf-8"))
+                if h.get("format") != "long_story"]   # long-form stories never carry ball names
         used = {n for h in hist[-12:] for n in (h.get("names") or [])}
         fresh = [n for n in names if n not in used]
         pin = {}

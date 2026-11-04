@@ -21,11 +21,13 @@ king queen failed began wrong missing broken talking unsold unfinished infinite 
 ki ka ke ek hai aur se mein jo ne kya kaise kyun wala wali bhi tha thi""".split())
 
 
-def _load_history():
+def _load_history(include_long=False):
+    """Shorts history only (long-form stories are logged with format "long_story" and never drive Shorts decisions)."""
     try:
-        return json.load(open(HIST, encoding="utf-8"))
+        h = json.load(open(HIST, encoding="utf-8"))
     except Exception:
         return []
+    return h if include_long else [x for x in h if x.get("format") != "long_story"]
 
 
 def _load_stats():
@@ -47,20 +49,21 @@ def _ts(s):
         return 0
 
 
-def videos():
-    """Every known video with views, age, format, genre, topic."""
-    hist = _load_history()
+def videos(include_long=False):
+    """Every known Short with views, age, format, genre, topic (long-form stories excluded unless asked)."""
+    hist = _load_history(include_long=True)
     by_id = {h["video_id"]: h for h in hist if h.get("video_id")}
     out = []
     for v in (_load_stats().get("videos") or _load_stats().get("recent") or []):
         h = by_id.get(v["id"], {})
-        fmt = h.get("format") or ("multiply" if re.search(r"multiply|\+1 ball|500 ball", v["title"], re.I) else "promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
+        fmt = h.get("format") or ("long_story" if v.get("long") or re.search(r"moral story|kahani|\| bounce bhai$", v["title"], re.I) else
+                                  "multiply" if re.search(r"multiply|\+1 ball|500 ball", v["title"], re.I) else "promo" if re.search(r"bhai drive|parking|game", v["title"], re.I) else
                                   "race" if re.search(r"kaun jeetega|race|winner|🏁|🟢", v["title"], re.I) else
                                   "sim" if re.search(r"gap|nikal|escape|bahar|🔴", v["title"], re.I) else "story")
         age_h = (time.time() - _ts(v.get("published"))) / 3600
         out.append({"id": v["id"], "title": v["title"], "views": v.get("views", 0), "likes": v.get("likes", 0),
                     "age_h": age_h, "format": fmt, "genre": h.get("genre"), "topic": h.get("topic")})
-    return out
+    return out if include_long else [v for v in out if v["format"] != "long_story"]
 
 
 def _score(vs):

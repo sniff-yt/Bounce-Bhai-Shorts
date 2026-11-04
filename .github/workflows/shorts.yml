@@ -42,7 +42,7 @@ jobs:
           if ! python3 -c "
           import json, datetime as d
           try:
-              h = [x for x in json.load(open('data/history.json')) if x.get('video_id')]
+              h = [x for x in json.load(open('data/history.json')) if x.get('video_id') and x.get('format') != 'long_story']
               age = (d.datetime.now(d.timezone.utc) - d.datetime.fromisoformat(h[-1]['date'])).total_seconds() / 60
           except Exception:
               age = 1e9

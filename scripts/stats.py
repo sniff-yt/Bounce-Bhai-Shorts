@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write real channel numbers for the dashboard: python scripts/stats.py out/stats.json"""
-import json, os, sys, time, datetime
+import json, os, re, sys, time, datetime
 from google.auth.exceptions import RefreshError
 from yt_client import youtube, CHANNEL
 
@@ -28,12 +28,15 @@ items = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxRe
 ids = [i["contentDetails"]["videoId"] for i in items]
 vids = []
 if ids:
-    for v in yt.videos().list(part="snippet,statistics,status", id=",".join(ids)).execute().get("items", []):
+    for v in yt.videos().list(part="snippet,statistics,status,contentDetails", id=",".join(ids)).execute().get("items", []):
         s = v.get("statistics", {})
+        dur = v.get("contentDetails", {}).get("duration", "")   # ISO 8601, e.g. PT9M12S
         vids.append({"id": v["id"], "title": v["snippet"]["title"], "published": v["snippet"]["publishedAt"],
                      "thumb": v["snippet"].get("thumbnails", {}).get("medium", {}).get("url"),
                      "views": int(s.get("viewCount", 0)), "likes": int(s.get("likeCount", 0)),
-                     "comments": int(s.get("commentCount", 0)), "privacy": v["status"]["privacyStatus"]})
+                     "comments": int(s.get("commentCount", 0)), "privacy": v["status"]["privacyStatus"],
+                     "long": bool(re.search(r"(\d+)H", dur) or int((re.search(r"(\d+)M", dur) or [0, 0])[1]) >= 3),
+                     "format": "long_story" if (re.search(r"(\d+)H", dur) or int((re.search(r"(\d+)M", dur) or [0, 0])[1]) >= 3) else "short"})
 vids.sort(key=lambda v: v["published"], reverse=True)
 out = {"channel": {"id": CHANNEL, "title": ch["snippet"]["title"], "handle": ch["snippet"].get("customUrl"),
                    "avatar": ch["snippet"]["thumbnails"].get("default", {}).get("url"),

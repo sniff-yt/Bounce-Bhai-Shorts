@@ -1,0 +1,104 @@
+name: Bounce Bhai Long Stories
+
+# Long-form animated moral stories (8-10 min, Telugu / Hindi / English). Manual only for now: a daily schedule gets
+# added after the owner approves the test episode. publish=false keeps the video as an artifact (no YouTube upload).
+on:
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: 'Story language'
+        required: true
+        default: 'te'
+        type: choice
+        options: [te, hi, en]
+      publish:
+        description: 'Upload to YouTube (false = artifact only)'
+        required: false
+        default: false
+        type: boolean
+      theme:
+        description: 'Optional story seed / theme (empty = pick a fresh one)'
+        required: false
+        default: ''
+
+concurrency:
+  group: bouncebhai-long-${{ inputs.lang }}   # separate from the Shorts pipeline (bouncebhai-shorts)
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  long:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    env:
+      BB_LONG_SEED_THEME: ${{ inputs.theme }}
+      BB_X264: veryfast
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libegl1 libfontconfig1 libx11-6 libfribidi0 libraqm0 libharfbuzz0b
+          ffprobe -version | head -1
+          nproc
+
+      - name: Python packages
+        run: |
+          pip install --progress-bar off numpy pillow requests edge-tts google-api-python-client google-auth skia-python==144.0.post2
+          python -c "from PIL import features; print('raqm', features.check('raqm'))"
+
+      - name: Fonts (Noto Sans Telugu / Devanagari)
+        run: |
+          mkdir -p assets/fonts
+          for f in NotoSansTelugu/hinted/ttf/NotoSansTelugu-Bold.ttf NotoSansTelugu/hinted/ttf/NotoSansTelugu-Black.ttf \
+                   NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Bold.ttf NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Black.ttf \
+                   NotoSans/hinted/ttf/NotoSans-Bold.ttf NotoSans/hinted/ttf/NotoSans-Black.ttf; do
+            b=$(basename "$f"); [ -s "assets/fonts/$b" ] || curl -sfL -o "assets/fonts/$b" "https://github.com/notofonts/notofonts.github.io/raw/main/fonts/$f"
+          done
+          ls -la assets/fonts
+
+      - name: Make the episode (story, voices, music, thumbnail, animation)
+        env:
+          NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          YT_PRIVACY: public
+          YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw   # Bounce Bhai (@bouncebhaiofficial): refuse to post anywhere else
+        run: |
+          START=$(date +%s)
+          bash scripts/make_long.sh "${{ inputs.lang }}" "${{ inputs.publish && 'publish' || '' }}"
+          echo "::notice title=total::$(( ($(date +%s) - START) / 60 )) min end to end"
+
+      - name: Save the episode
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME || 'long_story' }}
+          path: |
+            out/*.mp4
+            out/*_thumb.jpg
+            out/long_*.json
+          retention-days: 14
+
+      - name: Remember what was posted
+        if: success() && inputs.publish
+        run: |
+          git config user.name "bouncebhai-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/history.json data/long_topics.json
+          git commit -m "log: $NAME" || exit 0
+          for i in 1 2 3; do git pull --rebase --autostash && git push && break; sleep 5; done
