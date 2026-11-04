@@ -119,15 +119,29 @@ def candidates():
     return out
 
 
-def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="", effort="low"):
-    """Try live models in order until one returns JSON that passes validate(obj) -> obj (raise to reject)."""
+def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="", effort="low", rounds=2):
+    """Try live models in order until one returns JSON that passes validate(obj) -> obj (raise to reject).
+    If every model fails (rate limits / timeouts), wait a minute and go round once more."""
+    last = None
+    for rnd in range(rounds):
+        try:
+            return _chat_once(prompt, system, validate, max_tokens, tries_per_model, label, effort)
+        except RuntimeError as e:
+            last = e
+            if rnd + 1 < rounds:
+                print(f"::warning title=llm::{label}: every model failed, retrying in 60 s", flush=True)
+                time.sleep(60)
+    raise last
+
+
+def _chat_once(prompt, system, validate, max_tokens, tries_per_model, label, effort):
     cands = candidates()
     if not cands:
         raise SystemExit("No LLM keys (GROQ_API_KEY / NVIDIA_API_KEY / NARA_API_KEY)")
     errs = []
     for prov, base, key, model in cands:
         for attempt in range(tries_per_model + 1):
-            body = {"model": model, "temperature": 0.85, "max_tokens": max_tokens,
+            body = {"model": model, "temperature": 0.85, "max_tokens": min(max_tokens, 8000) if prov == "groq" else max_tokens,
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"}}
             if "gpt-oss" in model:
@@ -140,18 +154,18 @@ def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="",
                                              headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
                                                       "User-Agent": "bouncebhai-long"})
                 try:
-                    raw = urllib.request.urlopen(req, timeout=240).read().decode("utf-8", "replace")
+                    raw = urllib.request.urlopen(req, timeout=240 if prov == "groq" else 600).read().decode("utf-8", "replace")
                 except urllib.error.HTTPError as e:
                     det = e.read().decode("utf-8", "replace")[:400]
                     if e.code == 400 and "response_format" in det:
                         body.pop("response_format")
                         req = urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(),
                                                      headers=req.headers)
-                        raw = urllib.request.urlopen(req, timeout=240).read().decode("utf-8", "replace")
+                        raw = urllib.request.urlopen(req, timeout=240 if prov == "groq" else 600).read().decode("utf-8", "replace")
                     elif e.code == 429:
-                        m = re.search(r"try again in ([\d.]+)(m?s)", det)
-                        wait = float(m.group(1)) / (1000 if m and m.group(2) == "ms" else 1) if m else 20
-                        if wait <= 65 and attempt < tries_per_model:
+                        m = re.search(r"try again in (?:(\d+)m)?([\d.]+)(ms|s)", det)
+                        wait = (int(m.group(1) or 0) * 60 + float(m.group(2)) / (1000 if m.group(3) == "ms" else 1)) if m else 20
+                        if wait <= 130 and attempt < tries_per_model:
                             print(f"  {label} {prov}:{model} rate-limited, waiting {wait:.0f}s", flush=True)
                             time.sleep(wait + 1)
                             continue
@@ -165,7 +179,7 @@ def chat(prompt, system, validate, max_tokens=9000, tries_per_model=1, label="",
             except Exception as e:
                 msg = f"{prov}:{model}: {str(e)[:220]}"
                 errs.append(msg)
-                print(f"  {label} failed {msg}", flush=True)
+                print(f"::warning title=llm {label}::{msg[:300]}", flush=True)
                 break
     raise RuntimeError(f"all models failed for {label}: " + " | ".join(errs[-6:]))
 
@@ -442,7 +456,7 @@ def main(out, lang):
                                  chars_target=chars_target, secs=int(per_scene), hook=hook, exprs=EXPRS,
                                  actions=ACTIONS, objects=OBJECTS, sfx=SFX)
         got, m = chat(prompt, sysmsg, lambda x, r=rng_: validate_dialogue(x, lang, ids, r), max_tokens=12000,
-                      tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}", effort="medium")
+                      tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}", effort="low")
         models.append(m)
         short = [i for i in rng_ if sum(len(l["text"]) for l in got[i]) < 0.8 * chars_target]
         if short:   # one expansion pass for scenes that came out too short
@@ -454,7 +468,7 @@ def main(out, lang):
                                chars_target=chars_target, lines_lo=lines_lo, lines_hi=lines_hi + 2)
             try:
                 more, m2 = chat(ep, sysmsg, lambda x, r=short: validate_dialogue(x, lang, ids, r, min_lines=6),
-                                max_tokens=12000, tries_per_model=1, label=f"expand {short}", effort="medium")
+                                max_tokens=12000, tries_per_model=1, label=f"expand {short}", effort="low", rounds=1)
                 for i in short:
                     if sum(len(l["text"]) for l in more[i]) > sum(len(l["text"]) for l in got[i]):
                         got[i] = more[i]
