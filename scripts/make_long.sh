@@ -40,6 +40,7 @@ fi
 [ "$PUBLISH" = "sample" ] && run python scripts/long_sample.py "$J"
 echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
 run python scripts/long_voice.py "$J"
+python scripts/long_asr_check.py "$J" || echo "::warning title=whisper check::could not run"
 echo "::notice title=timing::voices $((SECONDS - T))s"; T=$SECONDS
 run python engine/long2d.py plan "$J"
 # frame + STAGING checker on the render plan. Staging failures (speaker not on screen, a cut moving somebody, the

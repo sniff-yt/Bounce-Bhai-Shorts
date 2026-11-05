@@ -242,6 +242,8 @@ def mark_reactions(story):
                 lis = next((k for k in (ln.get("reactions") or {}) if k != sp), None)
             if not lis:
                 continue
+            if not ln.get("target") and (ln.get("action") or "") in ("think", "sneak", "look_around", "scratch"):
+                continue    # an aside / thinking aloud: nobody is meant to hear it
             strong = (ln.get("emotion") in STRONG) or bool(ln.get("reactions")) or \
                 (ln.get("action") or "") in ("give", "shout", "scold", "stomp", "beg", "point")
             if strong and li - last >= 2:

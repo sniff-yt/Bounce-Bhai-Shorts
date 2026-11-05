@@ -1181,6 +1181,7 @@ class Renderer:
             if -500 < P["x"] < W + 500:
                 g = LC.geometry(self.looks[cid], P)
                 g["walking"] = P.get("_walking", False)
+                g["facing"] = 1 if P.get("facing", 1) > 0 else -1
                 out[cid] = g
         return out
 
@@ -1234,7 +1235,12 @@ class Renderer:
             beats = [b_[3] for b_ in (ln.get("beats") or [])]
             if sp not in tracks:   # narration: the characters it names (or its actor), else the whole stage
                 if li == 0 and t < est_end + 1.0:
-                    continue        # the opening line plays over the establishing wide
+                    # the opening line plays over the establishing wide, then (a long opener) shows who it is about
+                    ids = [c for c in self.mentioned(ln, list(tracks)) if on_stage(c, t + 0.3)]
+                    if ids and te_line - t > 7.0:
+                        ct = t + max(4.0, 0.42 * (te_line - t))
+                        wants.append((ct, "two" if len(ids) > 1 else "medium", tuple(ids[:3]), ids[0], None, "narration"))
+                    continue
                 ids = [c for c in self.mentioned(ln, list(tracks)) if on_stage(c, t + 0.3)]
                 actor = ln.get("actor") if on_stage(ln.get("actor"), t + 0.3) else None
                 if actor and actor not in ids:
@@ -1326,6 +1332,8 @@ class Renderer:
         if subj:
             hx = [G[0][c]["head"][0] for c in subj]
             pref = hx[0] if len(hx) == 1 else (hx[0] * 0.6 + hx[1] * 0.4 if kind in ("close", "medium") else sum(hx) / len(hx))
+            if len(hx) == 1 or kind == "close":
+                pref = hx[0] + G[0][subj[0]].get("facing", 1) * 0.22 * (W / 2 / (z0 * PUSH))
         else:
             xs = [g["x"] for g in G[0].values() if -100 < g["x"] < W + 100]
             pref = max(820, min(1100, sum(xs) / len(xs))) if xs else 960
@@ -1336,7 +1344,7 @@ class Renderer:
             hw_in = W / 2 / zin - (14 + drift) / zin
             hw_out = W / 2 / z + drift
             hh = H / 2 / zin
-            cands = {pref}
+            cands = {pref, pref - 60, pref + 60}
             for g in G:
                 for cid, c in g.items():
                     l_, r_ = c["reach"]
@@ -1410,8 +1418,13 @@ class Renderer:
             if not (l_ >= Li and r_ <= Ri) and r_ > Lo and l_ < Ro:
                 soft += 1
         if subj and (len(subj) == 1 or kind == "close") and subj[0] in G[0]:
-            # a close / single shot keeps its subject near the middle (not squeezed against the frame edge)
+            # a single: the subject on the third of the frame BEHIND their gaze (looking room in front of them),
+            # never squeezed against the edge they look away from
             hx_ = sum(g[subj[0]]["head"][0] for g in G if subj[0] in g) / max(1, sum(1 for g in G if subj[0] in g))
+            fc = G[0][subj[0]].get("facing", 1)
+            want = cx - fc * 0.22 * hw_in
+            if abs(hx_ - want) > 0.26 * hw_in:
+                soft += 2
             if abs(hx_ - cx) > 0.55 * hw_in:
                 soft += 1
         if cy_fixed is not None:
