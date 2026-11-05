@@ -30,9 +30,9 @@ CHAPTERS = {"te": "అధ్యాయాలు", "hi": "अध्याय", "en
 SUB = {"te": "🔔 ప్రతి రోజు ఒక కొత్త కథ కోసం సబ్‌స్క్రైబ్ చేయండి 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
        "hi": "🔔 रोज़ एक नई कहानी के लिए सब्सक्राइब करें 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
        "en": "🔔 Subscribe for a new moral story every day 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1"}
-FOOT = {"te": "కోడ్‌తో గీసిన నిజమైన 2D కార్టూన్ యానిమేషన్ (AI చిత్రాలు కాదు).",
-        "hi": "कोड से बनाया गया असली 2D कार्टून एनिमेशन (AI तस्वीरें नहीं)।",
-        "en": "Real 2D cartoon animation drawn with code (no AI slideshow images)."}
+FOOT = {"te": "ప్రతి పాత్రను కోడ్‌తో యానిమేట్ చేసిన 2D కార్టూన్ కథ.",
+        "hi": "2D कार्टून कहानी, जिसका हर किरदार कोड से एनिमेट किया गया है।",
+        "en": "A 2D cartoon story with every character animated in code."}
 ASK = {"te": "ఈ కథ మీకు నచ్చిందా? మీకు నచ్చిన పాత్ర ఎవరు? కామెంట్ చేయండి 👇",
        "hi": "आपको यह कहानी कैसी लगी? आपका पसंदीदा किरदार कौन है? कमेंट करें 👇",
        "en": "Did you like this story? Who was your favourite character? Comment below 👇"}
