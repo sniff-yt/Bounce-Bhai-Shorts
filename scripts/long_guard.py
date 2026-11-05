@@ -63,9 +63,7 @@ def gate(jpath):
     edge = [ln for ln in lines if not str(ln.get("voice", "")).startswith("gemini")]   # edge-tts / anything else
     if not lines:
         bad.append("no voiced lines")
-    elif len(edge) / len(lines) > 0.25:
-        bad.append(f"{len(edge)}/{len(lines)} lines ({100 * len(edge) / len(lines):.0f} %) fell back from Gemini TTS to edge-tts (max 25 %)")
-    else:
+    else:   # owner chose the free voices (2026-11-05): edge-tts episodes publish too, no voice gate
         print(f"::notice title=gate::Gemini TTS voiced {len(lines) - len(edge)}/{len(lines)} lines")
     for b in bad:
         print(f"::warning title=publish gate::{b} - NOT uploading (episode kept in the artifact)")

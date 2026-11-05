@@ -471,6 +471,11 @@ async def main_async(path):
     gem, gv = ({}, {})
     if use_gem:
         gem, gv = await asyncio.to_thread(gemini_pass, story, base, spec)
+        # free-tier quota (owner chose free, 2026-11-05): if Gemini could not voice >=75 % of the lines, voice the
+        # WHOLE episode with edge-tts so every character keeps one consistent voice (no mid-episode voice switching)
+        if spec and len(gem) / len(spec) < float(os.environ.get("BB_GEMINI_MIN", "0.75")):
+            print(f"::notice title=voices::Gemini voiced only {len(gem)}/{len(spec)} lines (free quota) - using edge-tts for all lines", flush=True)
+            gem, gv = {}, {}
     # ---- edge-tts for whatever Gemini did not voice
     jobs, sem = [], asyncio.Semaphore(4)
     for ln, p in spec:

@@ -82,7 +82,7 @@ json.dump(s, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 PY
 
 if [ "$PUBLISH" = "publish" ]; then
-  # publish gates (duration 8.5-10.5 min, no freeze, <=25 % edge-tts fallback): a failed gate skips the upload, the
+  # publish gates (duration 8.5-10.5 min, no freeze; free edge-tts voices allowed): a failed gate skips the upload, the
   # episode stays in the artifact and the run ends green with ::warning lines (the backup cron then tries again).
   set +e; trap - ERR
   python scripts/long_guard.py gate "$J"; GATE=$?
