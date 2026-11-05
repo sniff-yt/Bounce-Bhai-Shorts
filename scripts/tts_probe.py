@@ -46,7 +46,9 @@ SAMPLES = {"te": [
 
 
 def tts(model, voice, style, text):
-    body = {"contents": [{"parts": [{"text": f"{style}:\n{text}"}]}],
+    prompt = (f"# DIRECTOR'S NOTES (do not read aloud)\n{style}. Natural spoken {'Telugu' if lang == 'te' else 'Hindi'}, real emotion.\n\n"
+              f"# TRANSCRIPT (read exactly this, nothing else)\n{text}") if STRUCT else f"{style}:\n{text}"
+    body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseModalities": ["AUDIO"],
                                  "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}}}}
     t0 = time.time()
@@ -54,7 +56,11 @@ def tts(model, voice, style, text):
     dt = time.time() - t0
     if r.status_code != 200:
         return None, f"{r.status_code} {r.text[:300]}", dt
-    p = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
+    j = r.json()
+    try:
+        p = j["candidates"][0]["content"]["parts"][0]["inlineData"]
+    except Exception:
+        return None, "no content: " + json.dumps(j)[:300], dt
     return base64.b64decode(p["data"]), p.get("mimeType"), dt
 
 
@@ -86,30 +92,32 @@ def whisper(path):
 
 norm = lambda s: re.sub(r"[\W_]+", "", s.lower())
 order = [m.split("/")[-1] for m in TTSM]
-PREF = ("gemini-3.8-flash-tts", "gemini-2.5-pro-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")
+PREF = tuple(os.environ.get("PROBE_MODELS", "gemini-3.1-flash-tts-preview,gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts").split(","))
+STRUCT = os.environ.get("PROBE_STRUCT", "1") == "1"
 pref = [m for m in PREF if m in order]
 report = {"tts_models": TTSM, "samples": []}
 for model in pref[:4]:
-    for name, voice, style, text in SAMPLES[lang]:
-        pcm, mime, dt = tts(model, voice, style, text)
-        rec = {"model": model, "name": name, "voice": voice, "secs": round(dt, 1)}
-        if pcm is None:
-            rec["error"] = mime
-            print(f"{model} {name}: ERROR {mime}", flush=True)
-            report["samples"].append(rec)
-            if "429" in mime:
-                time.sleep(30)
-            continue
-        a = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768
-        p = f"{out}/{model}_{name}.wav"
-        with wave.open(p, "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(pcm)
-        wj = whisper(p)
-        heard = wj.get("text", "")
-        rec.update(mime=mime, dur=round(len(a) / 24000, 2), rms_db=round(20 * np.log10(np.sqrt((a ** 2).mean()) + 1e-9), 1),
-                   f0=round(pitch_med(a)), heard=heard, sim=round(difflib.SequenceMatcher(None, norm(text), norm(heard)).ratio(), 2),
-                   words=len(wj.get("words") or []), werr=wj.get("error"))
-        print(json.dumps(rec, ensure_ascii=False, default=float), flush=True)
-        report["samples"].append(rec)
-        time.sleep(2)
+  for STRUCT in ((True, False) if model == "gemini-3.8-flash-tts" else (True,)):
+      for name, voice, style, text in SAMPLES[lang]:
+          pcm, mime, dt = tts(model, voice, style, text)
+          rec = {"model": model, "name": name, "voice": voice, "secs": round(dt, 1), "struct": STRUCT}
+          if pcm is None:
+              rec["error"] = mime
+              print(f"{model} {name}: ERROR {mime}", flush=True)
+              report["samples"].append(rec)
+              if "429" in mime:
+                  time.sleep(30)
+              continue
+          a = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768
+          p = f"{out}/{model}_{name}_{int(STRUCT)}.wav"
+          with wave.open(p, "wb") as w:
+              w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(pcm)
+          wj = whisper(p)
+          heard = wj.get("text", "")
+          rec.update(mime=mime, dur=round(len(a) / 24000, 2), rms_db=round(20 * np.log10(np.sqrt((a ** 2).mean()) + 1e-9), 1),
+                     f0=round(pitch_med(a)), heard=heard, sim=round(difflib.SequenceMatcher(None, norm(text), norm(heard)).ratio(), 2),
+                     words=len(wj.get("words") or []), werr=wj.get("error"))
+          print(json.dumps(rec, ensure_ascii=False, default=float), flush=True)
+          report["samples"].append(rec)
+          time.sleep(2)
 json.dump(report, open(f"{out}/report.json", "w"), ensure_ascii=False, indent=1, default=float)
