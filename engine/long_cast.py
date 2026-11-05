@@ -99,75 +99,330 @@ def make_look(spec, seed):
 
 
 def rest_pose():
-    return {"x": 960.0, "y": 900.0, "scale": 1.0, "facing": 1, "lean": 0.0, "bob": 0.0, "head_tilt": 0.0,
+    return {"x": 960.0, "y": 900.0, "scale": 1.0, "facing": 1, "lean": 0.0, "bob": 0.0, "hop": 0.0, "dip": 0.0,
+            "breath": 0.0, "hip_shift": 0.0, "lf": (0.0, 0.0), "rf": (0.0, 0.0), "head_tilt": 0.0,
             "head_turn": 0.35, "squash": 0.0,
             # hand IK targets relative to each shoulder: (out, down); out>0 = away from the body centre
-            "lh": (16.0, 205.0), "rh": (16.0, 205.0),
+            "lh": (8.0, 200.0), "rh": (8.0, 200.0),
             "l_hip": 0.0, "l_knee": 0.0, "r_hip": 0.0, "r_knee": 0.0, "sit": 0.0,
             "mouth": 0.0, "smile": 0.3, "blink": 0.0, "eye_open": 1.0, "gaze": (0.3, 0.0), "brow": 0.0,
             "brow_up": 0.0, "tears": 0.0, "red": 0.0, "sweat": 0.0, "happy_eyes": 0.0, "o_mouth": 0.0,
             "grin": 0.0, "sly": 0.0, "hold": None, "hold_hand": "r", "highlight": 0.0}
 
 
-# ------------------------------------------------------------------------------------------------ helpers
-def _ik(sx, sy, tx, ty, a, b, side):
-    """2-bone IK from shoulder (sx,sy) to target (tx,ty). Elbow bends outward/down. Returns elbow, hand."""
+# ------------------------------------------------------------------------------------------------ the puppet
+# Local frame: feet soles on y=0, +x = the way the character faces (draw_character mirrors it), so the "l" limbs
+# (side -1) are the FAR side (drawn behind the body) and the "r" limbs (side +1) the NEAR side (drawn in front).
+GRIP = {   # how a held object sits in the hand: hang (hand grips the rim/neck, object below), palm (rests on the open
+           # palm, drawn over the hand), pinch (held at its middle, the hand drawn over it); (dx, dy) object offset
+    "gold_pot": ("hang", 0, 44), "pot": ("hang", 0, 44), "magic_pot": ("hang", 0, 44), "water": ("hang", 0, 44),
+    "jar": ("hang", 0, 44), "coin_bag": ("hang", 0, 40), "rice_sack": ("hang", 0, 50), "basket": ("hang", 0, 24),
+    "lamp": ("palm", 0, -24), "bowl": ("palm", 0, -26), "plate": ("palm", 0, -26), "samosa": ("palm", 0, -26),
+    "pani_puri": ("palm", 0, -26), "momos": ("palm", 0, -26), "seed": ("palm", 0, -26), "egg": ("palm", 0, -26),
+    "fish": ("palm", 0, -26), "mango": ("palm", 0, -30), "roti": ("palm", 0, -26), "bread": ("palm", 0, -26),
+    "coins": ("palm", 0, -18), "chai": ("pinch", 4, -6), "letter": ("pinch", 20, -8), "money": ("pinch", 22, -6),
+    "coin": ("pinch", 10, -14), "key": ("pinch", 10, 0), "flower": ("pinch", 0, -30), "book": ("pinch", 18, -6),
+    "gift": ("pinch", 22, -14), "necklace": ("hang", 0, 10), "stick": ("pinch", 0, 0), "umbrella": ("pinch", 0, 40),
+}
+HELD_SCALE = {"magic_pot": 1.25, "gold_pot": 1.25, "pot": 1.2, "rice_sack": 1.1}
+FACE_CLEAR = 0.32   # a hand may overlap the face outline by at most this fraction of its radius
+
+
+def dims(look):
+    kid, fem, old = look["kid"], look["female"], look["old"]
+    wdt = look["width"]
+    d = {"leg": 230.0 if not kid else 160.0, "torso": (215.0 if not kid else 150.0) * (0.97 if old else 1.0),
+         "sh_x": (70 if not fem else 62) * wdt * (0.82 if kid else 1.0),
+         "waist": (62 if not fem else 54) * wdt * (0.85 if kid else 1.0),
+         "head_r": 90.0 * look["head"], "up": 110.0 if not kid else 80.0, "lo": 104.0 if not kid else 76.0,
+         "aw": 36.0 if not kid else 28.0, "hand_r": 23.0 if not kid else 19.0, "lw": 54.0 if not kid else 42.0,
+         "ankle": 24.0, "hip_dx": 30 * wdt}
+    d["hip_rest"] = -(d["leg"] * 0.975 + d["ankle"])
+    return d
+
+
+def head_top_k(look):
+    """Head top above the head centre, in head radii (hair, bun, turban, crown)."""
+    hw = look.get("headwear", "none")
+    k = {"pagdi": 1.36, "crown": 1.62, "topi": 1.32}.get(hw, 1.12)
+    if look.get("hair") == "bun" and not look.get("ghoonghat"):
+        k = max(k, 1.5)
+    if look.get("ghoonghat"):
+        k = max(k, 1.16)
+    return k
+
+
+def _ik(sx, sy, tx, ty, a, b, side, down_w=1.0, side_w=0.5):
+    """2-bone IK from joint (sx,sy) to target (tx,ty). The middle joint bends to the OUTSIDE (away from the body
+    centre on `side`) and downward, so elbows never fold up/inward. Returns (elbow, hand)."""
     dx, dy = tx - sx, ty - sy
-    d = math.hypot(dx, dy)
-    d = max(abs(a - b) + 1, min(a + b - 0.5, d))
-    if d < 1e-3:
-        return (sx, sy + a), (sx, sy + a + b)
-    ux, uy = dx / max(1e-6, math.hypot(dx, dy)), dy / max(1e-6, math.hypot(dx, dy))
+    d0 = math.hypot(dx, dy)
+    d = max(abs(a - b) + 1, min(a + b - 0.5, d0))
+    if d0 < 1e-3:
+        dx, dy, d0 = 0.0, 1.0, 1.0
+    ux, uy = dx / d0, dy / d0
     hx, hy = sx + ux * d, sy + uy * d
-    cosA = (a * a + d * d - b * b) / (2 * a * d)
-    cosA = max(-1, min(1, cosA))
+    cosA = max(-1.0, min(1.0, (a * a + d * d - b * b) / (2 * a * d)))
     ang = math.acos(cosA)
-    # rotate the shoulder->hand direction by +-ang; pick the elbow that is further outward / lower
     best = None
     for sgn in (1, -1):
         ca, sa = math.cos(sgn * ang), math.sin(sgn * ang)
         ex = sx + (ux * ca - uy * sa) * a
         ey = sy + (ux * sa + uy * ca) * a
-        score = (ex - sx) * side * 1.0 + (ey - sy) * 0.35
+        # perpendicular offset of the elbow from the shoulder->hand line
+        px, py = ex - (sx + ux * a * cosA), ey - (sy + uy * a * cosA)
+        score = px * side * side_w + py * down_w
         if best is None or score > best[0]:
             best = (score, ex, ey)
     return (best[1], best[2]), (hx, hy)
 
 
-def _limb(cv, pts, col, w, ink_w=8):
-    p = poly(pts, close=False)
-    cv.drawPath(p, stroke(INK, w + ink_w))
-    cv.drawPath(p, stroke(col, w))
+def _leg_ik(hx, hy, fx, fy, a, b):
+    """Hip -> ankle; the knee always bends FORWARD (+x)."""
+    dx, dy = fx - hx, fy - hy
+    d0 = max(1e-3, math.hypot(dx, dy))
+    d = max(abs(a - b) + 1, min(a + b - 0.01, d0))
+    ux, uy = dx / d0, dy / d0
+    ax, ay = hx + ux * d, hy + uy * d
+    cosA = max(-1.0, min(1.0, (a * a + d * d - b * b) / (2 * a * d)))
+    ang = math.acos(cosA)
+    cands = []
+    for sgn in (1, -1):
+        ca, sa = math.cos(sgn * ang), math.sin(sgn * ang)
+        cands.append((hx + (ux * ca - uy * sa) * a, hy + (ux * sa + uy * ca) * a))
+    knee = max(cands, key=lambda k: k[0] - (hx + ux * a * cosA))
+    return knee, (ax, ay)
+
+
+def rig(look, P):
+    """Every joint of the puppet in its local frame (before mirroring/scale). Feet are planted on y=0 unless a foot
+    target lifts them; the hips carry the dip/sway so the soles never float. Upper-body points are already rotated
+    by the lean (around the hip)."""
+    d = dims(look)
+    wdt = look["width"]
+    hip_x = P.get("hip_shift", 0.0)
+    hip_y = d["hip_rest"] + P.get("dip", 0.0) + P.get("sit", 0.0) * 110
+    thigh = shin = d["leg"] * 0.5
+    R = {"d": d, "hip": (hip_x, hip_y), "lean": P.get("lean", 0.0)}
+    for side, key in ((-1, "lf"), (1, "rf")):
+        off, lift = P.get(key) or (0.0, 0.0)
+        fx = side * d["hip_dx"] * 0.85 + off
+        fy = -d["ankle"] - max(0.0, lift)
+        hj = (hip_x + side * d["hip_dx"], hip_y)
+        knee, ankle = _leg_ik(hj[0], hj[1], fx, fy, thigh, shin)
+        R["hipj" + key[0]] = hj
+        R["knee" + key[0]] = knee
+        R["ankle" + key[0]] = ankle
+        R["sole" + key[0]] = ankle[1] + d["ankle"]
+    # ---- upper body (lean rotates it around the hip)
+    lean = math.radians(P.get("lean", 0.0))
+    cl, sl = math.cos(lean), math.sin(lean)
+
+    def rot(x, y):
+        x0, y0 = x - hip_x, y - hip_y
+        return (hip_x + x0 * cl - y0 * sl, hip_y + x0 * sl + y0 * cl)
+
+    R["rot"] = rot
+    br = P.get("breath", 0.0)
+    sh_y = hip_y - d["torso"] - 2.0 * br
+    R["sh_y"] = sh_y
+    neck_top = sh_y - 24
+    r = d["head_r"]
+    hc_y = neck_top - r * 0.92
+    R["neck_top"] = neck_top
+    # head tilt pivots at the neck: move the head centre accordingly
+    tl = math.radians(P.get("head_tilt", 0.0))
+    hcx = hip_x + (hc_y - neck_top) * -math.sin(tl)
+    hcy = neck_top + (hc_y - neck_top) * math.cos(tl)
+    R["head_local"] = (0.0, hc_y)
+    R["head"] = rot(hcx, hcy)
+    R["head_r"] = r
+    k = (d["up"] + d["lo"]) / 214.0
+    for side, key in ((-1, "lh"), (1, "rh")):
+        sx, sy = hip_x + side * (d["sh_x"] - 12) + (4 if side < 0 else 0), sh_y + 16
+        out, down = P.get(key) or (16.0, 205.0)
+        tx, ty = sx + side * out * k, sy + down * k
+        # keep the hand off the face: push it radially out of the head disc
+        hx_, hy_ = hcx, hcy
+        dd = math.hypot(tx - hx_, ty - hy_)
+        clear = r * 1.02 + d["hand_r"] * (1 - FACE_CLEAR)
+        if dd < clear:
+            if dd < 1e-3:
+                ux, uy = side, 0.0
+            else:
+                ux, uy = (tx - hx_) / dd, (ty - hy_) / dd
+                if ux * side < 0.25:      # push to the hand's own side, not across the face
+                    ux = side * 0.9; uy = uy * 0.45
+                    n = math.hypot(ux, uy); ux, uy = ux / n, uy / n
+            tx, ty = hx_ + ux * clear, hy_ + uy * clear
+        (ex, ey), (wx, wy) = _ik(sx, sy, tx, ty, d["up"], d["lo"], side)
+        R["sh" + key[0]] = rot(sx, sy)
+        R["el" + key[0]] = rot(ex, ey)
+        R["wr" + key[0]] = rot(wx, wy)
+        # hand centre sits just beyond the wrist along the forearm
+        fx_, fy_ = wx - ex, wy - ey
+        n = max(1e-6, math.hypot(fx_, fy_))
+        hcx_, hcy_ = wx + fx_ / n * d["hand_r"] * 0.55, wy + fy_ / n * d["hand_r"] * 0.55
+        R["hand" + key[0]] = rot(hcx_, hcy_)
+        R["hand_ang" + key[0]] = math.atan2(fy_, fx_) + lean
+    return R
+
+
+def joint_angle(a, b, c):
+    """Interior angle at b (degrees) of the chain a-b-c."""
+    v1 = (a[0] - b[0], a[1] - b[1]); v2 = (c[0] - b[0], c[1] - b[1])
+    n = max(1e-6, math.hypot(*v1) * math.hypot(*v2))
+    return math.degrees(math.acos(max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / n))))
+
+
+def geometry(look, P):
+    """World-space geometry for the camera planner and the frame checker."""
+    R = rig(look, P)
+    s = P["scale"] * look["height"]
+    f = 1 if P.get("facing", 1) >= 0 else -1
+    hop = P.get("hop", 0.0) + P.get("bob", 0.0)
+
+    def W_(pt):
+        return (P["x"] + pt[0] * s * f, P["y"] + (pt[1] - hop) * s)
+
+    d = R["d"]
+    hx, hy = W_(R["head"])
+    r = R["head_r"] * s
+    top_k = head_top_k(look)
+    half = max(d["sh_x"] + d["aw"] * 0.5, d["waist"] + 30 + look["belly"] * 26) * s
+    if look["costume"] in ("saree", "pavadai", "royal_f"):
+        half = max(half, (d["waist"] + 52) * s)
+    xs = [W_(R[k])[0] for k in ("handl", "handr", "ell", "elr")]
+    g = {"x": P["x"], "s": s, "head": (hx, hy, r * 1.08, r * top_k, r * 1.12),   # cx, cy, half-width, up, down
+         "head_box": (hx - r * 1.08, hy - r * top_k, hx + r * 1.08, hy + r * 1.12),
+         "body": (P["x"] - half, hy - r * top_k, P["x"] + half, P["y"] - hop * s),
+         "reach": (min(xs + [P["x"] - half]), max(xs + [P["x"] + half])),
+         "sole": P["y"] + (max(R["solel"], R["soler"]) - hop) * s,
+         "hands": {k: W_(R["hand" + k]) for k in ("l", "r")}, "hand_r": d["hand_r"] * s,
+         "angles": {"elbow_l": joint_angle(R["shl"], R["ell"], R["wrl"]), "elbow_r": joint_angle(R["shr"], R["elr"], R["wrr"]),
+                    "knee_l": joint_angle(R["hipjl"], R["kneel"], R["anklel"]), "knee_r": joint_angle(R["hipjr"], R["kneer"], R["ankler"])},
+         "rig": R}
+    # elbow on the outside of the shoulder->wrist line, scored like the IK picks it (elbows hang down / out, never up-and-in)
+    for side, k in ((-1, "l"), (1, "r")):
+        (sx, sy), (ex, ey), (wx, wy) = R["sh" + k], R["el" + k], R["wr" + k]
+        dx, dy = wx - sx, wy - sy
+        n = max(1e-6, math.hypot(dx, dy))
+        ux, uy = dx / n, dy / n
+        pr = (ex - sx) * ux + (ey - sy) * uy
+        px, py = ex - (sx + ux * pr), ey - (sy + uy * pr)
+        g["elbow_out_" + k] = px * side * 0.5 + py * 1.0
+        kx = R["knee" + k][0] - (R["hipj" + k][0] + R["ankle" + k][0]) / 2
+        g["knee_fwd_" + k] = kx
+    return g
 
 
 def soft_shadow(cv, cx, cy, rx, ry, a=60):
     sh = skia.Paint(AntiAlias=True)
     sh.setShader(skia.GradientShader.MakeRadial(skia.Point(cx, cy), rx,
-                                                 [C((0, 0, 0), a), C((0, 0, 0), 0)]))
+                                                 [C((0, 0, 0), int(a)), C((0, 0, 0), int(a * 0.55)), C((0, 0, 0), 0)], [0.0, 0.55, 1.0]))
     cv.save()
     cv.scale(1, ry / rx)
     cv.drawCircle(cx, cy * rx / ry, rx, sh)
     cv.restore()
 
 
-# ------------------------------------------------------------------------------------------------ the puppet
+def _taper(cv, pts, widths, col, ink_w=8.0):
+    """A soft tapered limb through pts (2 segments), ink outline first, then the fill (no seams at the joint)."""
+    def shape():
+        paths = []
+        for (x0, y0), (x1, y1), w0, w1 in zip(pts, pts[1:], widths, widths[1:]):
+            dx, dy = x1 - x0, y1 - y0
+            n = max(1e-6, math.hypot(dx, dy))
+            nx, ny = -dy / n, dx / n
+            p = skia.Path()
+            p.moveTo(x0 + nx * w0 / 2, y0 + ny * w0 / 2); p.lineTo(x1 + nx * w1 / 2, y1 + ny * w1 / 2)
+            p.lineTo(x1 - nx * w1 / 2, y1 - ny * w1 / 2); p.lineTo(x0 - nx * w0 / 2, y0 - ny * w0 / 2); p.close()
+            paths.append(p)
+        for (x, y), w in zip(pts, widths):
+            paths.append(oval(x, y, w / 2, w / 2))
+        return paths
+    ps = shape()
+    ink = stroke(INK, ink_w)
+    for p in ps:
+        cv.drawPath(p, ink)
+    fp = paint(col)
+    for p in ps:
+        cv.drawPath(p, fp)
+
+
+def _hand(cv, x, y, ang, r, skin, side=1, fist=False):
+    """A mitten hand centred at (x, y), fingers pointing along `ang` (radians), thumb on the upper/front side."""
+    cv.save(); cv.translate(x, y); cv.rotate(math.degrees(ang) - 90)
+    if fist:
+        fill_ink(cv, oval(0, 0, r * 0.95, r * 0.95), skin, w=4.5)
+        cv.drawPath(poly([(-r * 0.5, r * 0.25), (r * 0.5, r * 0.25)], close=False), stroke(shade(skin, 0.7), 3))
+    else:
+        th = smooth_closed([(r * 0.55 * side, -r * 0.5), (r * 1.15 * side, -r * 0.05), (r * 0.95 * side, r * 0.35),
+                            (r * 0.45 * side, r * 0.05)])
+        fill_ink(cv, th, skin, w=4)
+        fill_ink(cv, oval(0, r * 0.12, r * 0.82, r * 1.0), skin, w=4.5)
+        cv.drawPath(poly([(-r * 0.25, r * 0.55), (-r * 0.25, r * 0.95)], close=False), stroke(shade(skin, 0.72), 2.5))
+        cv.drawPath(poly([(r * 0.15, r * 0.6), (r * 0.15, r * 0.98)], close=False), stroke(shade(skin, 0.72), 2.5))
+    cv.restore()
+
+
 def draw_character(cv, look, P, t=0.0):
     s = P["scale"] * look["height"]
+    f = P.get("facing", 1)
+    hop = P.get("hop", 0.0) + P.get("bob", 0.0)
     cv.save()
     cv.translate(P["x"], P["y"])
-    soft_shadow(cv, 0, 4, 120 * s * look["width"], 24 * s)
-    cv.scale(s * P.get("facing", 1), s)
+    # contact shadow on the ground: shrinks and fades while airborne
+    air = max(0.0, hop) / 60.0
+    soft_shadow(cv, 0, -2 * s, 118 * s * look["width"] * (1 - 0.3 * min(1, air)), 22 * s, a=int(78 * (1 - 0.55 * min(1, air))))
+    cv.scale(s * (f if abs(f) > 0.05 else 0.05), s)
     sq = P.get("squash", 0.0)
     cv.scale(1 + 0.1 * sq, 1 - 0.1 * sq)
-    cv.translate(0, -P["bob"])
-    cv.rotate(P["lean"])
+    cv.translate(0, -hop)
     if P.get("highlight", 0) > 0.01:   # speaking: warm rim glow behind the body
         g = skia.Paint(AntiAlias=True)
         g.setShader(skia.GradientShader.MakeRadial(skia.Point(0, -330), 330,
-                                                    [C((255, 236, 170), int(70 * P["highlight"])), C((255, 236, 170), 0)]))
+                                                    [C((255, 236, 170), int(55 * P["highlight"])), C((255, 236, 170), 0)]))
         cv.drawCircle(0, -330, 330, g)
     _body(cv, look, P, t)
     cv.restore()
+
+
+def _arm(cv, look, R, P, side, skin, sleeve_col, sleeve_long, t, hold=None):
+    k = "l" if side < 0 else "r"
+    d = R["d"]
+    S, E, Wr, Hc = R["sh" + k], R["el" + k], R["wr" + k], R["hand" + k]
+    aw = d["aw"]
+    col = skin if side > 0 else shade(skin, 0.9)
+    _taper(cv, [S, E, Wr], [aw + 6, aw, aw - 7], col)
+    if sleeve_col is not None:
+        sc = sleeve_col if side > 0 else shade(sleeve_col, 0.9)
+        if sleeve_long:
+            m = (E[0] + (Wr[0] - E[0]) * 0.78, E[1] + (Wr[1] - E[1]) * 0.78)
+            _taper(cv, [S, E, m], [aw + 14, aw + 8, aw + 4], sc, ink_w=7)
+            cv.drawPath(poly([m, (m[0] + (Wr[0] - E[0]) * 0.001, m[1] + (Wr[1] - E[1]) * 0.001)], close=False),
+                        stroke(shade(sc, 0.75), aw + 4, cap=skia.Paint.kButt_Cap))
+        else:
+            m = (S[0] + (E[0] - S[0]) * 0.55, S[1] + (E[1] - S[1]) * 0.55)
+            _taper(cv, [S, (S[0] + (m[0] - S[0]) * 0.5, S[1] + (m[1] - S[1]) * 0.5), m], [aw + 18, aw + 16, aw + 14], sc, ink_w=7)
+    if look.get("bangles"):
+        bx, by = E[0] + (Wr[0] - E[0]) * 0.86, E[1] + (Wr[1] - E[1]) * 0.86
+        cv.drawCircle(bx, by, aw * 0.5, stroke(rgb("e8b923"), 5))
+        cv.drawCircle(bx + (Wr[0] - E[0]) * 0.06, by + (Wr[1] - E[1]) * 0.06, aw * 0.5, stroke(rgb("d9343b"), 4))
+    ang = R["hand_ang" + k]
+    grip = None
+    if hold:
+        import long_props
+        g, dx, dy = GRIP.get(hold, ("pinch", 0, 0))
+        hs = HELD_SCALE.get(hold, 1.0)
+        grip = (g, Hc[0] + dx * hs, Hc[1] + dy * hs, hs)
+        if g in ("hang", "pinch"):
+            long_props.draw_object(cv, hold, grip[1], grip[2], hs, t)
+    fist = P.get("fist" + k, False) or (grip is not None and grip[0] == "hang")
+    _hand(cv, Hc[0], Hc[1], ang, d["hand_r"], col, side=side, fist=fist)
+    if grip and grip[0] == "palm":
+        import long_props
+        long_props.draw_object(cv, hold, grip[1], grip[2], grip[3], t)
 
 
 def _body(cv, look, P, t):
@@ -175,45 +430,60 @@ def _body(cv, look, P, t):
     wdt = look["width"]
     cos = look["costume"]
     skin, main, sec = look["skin"], look["main"], look["second"]
-    leg_len = 230 if not kid else 160
-    sit = P.get("sit", 0.0)
-    hip_y = -leg_len - 8 + sit * 110
-    torso_h = (215 if not kid else 150) * (0.97 if old else 1.0)
-    sh_y = hip_y - torso_h
-    sh_x = (70 if not fem else 62) * wdt * (0.82 if kid else 1.0)
-    waist = (62 if not fem else 54) * wdt * (0.85 if kid else 1.0)
+    R = rig(look, P)
+    d = R["d"]
+    hip_x, hip_y = R["hip"]
+    sh_y = R["sh_y"]
+    sh_x, waist = d["sh_x"], d["waist"]
     belly = look["belly"]
+    top_col = main
+    if cos == "lungi" and look.get("vest"):
+        top_col = rgb("f7f5ef")
+    sleeve_long = cos in ("kurta", "shirt", "royal", "kurta_kid", "salwar") or (cos == "dhoti")
+    sleeve_col = top_col if cos not in ("saree", "pavadai", "royal_f") else (sec if cos != "pavadai" else main)
+    if cos == "lungi" and look.get("vest"):
+        sleeve_col = None
+    hold = None
+    if P.get("hold"):
+        import long_props
+        hold = long_props.obj_name(P["hold"])
 
-    # ----- back items: stick, long hair handled in head; ghoonghat back
+    # ----- far arm (and the old folks' walking stick) behind everything
+    _arm(cv, look, R, P, -1, skin, sleeve_col, sleeve_long, t)
+    if look.get("stick"):
+        hx, hy = R["handl"]
+        cv.drawPath(poly([(hx, hy - 34), (hx - 14, 0)], close=False), stroke(INK, 16))
+        cv.drawPath(poly([(hx, hy - 34), (hx - 14, 0)], close=False), stroke(rgb("8b5a34"), 10))
+        _hand(cv, hx, hy, R["hand_angl"], d["hand_r"], shade(skin, 0.9), side=-1, fist=True)
+
+    # ----- legs + feet (far leg first)
     feet = []
-    for side, hip_a, knee_a in ((-1, P["l_hip"], P["l_knee"]), (1, P["r_hip"], P["r_knee"])):
-        hx = side * 30 * wdt
-        thigh = leg_len * 0.5 * (1 - 0.5 * sit)
-        kx = hx + math.sin(math.radians(hip_a)) * thigh + side * sit * 40
-        ky = hip_y + math.cos(math.radians(hip_a)) * thigh
-        a2 = math.radians(hip_a - knee_a)
-        shin = leg_len * 0.5
-        fx = kx + math.sin(a2) * shin + sit * 30
-        fy = min(0.0, ky + math.cos(a2) * shin)
-        feet.append((side, hx, kx, ky, fx, fy))
-
+    for k, side in (("l", -1), ("r", 1)):
+        hj, kn, an = R["hipj" + k], R["knee" + k], R["ankle" + k]
+        feet.append((side, hj[0], kn[0], kn[1], an[0], an[1] + d["ankle"], hj, kn, an))
     long_skirt = cos in ("saree", "dhoti", "pavadai", "royal", "royal_f")
     legcol = {"lungi": skin, "shorts": skin, "frock": skin, "kurta": look["pants"], "shirt": look["pants"],
               "salwar": shade(sec, 1.1), "kurta_kid": look["pants"]}.get(cos, skin)
-    lw = 54 if not kid else 42
-    for side, hx, kx, ky, fx, fy in feet:
+    lw = d["lw"] * (0.82 if legcol == skin else 1.0)
+    for side, hx, kx, ky, fx, fy, hj, kn, an in feet:
+        lc = legcol if side > 0 else shade(legcol, 0.92)
         if not long_skirt:
-            _limb(cv, [(hx, hip_y), (kx, ky), (fx, fy - 10)], legcol, lw * (0.82 if legcol == skin else 1.0))
+            _taper(cv, [hj, kn, an], [lw + 6, lw, lw - 8], lc)
             if cos in ("kurta", "shirt", "salwar", "kurta_kid") and legcol != skin:
-                cv.drawPath(poly([(fx - 24, fy - 30), (fx + 24, fy - 30)], close=False), stroke(skin, 22))
-        # chappal / jutti
-        foot = oval(fx + 14, fy - 6, 42 if not kid else 32, 15 if not kid else 12)
-        fill_ink(cv, foot, look["shoes"], w=4.5)
-        cv.drawPath(oval(fx + 18, fy - 14, 20, 9), paint(skin))
-    # ----- lower garment over the legs
-    swing = (P["r_hip"] - P["l_hip"]) * 0.9
+                cv.drawPath(poly([(an[0] - lw * 0.42, an[1] - 4), (an[0] + lw * 0.42, an[1] - 4)], close=False),
+                            stroke(shade(lc, 0.75), 6))
+        # chappal / jutti: sole on the ground line (y = fy)
+        flen = 42 if not kid else 32
+        fh = 15 if not kid else 12
+        foot = oval(an[0] + 14, fy - fh, flen, fh)
+        fill_ink(cv, foot, look["shoes"] if side > 0 else shade(look["shoes"], 0.85), w=4.5)
+        cv.drawPath(oval(an[0] + 18, fy - fh * 1.55, flen * 0.48, fh * 0.6), paint(skin if side > 0 else shade(skin, 0.9)))
+    # ----- lower garment over the legs (anchored at the hips)
+    swing = (feet[1][4] - feet[0][4]) * 0.12
+    cv.save(); cv.translate(hip_x, 0)
+    fl, fr = feet[0], feet[1]
     if cos in ("saree", "pavadai", "royal_f"):
-        hem_y = -8
+        hem_y = -8 - max(0, -max(fl[5], fr[5])) * 0.5
         hem_w = waist + 48 + abs(swing) * 0.5
         sk = skia.Path()
         sk.moveTo(-waist - 4, hip_y - 30)
@@ -235,13 +505,14 @@ def _body(cv, look, P, t):
         cv.drawPath(sk, stroke(INK, 5))
     elif cos in ("dhoti", "royal"):
         col = rgb("f6f2e6") if cos == "dhoti" else main
-        for side, hx, kx, ky, fx, fy in feet:
-            leg = poly([(side * 4, hip_y - 20), (side * (waist + 8), hip_y - 20), (fx + side * 34, fy - 18),
-                        (fx - side * 26, fy - 18)])
-            fill_ink(cv, leg, col)
-            cv.drawPath(poly([(fx - 26, fy - 22), (fx + 34, fy - 22)], close=False),
+        for side, hx, kx, ky, fx, fy, hj, kn, an in feet:
+            ax = an[0] - hip_x
+            leg = poly([(side * 4, hip_y - 20), (side * (waist + 8), hip_y - 20), (ax + side * 34 + 6, an[1] + 6),
+                        (ax - side * 26 + 6, an[1] + 6)])
+            fill_ink(cv, leg, col if side > 0 else shade(col, 0.95))
+            cv.drawPath(poly([(ax - 26 + 6, an[1] + 2), (ax + 34 + 6, an[1] + 2)], close=False),
                         stroke(rgb("d8a72c") if cos == "dhoti" else sec, 6))
-        cv.drawPath(poly([(0, hip_y - 10), (swing * 0.2, -40)], close=False), stroke(shade(col, 0.82), 6))
+        cv.drawPath(poly([(0, hip_y - 10), (swing * 0.2, -60)], close=False), stroke(shade(col, 0.82), 6))
     elif cos == "lungi":
         hem_y = -78
         col = rgb("f3efe6")
@@ -264,16 +535,16 @@ def _body(cv, look, P, t):
         cv.drawPath(poly([(-waist * 0.2, hip_y - 22), (waist * 0.1, hip_y + 30), (waist * 0.35, hip_y - 20)]),
                     paint(shade(col, 0.88)))
     elif cos in ("shorts",):
-        for side, hx, kx, ky, fx, fy in feet:
-            leg = poly([(side * 2, hip_y - 20), (side * (waist + 4), hip_y - 20), (kx + side * 28, ky - 8), (kx - side * 22, ky - 8)])
+        for side, hx, kx, ky, fx, fy, hj, kn, an in feet:
+            kx_ = kn[0] - hip_x
+            leg = poly([(side * 2, hip_y - 20), (side * (waist + 4), hip_y - 20), (kx_ + 28, kn[1] - 8), (kx_ - 22, kn[1] - 8)])
             fill_ink(cv, leg, look["pants"] if look["pants"] != rgb("f4f1e8") else rgb("3a4a6b"))
+    cv.restore()
 
-    # ----- torso
-    top_col = main
-    if cos == "lungi" and look.get("vest"):
-        top_col = rgb("f7f5ef")
-    if cos in ("dhoti",) and not look["old"]:
-        top_col = main
+    # ----- upper body: lean around the hip
+    cv.save()
+    cv.translate(hip_x, hip_y); cv.rotate(R["lean"]); cv.translate(-hip_x, -hip_y)
+    cv.translate(hip_x, 0)
     long_top = cos in ("kurta", "salwar", "kurta_kid", "royal")
     hem = hip_y + (110 if long_top else 18)
     if cos == "frock":
@@ -294,7 +565,6 @@ def _body(cv, look, P, t):
     torso.quadTo(-waist - 14 - bw * 1.6, (sh_y + hip_y) / 2 + 20, -sh_x, sh_y + 18)
     torso.close()
     if cos in ("saree", "pavadai", "royal_f"):
-        # blouse (short) + midriff skin + pallu drape
         blouse = rrect(-sh_x, sh_y - 8, sh_x, sh_y + 110, 36)
         cv.drawPath(rrect(-waist - 2, sh_y + 80, waist + 2, hip_y - 20, 20), paint(skin))
         cv.drawPath(rrect(-waist - 2, sh_y + 80, waist + 2, hip_y - 20, 20), stroke(INK, 5))
@@ -314,7 +584,6 @@ def _body(cv, look, P, t):
                         stroke(shade(col, 0.8), 3))
         cv.restore()
         cv.drawPath(poly([(-sh_x + 50, sh_y - 8), (waist + 8, hip_y - 2)], close=False), stroke(look["second"], 8))
-        # pallu hanging behind the left shoulder
         if cos == "saree":
             pal = poly([(-sh_x - 6, sh_y - 4), (-sh_x - 30, sh_y + 160), (-sh_x + 6, sh_y + 170), (-sh_x + 20, sh_y + 10)])
             fill_ink(cv, pal, shade(col, 0.92), w=4)
@@ -354,58 +623,23 @@ def _body(cv, look, P, t):
         for k in range(3):
             cv.drawPath(poly([(sh_x - 28, sh_y + 20 + k * 30), (sh_x + 4, sh_y + 22 + k * 30)], close=False),
                         stroke(rgb("f5f0e6"), 4))
-    if cos == "dhoti" or look["old"] and cos == "kurta":
-        pass
     # ----- neck + head
-    head_r = 90 * look["head"]
-    neck_top = sh_y - 24
+    head_r = d["head_r"]
+    neck_top = R["neck_top"]
     cv.drawPath(rrect(-21, neck_top - 10, 21, sh_y + 6, 10), paint(shade(skin, 0.86)))
-    hc_y = neck_top - head_r * 0.92
+    hc_y = R["head_local"][1]
     cv.save()
     cv.translate(0, neck_top)
     cv.rotate(P["head_tilt"])
     cv.translate(0, -neck_top)
     draw_head(cv, look, P, 0, hc_y, head_r, t)
     cv.restore()
-    if look.get("bangles") or True:
-        pass
-    # ----- arms (last so gestures cross the body); hold object drawn in hand
-    hands = {}
-    up, lo = (110, 104) if not kid else (80, 76)
-    sleeve_long = cos in ("kurta", "shirt", "royal", "kurta_kid", "salwar") or (cos == "dhoti")
-    sleeve_col = top_col if cos not in ("saree", "pavadai", "royal_f") else (sec if cos != "pavadai" else main)
-    if cos == "lungi" and look.get("vest"):
-        sleeve_col = None
-    for side, key in ((-1, "lh"), (1, "rh")):
-        sx, sy = side * (sh_x - 12), sh_y + 16
-        out, down = P[key]
-        tx, ty = sx + side * out, sy + down
-        (ex, ey), (hx, hy) = _ik(sx, sy, tx, ty, up, lo, side)
-        aw = 38 if not kid else 30
-        _limb(cv, [(sx, sy), (ex, ey), (hx, hy)], skin, aw)
-        if sleeve_col is not None:
-            if sleeve_long:
-                cv.drawPath(poly([(sx, sy), (ex, ey), (ex + (hx - ex) * 0.75, ey + (hy - ey) * 0.75)], close=False),
-                            stroke(sleeve_col, aw + 2))
-            else:
-                cv.drawPath(poly([(sx, sy), (sx + (ex - sx) * 0.6, sy + (ey - sy) * 0.6)], close=False),
-                            stroke(sleeve_col, aw + 10, cap=skia.Paint.kButt_Cap))
-        if look.get("bangles"):
-            bx, by = ex + (hx - ex) * 0.8, ey + (hy - ey) * 0.8
-            cv.drawCircle(bx, by, 20, stroke(rgb("e8b923"), 5))
-            cv.drawCircle(bx + (hx - ex) * 0.05, by + (hy - ey) * 0.05, 20, stroke(rgb("d9343b"), 4))
-        fill_ink(cv, oval(hx, hy + 3, 23 if not kid else 19, 25 if not kid else 21), skin, w=4.5)
-        hands[key] = (hx, hy)
-    if look.get("stick"):
-        hx, hy = hands["lh"]
-        cv.drawPath(poly([(hx, hy - 30), (hx - 12, 0)], close=False), stroke(INK, 16))
-        cv.drawPath(poly([(hx, hy - 30), (hx - 12, 0)], close=False), stroke(rgb("8b5a34"), 10))
-    if P.get("hold"):
-        import long_props
-        key = "rh" if P.get("hold_hand", "r") == "r" else "lh"
-        hx, hy = hands[key]
-        long_props.draw_object(cv, P["hold"], hx, hy - 10, 1.0, t)
-    P["_hands"] = hands
+    cv.restore()
+    # ----- near arm last, in front of body and face; held objects sit in this hand
+    # (rig points are already lean-rotated and include hip_x, so draw in the unrotated frame)
+    _arm(cv, look, R, P, 1, skin, sleeve_col, sleeve_long, t, hold=hold)
+    P["_hands"] = {"lh": R["handl"], "rh": R["handr"]}
+    P["_rig"] = R
 
 
 def draw_head(cv, look, P, cx, cy, r, t=0.0):
@@ -544,10 +778,19 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
         p = skia.Path(); p.moveTo(fx - mw, my - sm * r * 0.08); p.quadTo(fx, my + sm * r * 0.2, fx + mw, my - sm * r * 0.08)
         cv.drawPath(p, stroke(rgb("6d2b2b"), 5.5))
     elif om >= 0.2 and mo < 0.5:
-        oh = r * (0.12 + 0.18 * om)
-        p = oval(fx, my + oh * 0.4, mw * 0.55 + 4, oh)
-        cv.drawPath(p, paint(rgb("5a1e24")))
-        cv.drawPath(p, stroke(INK, 4))
+        # surprised "O": a small round mouth below the moustache, warm interior, a visible upper lip
+        orad = r * (0.075 + 0.07 * min(1.0, om))
+        ocx, ocy = fx, my + r * 0.05 + orad
+        o = oval(ocx, ocy, orad * 0.9, orad)
+        cv.drawPath(o, paint(rgb("8c3a3f")))
+        cv.save(); cv.clipPath(o, doAntiAlias=True)
+        cv.drawPath(oval(ocx, ocy + orad * 0.85, orad * 0.75, orad * 0.5), paint(rgb("e88a90")))
+        cv.drawPath(oval(ocx, ocy - orad * 0.95, orad * 0.8, orad * 0.28), paint(rgb("5e2328"), 140))
+        cv.restore()
+        cv.drawPath(o, stroke(rgb("c46b6b"), 5.5))
+        cv.drawPath(oval(ocx, ocy, orad * 0.9 + 3, orad + 3), stroke(INK, 3.5))
+        up = skia.Path(); up.moveTo(ocx - orad * 0.75, ocy - orad * 0.72); up.quadTo(ocx, ocy - orad * 1.32, ocx + orad * 0.75, ocy - orad * 0.72)
+        cv.drawPath(up, stroke(rgb("b45a5c"), 5))
     else:
         mh = r * (0.06 + 0.28 * mo)
         p = skia.Path()
@@ -589,7 +832,7 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
     draw_hair_front(cv, look, cx, cy, r, turn)
 
 
-MOUTH_IN, TONGUE, LIP = rgb("5a1e24"), rgb("e0646e"), rgb("8a3434")
+MOUTH_IN, TONGUE, LIP = rgb("6a2830"), rgb("e0646e"), rgb("8a3434")
 
 
 def draw_viseme_mouth(cv, v, fx, my, r, smile=0.3):

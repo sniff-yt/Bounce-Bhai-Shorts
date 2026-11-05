@@ -18,7 +18,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
-from write_story import extract_json   # noqa: E402
+from write_story import extract_json as _extract_json_strict   # noqa: E402
+
+
+def extract_json(raw_text):
+    """Lenient JSON: Gemini sometimes appends text / a second object after the JSON ("Extra data", run 41881160270),
+    so decode the FIRST complete object with raw_decode and ignore whatever follows."""
+    text = re.sub(r"<think>.*?</think>", "", raw_text or "", flags=re.DOTALL).strip()
+    text = re.sub(r"^\s*```(?:json)?\s*", "", text)
+    dec = json.JSONDecoder()
+    i = text.find("{")
+    while i >= 0:
+        try:
+            obj, _ = dec.raw_decode(text, i)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        i = text.find("{", i + 1)
+        if i > 2000:
+            break
+    return _extract_json_strict(raw_text)
 
 TOPICS = os.path.join(ROOT, "data", "long_topics.json")
 LANG_NAME = {"te": "Telugu", "hi": "Hindi", "en": "English"}
@@ -104,8 +124,9 @@ NARA = os.environ.get("NARA_API_URL", "https://router.bynara.id/v1/chat/completi
 # Gemini writes far more natural Telugu / Hindi than gpt-oss (run 41869713268, gpt-oss-120b only: invented words,
 # "కడవు" for a stick, duplicated lines); the editor role prefers a different model than the writer.
 PREFS = {
-    "gemini": {"write": ["gemini-2.5-pro", "gemini-3-pro", "gemini-3-flash", "gemini-2.5-flash"],
-               "edit": ["gemini-2.5-flash", "gemini-3-flash", "gemini-2.5-pro", "gemini-3-pro"]},
+    # gemini-2.5-pro / 3-pro answer 404 on this (free) key (run 41881160270): the flash models write the natural Telugu
+    "gemini": {"write": ["gemini-3-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-pro"],
+               "edit": ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3-flash", "gemini-2.5-pro"]},
     "nvidia": {"write": ["deepseek-v4", "deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "kimi-k2", "qwen3-235b", "llama-3.1-405b",
                          "mistral-large", "qwen3-next", "gpt-oss-120b", "llama-4-maverick", "llama-3.3-70b"],
                "edit": ["deepseek-v4", "kimi-k2", "deepseek-v3.2", "deepseek-v3.1", "deepseek-v3", "qwen3-235b", "llama-3.1-405b",
@@ -136,7 +157,11 @@ def list_models(base, key):
     return _MODELS[base]
 
 
+SKIP_MODELS = ("deepseek-v4.1-flash", "mistral-large-4")   # timed out on every call (runs 41869713268, 41881160270)
+
+
 def _pick(ids, prefs, n=6):
+    ids = [i for i in ids if not any(sk in i.lower() for sk in SKIP_MODELS)]
     out = []
     for p in prefs:
         out += [i for i in ids if p in i.lower() and i not in out and "embed" not in i and "reward" not in i
@@ -152,8 +177,12 @@ def candidates(role="write"):
     if gk:
         ids = [i for i in list_models(GEM, gk) if not any(w in i for w in ("tts", "image", "embed", "live", "audio", "lite"))]
         prefs = PREFS["gemini"][role]
-        out += [("gemini", GEM, gk, m) for m in [next((i for i in ids if i == p), None) or next((i for i in ids if i.startswith(p)), None)
-                                                 for p in prefs] if m][:2]
+        gm = []
+        for p_ in prefs:
+            m = next((i for i in ids if i == p_), None) or next((i for i in ids if i.startswith(p_)), None)
+            if m and m not in gm and ("gemini", m) not in _DEAD:
+                gm.append(m)
+        out += [("gemini", GEM, gk, m) for m in gm[:3]]
     n = os.environ.get("NVIDIA_API_KEY")
     if n:
         out += [("nvidia", NV, n, i) for i in _pick(list_models(NV, n), PREFS["nvidia"][role], 5)]
@@ -858,6 +887,20 @@ def main(out, lang):
         s["summary"] = sc.get("what_happens", "")
         s["lines"] = written[i]
         story["scenes"].append(s)
+    # everyone who speaks or acts in a scene must be in that scene's cast (else they pop in from nowhere)
+    added = []
+    for i, s in enumerate(story["scenes"]):
+        cast = s.get("cast") or []
+        have = {(c.get("id") if isinstance(c, dict) else c) for c in cast}
+        for ln in s["lines"]:
+            for cid in (ln.get("speaker"), ln.get("actor"), ln.get("target")):
+                if cid and cid != "narrator" and cid in ids and cid not in have:
+                    cast.append({"id": cid, "enter": True})
+                    have.add(cid)
+                    added.append(f"{cid}@{i}")
+        s["cast"] = cast
+    if added:
+        print(f"::notice title=cast::speakers added to their scene cast (they walk in): {', '.join(added)[:500]}", flush=True)
     story["scenes"][-1]["lines"].append({"speaker": "narrator", "text": story["moral"], "emotion": "happy", "action": "talk"})
     story["scenes"][-1]["moral_card"] = True
     for sc in story["scenes"]:

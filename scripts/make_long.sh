@@ -23,6 +23,8 @@ echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
 run python scripts/long_voice.py "$J"
 echo "::notice title=timing::voices $((SECONDS - T))s"; T=$SECONDS
 run python engine/long2d.py plan "$J"
+# frame checker on the render plan: heads in frame, spacing, unique props, planted feet, natural joints (warning gate)
+python scripts/long_qc.py "$J" --report "out/${NAME}_qc.json" || echo "::warning title=frame QC::the render plan has frame issues (see out/${NAME}_qc.json in the artifact)"
 run python scripts/long_audio.py "$J"
 echo "::notice title=timing::plan+music+sfx $((SECONDS - T))s"; T=$SECONDS
 run python scripts/long_thumb.py "$J"

@@ -290,10 +290,10 @@ def draw_stage_prop(cv, name, x, y, t=0.0):
             cv.drawPath(poly([(x - 190 + k * 34, y - 128), (x - 170 + k * 34, y - 102)], close=False), stroke(rgb("e8d8b0"), 4))
         return True
     if "magic" in n or "jadui" in n:
-        draw_object(cv, "magic_pot", x, y - 60, 1.8, t)
+        draw_object(cv, "magic_pot", x, y - 64, 1.1, t)   # same size as when it is carried
         return True
     if "pot" in n or "matka" in n:
-        draw_object(cv, "pot", x, y - 60, 1.6, t)
+        draw_object(cv, "pot", x, y - 64, 1.1, t)
         return True
     if "sack" in n or "grain" in n:
         draw_object(cv, "rice_sack", x, y - 56, 1.5, t)

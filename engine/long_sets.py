@@ -563,18 +563,25 @@ class Set:
                 self._mid_anim(cv, t)
             cv.restore()
         cv.save(); self.layer_xform(cv, cam, 1.0); cv.drawPicture(self.layers["stage"]); self._stage_anim(cv, t); cv.restore()
+        if not self.indoor and self.name in ("forest", "village_street", "village_home", "field"):
+            # falling leaves drift BEHIND the characters (in front they kept landing on faces)
+            cv.save(); self.layer_xform(cv, cam, 0.92); self._leaves(cv, t); cv.restore()
 
     def draw_front(self, cv, cam, t):
         cv.save(); self.layer_xform(cv, cam, DEPTH["fg"]); cv.drawPicture(self.layers["fg"])
         cv.restore()
-        if not self.indoor and self.name in ("forest", "village_street", "village_home", "field"):
-            cv.save(); self.layer_xform(cv, cam, 1.1); self._leaves(cv, t); cv.restore()
 
     def grade(self, cv, t):
         """Time-of-day / weather colour grade over the whole frame (characters included), then glows."""
         if self.time == "night":
-            cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((150, 140, 185) if self.indoor else (115, 128, 190)),
+            # moonlit blue, but light enough that faces and costumes still read clearly
+            cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((214, 196, 214) if self.indoor else (168, 180, 228)),
                                                          BlendMode=skia.BlendMode.kMultiply))
+            if not self.indoor:
+                g = skia.Paint(AntiAlias=True, BlendMode=skia.BlendMode.kScreen)   # soft moon key light on the stage
+                g.setShader(skia.GradientShader.MakeRadial(skia.Point(W * 0.5, H * 0.62), 1000,
+                                                            [C((52, 56, 80)), C((0, 0, 0))]))
+                cv.drawRect(skia.Rect.MakeWH(W, H), g)
             for x, y, ph in self.flies:
                 if not self.indoor:
                     a = int(120 + 120 * math.sin(t * 2 + ph))
@@ -582,7 +589,7 @@ class Set:
             if self.indoor:   # warm lamp pool
                 g = skia.Paint(AntiAlias=True, BlendMode=skia.BlendMode.kScreen)
                 g.setShader(skia.GradientShader.MakeRadial(skia.Point(W * 0.5, H * 0.45), 900,
-                                                            [C((150, 100, 30)), C((0, 0, 0))]))
+                                                            [C((70, 46, 14)), C((0, 0, 0))]))
                 cv.drawRect(skia.Rect.MakeWH(W, H), g)
         elif self.time == "evening":
             cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((255, 214, 178)), BlendMode=skia.BlendMode.kMultiply))
