@@ -358,6 +358,8 @@ Rules:
 - CAST: every person who speaks or does anything in any scene MUST be one of the characters (with an id) and in that
   scene's cast - never an unnamed or extra person (no "farmer Gopi" who is not in characters). The narrator only
   narrates in the third person; he never speaks for a character.
+- RELATIONSHIPS are fixed and match how people address each other: a mother is called amma by her son, a wife is
+  never called amma by her husband; give each character a "relation" to the hero and keep it in every scene.
 - ONE magic object (if any), always called by the same plain word; title_en, title and every scene must agree on what
   it is (a pot is a pot everywhere, never a stick in one place and a pot in another).
 - No two scenes show the same event again; every scene moves the story forward. Write what_happens in English.
@@ -374,7 +376,8 @@ Rules:
 
 Allowed values:
 - character type: {types}; costume: {costumes}; color: {colors}; build: thin | normal | fat;
-  role: hero | greedy | villain | elder | wife | husband | child | vendor | friend | merchant | king | other
+  role: hero | greedy | villain | elder | mother | father | grandmother | grandfather | wife | husband | child | vendor |
+  friend | merchant | king | minister | other
 - set: {sets}; time: day | evening | night; weather: clear | rain;
   mood: happy | calm | funny | sad | tense | magical
 - prop (a stage piece standing in the scene, or "none"): {props}; prop_owner: the character id who stands at it
@@ -388,7 +391,8 @@ Return ONLY JSON:
   "tags": ["8-14 tags mixing {lang_name} and English, e.g. moral story, kahani, cartoon"],
   "thumbnail": {{"character": "<id>", "expression": "greedy|surprised|cry|angry|scared", "object": "<object or none>"}},
   "characters": [{{"id": "ramu", "name": "<name in {lang_name} script>", "name_en": "Ramu", "type": "man", "costume": "lungi",
-                  "color": "orange", "build": "thin", "role": "hero", "job": "pani puri seller", "trait": "honest, cheerful"}}],
+                  "color": "orange", "build": "thin", "role": "hero", "job": "pani puri seller", "trait": "honest, cheerful",
+                  "relation": "<who they are to the hero, e.g. 'the hero himself', 'Ramu's mother', 'Ramu's wife'>"}}],
   "scenes": [{{"set": "village_street", "time": "day", "weather": "clear", "mood": "happy", "prop": "pani_puri_cart",
               "prop_owner": "ramu", "cast": [{{"id": "ramu", "pos": 0.3, "expression": "happy"}}],
               "chapter": "<2-4 word chapter name in {lang_name}>",
@@ -504,7 +508,8 @@ does. Keep each line's speaker, meaning, order and length (never shorter than 70
 directions, speaker names, quotes or emoji. The first line of scene 0 is the narrator's warm storyteller opener (like a
 grandparent: "once in a village...") ending with a gripping teaser about this story's twist - keep it short and warm.
 Make every character line sound like real people talking: short sentences, natural exclamations and fillers, the right
-respect words between them (elders, husband/wife, king/minister), each character's own way of speaking.
+respect words between them (elders, husband/wife, king/minister), each character's own way of speaking. Address
+terms must match the relationships in CHARACTERS (relation field): never call a wife "amma" or a mother by her name.
 CHARACTERS: {chars}
 SCENES: {scenes}
 Return ONLY JSON: {{"scenes": [{{"index": <scene index>, "lines": ["<line 0 text>", "<line 1 text>", "..."]}}],
@@ -877,7 +882,7 @@ def main(out, lang):
                         "prop": s.get("prop"), "prop_owner": s.get("prop_owner"), "what_happens": s.get("what_happens", "")}
                        for i, s in enumerate(scenes)], ensure_ascii=False)
     chars_desc = json.dumps([{"id": c["id"], "name": c["name"], "type": c["type"], "role": c.get("role"), "job": c.get("job"),
-                              "trait": c.get("trait")} for c in o["characters"]], ensure_ascii=False)
+                              "trait": c.get("trait"), "relation": c.get("relation")} for c in o["characters"]], ensure_ascii=False)
     batch = 3
     written = {}
     models = [stages["outline"]] + ([stages["review"]] if stages["review"] else [])
