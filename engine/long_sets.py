@@ -520,6 +520,43 @@ PAINT = {"village_street": village_street, "house_interior": house_interior, "fi
 INDOOR = {"house_interior", "palace", "shop"}
 
 
+# ------------------------------------------------------------------------------------------------ painted plates
+# Painted background plates (assets/bg/<set>[_night].jpg, 16:9 storybook paintings with an empty ground band across
+# the bottom). When a plate exists the set is drawn from it instead of the code-drawn layers: the plate is pinned to
+# the stage plane, FLOOR sits at PLATE_FLOOR of its height, and close shots use a softly blurred copy (depth of field).
+import os as _os
+import numpy as _np
+BG_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "bg")
+PLATE_W = 2400.0
+PLATE_FLOOR = 0.86
+_PLATES = {}
+
+
+def plate_file(name, time):
+    for cand in ([f"{name}_night"] if time == "night" else []) + [name]:
+        p = _os.path.join(BG_DIR, cand + ".jpg")
+        if _os.path.exists(p):
+            return p, cand.endswith("_night")
+    return None, False
+
+
+def plate_rect():
+    ph = PLATE_W * 1536 / 2752
+    top = FLOOR - PLATE_FLOOR * ph
+    return W / 2 - PLATE_W / 2, top, W / 2 + PLATE_W / 2, top + ph
+
+
+def _load_plate(path):
+    if path not in _PLATES and _os.environ.get("BB_NO_PLATES") != "1":
+        from PIL import Image, ImageFilter
+        im = Image.open(path).convert("RGBA")
+        sharp = skia.Image.fromarray(_np.ascontiguousarray(_np.array(im)), colorType=skia.kRGBA_8888_ColorType)
+        soft = skia.Image.fromarray(_np.ascontiguousarray(_np.array(im.filter(ImageFilter.GaussianBlur(3.2)))),
+                                    colorType=skia.kRGBA_8888_ColorType)
+        _PLATES[path] = (sharp, soft)
+    return _PLATES.get(path)
+
+
 # ------------------------------------------------------------------------------------------------ build + animate
 class Set:
     def __init__(self, name, time="day", weather="clear", seed=0):
@@ -530,6 +567,9 @@ class Set:
         if self.indoor and self.weather == "rain":
             self.weather = "rain_in"   # rain only through the window + sound
         self.seed = seed
+        pf, pnight = plate_file(self.name, self.time)
+        self.plate = _load_plate(pf) if pf and _os.environ.get("BB_NO_PLATES") != "1" else None
+        self.plate_night = pnight and self.plate is not None
         self.layers = {}
         for L in ("sky", "far", "mid", "stage", "fg"):
             rec = skia.PictureRecorder()
@@ -554,6 +594,17 @@ class Set:
         cv.translate(-(W / 2 + (cx - W / 2) * d), -(H / 2 + (cy - H / 2) * d))
 
     def draw_back(self, cv, cam, t):
+        if self.plate is not None:
+            cv.save(); self.layer_xform(cv, cam, 1.0)
+            img = self.plate[1] if cam[2] >= 1.7 else self.plate[0]
+            l, tp, r, b = plate_rect()
+            cv.drawImageRect(img, skia.Rect.MakeLTRB(l, tp, r, b), skia.SamplingOptions(skia.FilterMode.kLinear))
+            if not self.indoor and self.time == "day" and self.weather == "clear":
+                self._birds(cv, t)
+            cv.restore()
+            if not self.indoor and self.name in ("forest", "village_street", "village_home", "field"):
+                cv.save(); self.layer_xform(cv, cam, 0.92); self._leaves(cv, t); cv.restore()
+            return
         for L in ("sky", "far", "mid"):
             cv.save(); self.layer_xform(cv, cam, DEPTH[L]); cv.drawPicture(self.layers[L])
             if L == "sky" and not self.indoor:
@@ -568,12 +619,22 @@ class Set:
             cv.save(); self.layer_xform(cv, cam, 0.92); self._leaves(cv, t); cv.restore()
 
     def draw_front(self, cv, cam, t):
+        if self.plate is not None:
+            return
         cv.save(); self.layer_xform(cv, cam, DEPTH["fg"]); cv.drawPicture(self.layers["fg"])
         cv.restore()
 
     def grade(self, cv, t):
         """Time-of-day / weather colour grade over the whole frame (characters included), then glows."""
-        if self.time == "night":
+        if self.time == "night" and self.plate_night:
+            # the plate is painted at night already: only tint the characters a little toward moonlight
+            cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((226, 226, 244) if not self.indoor else (240, 228, 214)),
+                                                         BlendMode=skia.BlendMode.kMultiply))
+            for x, y, ph in self.flies:
+                if not self.indoor:
+                    a = int(120 + 120 * math.sin(t * 2 + ph))
+                    cv.drawCircle(x + 30 * math.sin(t * 0.5 + ph), y + 20 * math.cos(t * 0.7 + ph), 3.5, paint(rgb("fff59a"), max(0, a)))
+        elif self.time == "night":
             # moonlit blue, but light enough that faces and costumes still read clearly
             cv.drawRect(skia.Rect.MakeWH(W, H), skia.Paint(Color=C((214, 196, 214) if self.indoor else (168, 180, 228)),
                                                          BlendMode=skia.BlendMode.kMultiply))

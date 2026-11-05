@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Voice a long-form story with free Microsoft neural voices (edge-tts, no key) and build the timeline.
+"""Voice a long-form story and build the timeline. Primary: Gemini TTS voice acting (scripts/gemini_tts.py: one
+distinct prebuilt voice per character, per-line emotion style prompts, Whisper-checked words, Whisper word timestamps
+for lip-sync). Fallback for lines Gemini could not do: free Microsoft neural voices (edge-tts).
 
 usage: python scripts/long_voice.py out/long_x.json
 Adds to every line: audio (wav path), start, end, words [[t0, t1, word] ...] (absolute seconds), voice.
@@ -8,9 +10,11 @@ Adds to every scene: start, end. Adds story["duration"], story["speech_wav"], st
 Each character gets a fixed voice + pitch/rate offset (by type and order) so they sound distinct; the narrator is
 a calm, slightly slower voice. Word-boundary timings drive the lip-sync and subtitle timing.
 """
-import asyncio, json, os, re, subprocess, sys, time, wave
+import asyncio, json, os, re, subprocess, sys, threading, time, wave
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 SR = 44100
 VOICES = {   # (female, male) native voices
@@ -36,7 +40,9 @@ TYPE_VOICE = {"man": ("m", 0, 0, 1.0), "oldman": ("m", -14, -12, 0.93), "woman":
               "oldwoman": ("f", -18, -12, 0.92), "boy": ("f", 18, 6, 1.12), "girl": ("f", 26, 8, 1.16)}
 VARIANTS = [(0, 0, 1.0), (-9, -4, 0.96), (9, 5, 1.05), (-4, 8, 0.98), (14, -2, 1.07), (-15, 3, 0.94)]
 GAP = {"same": 0.32, "switch": 0.5, "emotional": 0.7}
-SCENE_IN, SCENE_OUT = 0.9, 0.7
+SCENE_IN, SCENE_OUT = 2.0, 0.7   # 2 s establishing wide (ambience + music) before a scene's first line
+REACT_GAP = 0.95                 # the listener's reaction beat after a strong line (the reaction shot is there)
+STRONG = {"angry", "cry", "surprised", "shocked", "scared", "sad", "greedy", "proud", "laugh", "happy", "worried"}
 LEAD = 0.6
 
 
@@ -212,7 +218,38 @@ def _gap(sc, li):
     ln, prev = sc["lines"][li], sc["lines"][li - 1]
     g = GAP["emotional"] if (ln.get("emotion") in EMO or prev.get("emotion") in EMO) else \
         GAP["same"] if ln.get("speaker") == prev.get("speaker") else GAP["switch"]
-    return g * GAP_SCALE + (0.25 if ln.get("action") in ("walk", "enter", "exit", "give", "run") else 0)
+    return g * GAP_SCALE + (0.25 if ln.get("action") in ("walk", "enter", "exit", "give", "run") else 0) + \
+        (prev.get("react_gap", REACT_GAP) if prev.get("react_by") else 0.0)
+
+
+def mark_reactions(story):
+    """Choose the lines followed by a listener reaction beat: a strong line said TO somebody (target, the next speaker,
+    or a listed reaction), at most every other line."""
+    n = 0
+    for sc in story["scenes"]:
+        ls = sc["lines"]
+        last = -9
+        for li, ln in enumerate(ls[:-1]):
+            ln.pop("react_by", None)
+            sp = ln.get("speaker")
+            if not sp or sp == "narrator":
+                continue
+            nxt = ls[li + 1]
+            lis = ln.get("target") if ln.get("target") not in (None, sp, "narrator") else None
+            if not lis and nxt.get("speaker") not in (None, sp, "narrator"):
+                lis = nxt.get("speaker")
+            if not lis:
+                lis = next((k for k in (ln.get("reactions") or {}) if k != sp), None)
+            if not lis:
+                continue
+            strong = (ln.get("emotion") in STRONG) or bool(ln.get("reactions")) or \
+                (ln.get("action") or "") in ("give", "shout", "scold", "stomp", "beg", "point")
+            if strong and li - last >= 2:
+                ln["react_by"] = lis
+                ln["react_gap"] = REACT_GAP
+                last = li
+                n += 1
+    return n
 
 
 def _total(story):
@@ -258,33 +295,137 @@ def cap_length(story):
     return dropped
 
 
+def gemini_pass(story, base, jobs_spec):
+    """Voice every line with Gemini TTS. jobs_spec: [(ln, p)]. Returns {id(ln): (wav24k_path, words_rel, model, sim)}
+    for the lines that passed the Whisper word check."""
+    import concurrent.futures as cf
+    import gemini_tts as GT
+    lang = story.get("lang", "te")
+    key = os.environ.get("GEMINI_API_KEY", "")
+    gkey = os.environ.get("GROQ_API_KEY", "")
+    gv = GT.assign(story)
+    story["voices_gemini"] = {k: {kk: vv for kk, vv in v.items()} for k, v in gv.items()}
+    G = GT.Gemini(key, base + "_ttscache")
+    wl = threading.Lock()
+    last_w = [0.0]
+    stats = {"ok": 0, "retry": 0, "fail": 0, "models": {}}
+
+    def whisper(path):
+        if not gkey:
+            return None, []
+        with wl:   # Groq free tier: ~20 requests / min for whisper-large-v3
+            d = last_w[0] + 3.1 - time.time()
+            if d > 0:
+                time.sleep(d)
+            last_w[0] = time.time()
+        return GT.whisper_words(path, lang, gkey)
+
+    def one(ln, p):
+        sp = ln.get("speaker", "narrator")
+        v = gv.get(sp) or gv["narrator"]
+        text = ln["text"]
+        best = None
+        tries = 0
+        for model in GT.MODELS:
+            if model in G.dead:
+                continue
+            for plain in (False, True):
+                try:
+                    pcm = G.synth(model, v["gemini"], GT.style_prompt(v, ln, lang, plain), text)
+                except Exception as e:
+                    print(f"gemini {model} {os.path.basename(p)}: {str(e)[:140]}", flush=True)
+                    break
+                tries += 1
+                wp = p + f"_g{tries}.wav"
+                GT.write_pcm_wav(wp, pcm)
+                heard, ww = whisper(wp)
+                sim = GT.similarity(heard, text) if heard is not None else 0.7
+                # long extra speech (the model read the notes aloud) shows up as too much audio for the words
+                dur = len(pcm) / 2 / GT.SR_G
+                cps = len(GT._norm(text)) / max(0.3, dur)
+                if cps < 3.0:
+                    sim = min(sim, 0.5)
+                cand = (sim, model, wp, ww, dur)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+                if sim >= 0.8:
+                    break
+                stats["retry"] += 1
+            if best and best[0] >= 0.8:
+                break
+        if best is None or best[0] < 0.55:
+            stats["fail"] += 1
+            return None
+        stats["ok"] += 1
+        stats["models"][best[1]] = stats["models"].get(best[1], 0) + 1
+        return best
+
+    out = {}
+    t0 = time.time()
+    with cf.ThreadPoolExecutor(int(os.environ.get("BB_TTS_WORKERS", "3"))) as ex:
+        futs = {ex.submit(one, ln, p): (ln, p) for ln, p in jobs_spec}
+        for f in cf.as_completed(futs):
+            ln, p = futs[f]
+            try:
+                r = f.result()
+            except Exception as e:
+                print(f"gemini line failed: {e}", flush=True)
+                r = None
+            if r:
+                out[id(ln)] = r
+    sims = [r[0] for r in out.values()]
+    print(f"::notice title=gemini tts::{stats['ok']}/{len(jobs_spec)} lines in {time.time() - t0:.0f}s, models {stats['models']}, "
+          f"retries {stats['retry']}, failed {stats['fail']} (edge-tts for those), whisper word match median "
+          f"{(sorted(sims)[len(sims) // 2] if sims else 0):.2f}, calls {G.calls}", flush=True)
+    return out, gv
+
+
+def loud_norm(a, target_rms=0.085, peak=0.95):
+    r = float(np.sqrt((a ** 2).mean())) or 1e-4
+    a = a * (target_rms / r)
+    m = float(np.max(np.abs(a))) or 1
+    if m > peak:   # soft limit the peaks
+        a = np.tanh(a / peak * 1.2) * peak / np.tanh(1.2)
+    return a
+
+
 async def main_async(path):
+    import gemini_tts as GT
     story = json.load(open(path, encoding="utf-8"))
     base = path[:-5]
     os.makedirs(base + "_vo", exist_ok=True)
-    extra = await check_extra_voices(story.get("lang", "hi"), base + "_vo")
+    use_gem = bool(os.environ.get("GEMINI_API_KEY")) and os.environ.get("BB_TTS", "gemini") == "gemini"
+    extra = await check_extra_voices(story.get("lang", "hi"), base + "_vo") if not use_gem else {"f": [], "m": []}
     voices = assign_voices(story, extra)
     story["voices"] = voices
-    jobs, sem = [], asyncio.Semaphore(4)
+    spec = []
     for si, sc in enumerate(story["scenes"]):
         for li, ln in enumerate(sc["lines"]):
-            sp = ln.get("speaker", "narrator")
-            v = voices.get(sp) or voices["narrator"]
-            text = clean(ln.get("text"))
-            if not text:
-                text = "..."
+            text = clean(ln.get("text")) or "..."
             ln["text"] = text
             p = f"{base}_vo/s{si:02d}_l{li:02d}"
             ln["audio"] = p + ".wav"
-            ln["voice"] = f"{v['voice']} {v['pitch']:+d}Hz {v['rate']:+d}% f{v.get('formant', 1.0)}"
-            jobs.append((ln, p, _tts(text, v, p, sem), v.get("formant", 1.0)))
+            spec.append((ln, p))
+    gem, gv = ({}, {})
+    if use_gem:
+        gem, gv = await asyncio.to_thread(gemini_pass, story, base, spec)
+    # ---- edge-tts for whatever Gemini did not voice
+    jobs, sem = [], asyncio.Semaphore(4)
+    for ln, p in spec:
+        if id(ln) in gem:
+            continue
+        sp = ln.get("speaker", "narrator")
+        v = voices.get(sp) or voices["narrator"]
+        ln["voice"] = f"edge {v['voice']} {v['pitch']:+d}Hz {v['rate']:+d}% f{v.get('formant', 1.0)}"
+        jobs.append((ln, p, _tts(ln["text"], v, p, sem), v.get("formant", 1.0)))
     t0 = time.time()
     res = await asyncio.gather(*[j[2] for j in jobs])
     jobs = [(ln, p, f) for ln, p, _, f in jobs]
-    print(f"tts: {len(jobs)} lines in {time.time() - t0:.0f}s", flush=True)
+    if jobs:
+        print(f"edge-tts: {len(jobs)} lines in {time.time() - t0:.0f}s", flush=True)
     failed = [ln for (ln, p, _f), words in zip(jobs, res) if words is None]
-    if len(failed) > max(3, len(jobs) // 20):
-        raise SystemExit(f"edge-tts failed for {len(failed)} of {len(jobs)} lines")
+    if len(failed) > max(3, len(spec) // 20):
+        raise SystemExit(f"TTS failed for {len(failed)} of {len(spec)} lines")
     for sc in story["scenes"]:
         sc["lines"] = [ln for ln in sc["lines"] if not any(ln is f for f in failed)]
     for (ln, p, fm), words in zip(jobs, res):
@@ -292,13 +433,52 @@ async def main_async(path):
             continue
         a = decode(p + ".mp3", fm)
         a, off = trim(a)
-        peak = np.max(np.abs(a)) or 1
-        a = a / peak * 0.85
+        a = loud_norm(a)
         write_wav(p + ".wav", a)
         os.remove(p + ".mp3")
         ln["dur"] = len(a) / SR
         ln["words_rel"] = [[max(0, w0 - off), max(0, w1 - off), w] for w0, w1, w in words]
+    # ---- Gemini lines: formant (children up), trim, loudness, script words aligned to Whisper's timings
+    by_char = {}
+    for ln, p in spec:
+        if id(ln) in gem:
+            by_char.setdefault(ln.get("speaker", "narrator"), []).append((ln, p))
+    for sp, items in by_char.items():
+        v = gv.get(sp) or gv["narrator"]
+        fm = v.get("formant", 1.0)
+        kid = v.get("kind") in ("boy", "girl")
+        for rnd in range(3):
+            f0s, done = [], []
+            for ln, p in items:
+                sim, model, wp, ww, dur = gem[id(ln)]
+                a = decode(wp, fm)
+                a, off = trim(a)
+                f0s.append(GT.f0_median(a, SR))
+                done.append((ln, p, a, off, sim, model, ww))
+            f0 = float(np.median([x for x in f0s if x > 0])) if any(x > 0 for x in f0s) else 0.0
+            if kid and 0 < f0 < GT.F0_MIN_KID and fm < 1.25 and rnd < 2:
+                fm = min(1.25, fm * GT.F0_MIN_KID / f0 * 1.02)   # not child-like enough yet: raise the voice
+                continue
+            break
+        v["formant"] = round(fm, 3)
+        v["f0_median"] = round(f0)
+        for ln, p, a, off, sim, model, ww in done:
+            a = loud_norm(a)
+            write_wav(p + ".wav", a)
+            env = GT.env100(a, SR)
+            words = GT.align(ln["text"], [[w0 - off, w1 - off, w] for w0, w1, w in ww], len(a) / SR, env)
+            ln["dur"] = len(a) / SR
+            ln["words_rel"] = [[max(0.0, w0), max(0.0, w1), w] for w0, w1, w in words]
+            ln["voice"] = f"gemini {model.replace('gemini-', '')} {v['gemini']} f{fm:.2f}"
+            ln["tts_match"] = round(sim, 2)
+    if gv:
+        story["voices_gemini"] = gv
+        print("::notice title=voices::" + ", ".join(f"{k}={v['gemini']}(f{v['formant']}, {v.get('f0_median', '?')}Hz)"
+                                                   for k, v in gv.items()), flush=True)
+    nr = mark_reactions(story)
+    print(f"reaction beats: {nr}", flush=True)
     cut = cap_length(story)
+    mark_reactions(story)
     if cut:
         print(f"::notice title=length::voiced story was over {MAX_MIN} min: dropped {cut} filler lines "
               f"-> {_total(story) / 60:.2f} min", flush=True)
@@ -331,8 +511,8 @@ async def main_async(path):
     story["speech_wav"] = base + "_speech.wav"
     write_wav(story["speech_wav"], buf)
     json.dump(story, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    used = sorted({v["voice"] for v in voices.values()})
-    print(f"::notice title=voices::{', '.join(used)}; duration {story['duration'] / 60:.1f} min", flush=True)
+    used = sorted({ln.get("voice", "").split(" ")[0] for sc in story["scenes"] for ln in sc["lines"]})
+    print(f"::notice title=timeline::engines {used}; duration {story['duration'] / 60:.1f} min", flush=True)
 
 
 def main(path):

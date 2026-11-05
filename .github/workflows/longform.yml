@@ -95,6 +95,7 @@ jobs:
             out/*.mp4
             out/*_thumb.jpg
             out/long_*.json
+            out/*_speech.wav
           retention-days: 14
 
       - name: Remember what was posted

@@ -87,7 +87,7 @@ def make_look(spec, seed):
         "width": {"fat": 1.16, "normal": 1.0, "thin": 0.9}.get(build, 1.0),
         "height": {"man": 1.0, "woman": 0.94, "oldman": 0.93, "oldwoman": 0.86, "boy": 0.66, "girl": 0.64}[t] * rng.uniform(0.97, 1.03),
         "head": 1.22 if kid else 1.0,
-        "eye_col": _pick(rng, [rgb("3b2a20"), rgb("2a1d16"), rgb("4a3326")]),
+        "eye_col": _pick(rng, [rgb("6b4226"), rgb("5a3820"), rgb("7a4a2a")]),
         "shoes": _pick(rng, [rgb("6b3f25"), rgb("3a2a22"), rgb("8b5a34")]),
     }
     if look["headwear"] == "crown":
@@ -426,7 +426,21 @@ def draw_character(cv, look, P, t=0.0):
         g.setShader(skia.GradientShader.MakeRadial(skia.Point(0, -330), 330,
                                                     [C((255, 236, 170), int(55 * P["highlight"])), C((255, 236, 170), 0)]))
         cv.drawCircle(0, -330, 330, g)
+    # cel lighting: the body is drawn into its own layer, then a soft key light from the upper left and a cool fill /
+    # shadow toward the lower right are painted over its pixels only (volume, and it sits in the painted sets)
+    bounds = skia.Rect.MakeLTRB(-420, -1100, 420, 60)
+    cv.saveLayer(bounds, None)
     _body(cv, look, P, t)
+    lit = skia.Paint(AntiAlias=True, BlendMode=skia.BlendMode.kSrcATop)
+    lit.setShader(skia.GradientShader.MakeLinear([skia.Point(-260 * f, -900), skia.Point(220 * f, -60)],
+                                                 [C((255, 246, 220), 46), C((255, 246, 220), 0), C((30, 20, 60), 0), C((30, 20, 60), 62)],
+                                                 [0.0, 0.42, 0.6, 1.0]))
+    cv.drawRect(bounds, lit)
+    rim = skia.Paint(AntiAlias=True, BlendMode=skia.BlendMode.kSrcATop)
+    rim.setShader(skia.GradientShader.MakeLinear([skia.Point(-150 * f, 0), skia.Point(-60 * f, 0)],
+                                                 [C((255, 240, 200), 40), C((255, 240, 200), 0)]))
+    cv.drawRect(bounds, rim)
+    cv.restore()
     cv.restore()
 
 
@@ -730,7 +744,8 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
                            (fx + r * 0.6, cy + r * 0.98), (fx + r * 0.82, cy + r * 0.2), (fx, cy + r * 0.62)])
         fill_ink(cv, b, hairc, w=4)
     for sd in (-1, 1):
-        cv.drawPath(oval(fx + sd * r * 0.55, cy + r * 0.42, r * 0.17, r * 0.1), paint(rgb("f07a7a"), 60 + int(90 * red)))
+        cv.drawPath(oval(fx + sd * r * 0.58, cy + r * 0.44, r * 0.19, r * 0.11),
+                    paint(rgb("f07a7a"), (95 if (look["female"] or look["kid"]) else 55) + int(90 * red)))
     # ---- eyes
     gx, gy = P.get("gaze", (0, 0))
     blink = max(0.0, min(1.0, P.get("blink", 0.0)))
@@ -738,7 +753,8 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
     he = P.get("happy_eyes", 0.0)
     sly = P.get("sly", 0.0)
     ey = cy + r * 0.04
-    ew, eh = r * 0.19 * (0.9 + 0.1 * eo), r * 0.24 * eo
+    kidf = 1.12 if look["kid"] else 1.0
+    ew, eh = r * 0.225 * kidf * (0.9 + 0.1 * eo), r * 0.285 * kidf * eo
     for sd in (-1, 1):
         ex = fx + sd * r * 0.37
         if he > 0.5 or blink > 0.85:
@@ -753,20 +769,35 @@ def draw_head(cv, look, P, cx, cy, r, t=0.0):
         cv.drawPath(eye, paint((255, 255, 255)))
         cv.save(); cv.clipPath(eye, doAntiAlias=True)
         ix, iy = ex + gx * ew * 0.45, ey + gy * eh * 0.35 + eh * 0.06
-        pr = ew * (0.7 if eo < 1.2 else 0.5)
-        cv.drawCircle(ix, iy, pr, paint(look["eye_col"]))
-        cv.drawCircle(ix, iy, pr * 0.52, paint((12, 10, 12)))
-        cv.drawCircle(ix - ew * 0.25, iy - ew * 0.3, ew * 0.2, paint((255, 255, 255)))
+        pr = ew * (0.78 if eo < 1.2 else 0.56)
+        ip = skia.Paint(AntiAlias=True)
+        ic = look["eye_col"]
+        ip.setShader(skia.GradientShader.MakeRadial(skia.Point(ix, iy + pr * 0.35), pr,
+                                                    [C(mix(ic, (255, 220, 160), 0.35)), C(ic), C(shade(ic, 0.55))], [0.0, 0.6, 1.0]))
+        cv.drawCircle(ix, iy, pr, ip)
+        cv.drawCircle(ix, iy, pr, stroke(shade(ic, 0.4), 2.5))
+        cv.drawCircle(ix, iy, pr * 0.5, paint((12, 10, 12)))
+        cv.drawCircle(ix - pr * 0.36, iy - pr * 0.4, pr * 0.3, paint((255, 255, 255)))
+        cv.drawCircle(ix + pr * 0.34, iy + pr * 0.32, pr * 0.13, paint((255, 255, 255), 220))
+        # upper-lid shadow on the eyeball (depth)
+        cv.drawPath(oval(ex, ey - eh * 0.95, ew * 1.1, eh * 0.38), paint((120, 90, 110), 60))
         lidc = max(blink, sly * 0.55)
         if lidc > 0:
             cv.drawRect(skia.Rect.MakeLTRB(ex - ew - 2, ey - eh - 2, ex + ew + 2, ey - eh + 2 * eh * lidc), paint(fskin))
             cv.drawPath(poly([(ex - ew, ey - eh + 2 * eh * lidc), (ex + ew, ey - eh + 2 * eh * lidc)], close=False),
                         stroke(INK, 4))
         cv.restore()
-        cv.drawPath(eye, stroke(INK, 4.5))
+        cv.drawPath(eye, stroke(INK, 3.5))
+        # a bold upper lid line (reads at any size) + lashes for women and girls
+        lid = skia.Path()
+        lid.addArc(skia.Rect.MakeLTRB(ex - ew * 1.04, ey - eh * 1.02, ex + ew * 1.04, ey + eh * 1.02), 192, 156)
+        cv.drawPath(lid, stroke(INK, 7.5 if look["female"] else 6.0))
         if look["female"]:
-            lash = skia.Path(); lash.moveTo(ex + sd * ew * 0.6, ey - eh * 0.75); lash.lineTo(ex + sd * ew * 1.2, ey - eh * 1.0)
-            cv.drawPath(lash, stroke(INK, 4))
+            for k_, (ax_, ln_) in enumerate(((0.62, 1.0), (0.92, 0.85))):
+                lash = skia.Path()
+                bx_, by_ = ex + sd * ew * ax_, ey - eh * (0.82 if k_ == 0 else 0.45)
+                lash.moveTo(bx_, by_); lash.quadTo(bx_ + sd * ew * 0.35, by_ - eh * 0.1, bx_ + sd * ew * 0.5 * ln_, by_ - eh * 0.32 * ln_)
+                cv.drawPath(lash, stroke(INK, 4))
     if look.get("glasses"):
         for sd in (-1, 1):
             cv.drawCircle(fx + sd * r * 0.37, ey, r * 0.27, stroke(rgb("3a2a22"), 5))

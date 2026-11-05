@@ -19,7 +19,16 @@ MOTION checks (sampled at 8 fps, what the viewer sees moving):
   speaker_static a speaker with no gesture / action change for > 2 s while talking
   narration_idle a narrator line about a character (named / actor) with no visible matching action beat
   turn_squash    a character drawn narrower than full width (|facing| < 1) - turns must mirror, never squash
-Prints a summary (GitHub ::warning annotations per failing category) and exits 1 when anything fails.
+STAGING checks (HARD failures: exit 2, the episode is not made):
+  speaker_hidden    a dialogue line whose speaker is not on screen (head fully in frame) or whose mouth never moves
+  reaction_in_line  a reaction / listener shot cut in while the speaker is still talking
+  teleport          a character changing position faster than a run (a cut moved somebody)
+  order_flip        two standing characters swapping sides within a scene (180-degree rule)
+  partner_far       conversation partners (adjacent marks) more than 2.0 head-widths apart, face to face
+  partner_facing    conversation partners not facing each other
+  narration_hidden  a narration line naming characters on stage while none of them is on screen
+Prints a summary (GitHub ::warning / ::error annotations per failing category); exit 2 on a staging failure,
+1 when only the softer frame checks fail, 0 when everything passes.
 """
 import json, math, os, sys
 
@@ -171,7 +180,110 @@ def check(story, step=0.25):
                     issues["facing"].append(dict(where(cid), target=tgt))
             t += step
     motion_checks(r, story, issues)
+    staging_checks(r, story, issues, step)
     return issues, n_frames
+
+
+HARD = ("speaker_hidden", "reaction_in_line", "teleport", "order_flip", "partner_far", "partner_facing", "narration_hidden")
+PARTNER_GAP_MAX = 2.0     # head-widths between the two faces (edge to edge)
+
+
+def staging_checks(r, story, issues, step=0.25):
+    for k in HARD + ("partner_split",):
+        issues.setdefault(k, [])
+    for i, sc in enumerate(r.scenes):
+        tracks = r.plans[i]["tracks"]
+        shots = r.shots[i]
+        # teleports: any keyframe pair moving faster than a run, on stage
+        for cid, tr in tracks.items():
+            ks = tr["keys"]
+            for (ta, xa), (tb, xb) in zip(ks, ks[1:]):
+                if abs(xb - xa) < 40 or (min(xa, xb) > L.W + 150 or max(xa, xb) < -150):
+                    continue
+                if (tb - ta) < 1e-6 or abs(xb - xa) / (tb - ta) > L.WALK_SPEED * 2.4:
+                    issues["teleport"].append({"t": round(ta, 2), "scene": i, "char": cid, "from": round(xa), "to": round(xb)})
+        # 180-degree rule: the left-to-right order of standing characters never changes inside a scene
+        sides = {}
+        t = sc["start"] + 0.3
+        while t < sc["end"] - 0.3:
+            P = {c: r.pose(t, i, c) for c in tracks}
+            st = [c for c in tracks if -100 < P[c]["x"] < L.W + 100 and not P[c].get("_walking")]
+            for a in range(len(st)):
+                for b in range(a + 1, len(st)):
+                    k = (st[a], st[b])
+                    sgn = P[st[a]]["x"] < P[st[b]]["x"]
+                    if k in sides and sides[k] != sgn:
+                        issues["order_flip"].append({"t": round(t, 2), "scene": i, "pair": list(k)})
+                    sides[k] = sgn
+            t += 0.5
+        # dialogue: speaker on screen + mouth moving; no listener cut inside a line; partners close + face to face
+        for li, ln in enumerate(sc["lines"]):
+            sp = ln.get("speaker")
+            a_, b_ = ln["start"] + 0.12, ln["end"] - 0.1
+            if sp in tracks:
+                for sh in shots:
+                    if len(sh) > 5 and sh[5] == "reaction" and a_ < sh[0] < b_:
+                        issues["reaction_in_line"].append({"t": round(sh[0], 2), "scene": i, "line": li, "speaker": sp})
+                hidden, opened, n = 0, 0, 0
+                t = a_
+                while t < b_:
+                    cam = L.camera_at(shots, t, sc["end"])
+                    fl, ft, fr, fb, z = frame_rect(cam)
+                    P = r.pose(t, i, sp)
+                    g = LC.geometry(r.looks[sp], P)
+                    hl, ht, hr, hb = g["head_box"]
+                    tol = TOL / z
+                    if not (hl >= fl - tol and hr <= fr + tol and ht >= ft - tol and hb <= fb + tol):
+                        hidden += 1
+                    m = r.mouth(t, i, sp)
+                    if m and m.get("open", 0) > 0.12:
+                        opened += 1
+                    n += 1
+                    t += step / 2
+                if n and hidden:
+                    issues["speaker_hidden"].append({"t": ln["start"], "scene": i, "line": li, "speaker": sp,
+                                                     "hidden_frac": round(hidden / n, 2)})
+                elif n >= 4 and opened == 0:
+                    issues["speaker_hidden"].append({"t": ln["start"], "scene": i, "line": li, "speaker": sp, "why": "mouth never opens"})
+                mate = r.addressee(i, li, sp, ln["start"] + 0.3)
+                if mate:
+                    t = ln["start"] + 0.6
+                    while t < ln["end"] - 0.2:
+                        Ps, Pm = r.pose(t, i, sp), r.pose(t, i, mate)
+                        if not (Ps.get("_walking") or Pm.get("_walking")) and all(-100 < p["x"] < L.W + 100 for p in (Ps, Pm)):
+                            hw_s, hw_m = L.head_w(r.looks[sp]), L.head_w(r.looks[mate])
+                            gap = (abs(Ps["x"] - Pm["x"]) - (hw_s + hw_m) / 2) / ((hw_s + hw_m) / 2)
+                            between = [o for o in tracks if o not in (sp, mate) and min(Ps["x"], Pm["x"]) < r.pose(t, i, o)["x"] < max(Ps["x"], Pm["x"])]
+                            if gap > PARTNER_GAP_MAX:
+                                issues["partner_split" if between else "partner_far"].append(
+                                    {"t": round(t, 2), "scene": i, "line": li, "pair": [sp, mate], "gap_hw": round(gap, 2)})
+                            dx = Pm["x"] - Ps["x"]
+                            if abs(dx) > 40 and not between and ((dx > 0) != (Ps["facing"] > 0) or (dx > 0) == (Pm["facing"] > 0)):
+                                just = any(we <= t <= we + 0.5 for ws, we, *_ in tracks[sp]["walks"] + tracks[mate]["walks"])
+                                if not just:
+                                    issues["partner_facing"].append({"t": round(t, 2), "scene": i, "line": li, "pair": [sp, mate]})
+                            break
+                        t += 0.5
+            else:
+                on = [c for c in tracks if -100 < r.pose(ln["start"] + 0.3, i, c)["x"] < L.W + 100]
+                named = [c for c in r.mentioned(ln, on)]
+                if named and ln["start"] - sc["start"] > 3.0:
+                    seen, n = 0, 0
+                    t = a_
+                    while t < b_:
+                        cam = L.camera_at(shots, t, sc["end"])
+                        fl, ft, fr, fb, z = frame_rect(cam)
+                        for c in named:
+                            g = LC.geometry(r.looks[c], r.pose(t, i, c))
+                            hl, ht, hr, hb = g["head_box"]
+                            if hl >= fl and hr <= fr:
+                                seen += 1
+                                break
+                        n += 1
+                        t += step
+                    if n and seen < 0.6 * n:
+                        issues["narration_hidden"].append({"t": ln["start"], "scene": i, "line": li, "named": named,
+                                                           "seen_frac": round(seen / n, 2)})
 
 
 SIG_TOL = {"lh": 16.0, "rh": 16.0, "head_tilt": 3.5, "hip_shift": 4.5, "lean": 2.5, "x": 10.0, "dip": 4.0}
@@ -279,15 +391,21 @@ def main():
     summary = {k: len(v) for k, v in issues.items()}
     json.dump({"frames": n, "step": step, "summary": summary, "issues": {k: v[:60] for k, v in issues.items()}},
               open(rep, "w"), indent=1)
-    bad = {k: v for k, v in summary.items() if v}
+    bad = {k: v for k, v in summary.items() if v and k != "partner_split"}
+    hard = {k: v for k, v in bad.items() if k in HARD}
     print(f"frame QC: {n} sampled frames, step {step}s -> {summary}")
     for k, v in issues.items():
         if v:
             ex = "; ".join(json.dumps(x, ensure_ascii=False) for x in v[:3])
-            print(f"::warning title=frame QC {k}::{len(v)} frames ({len(v) * step:.1f}s). e.g. {ex}"[:1000])
+            lvl = "error" if k in HARD else "warning"
+            print(f"::{lvl} title=frame QC {k}::{len(v)} cases. e.g. {ex}"[:1000])
     if not bad:
         print("frame QC: PASS")
-    sys.exit(1 if bad else 0)
+    elif not hard:
+        print("frame QC: staging PASS (soft frame warnings only)")
+    else:
+        print("frame QC: STAGING FAIL " + ", ".join(f"{k}={v}" for k, v in hard.items()))
+    sys.exit(2 if hard else (1 if bad else 0))
 
 
 if __name__ == "__main__":

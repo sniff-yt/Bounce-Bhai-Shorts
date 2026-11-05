@@ -334,9 +334,21 @@ Rules:
 - Human characters only (no talking animals), 3 to 5 named characters with distinct personalities, ages and looks,
   typical of an Indian village or small town (names natural for {lang_name} speakers). One may be a narrator-favourite
   elder. Family-friendly. No religion, gods, temples, prayer, politics, violence or romance.
-- Strong structure over {n_scenes} scenes: scene 1 = HOOK in the first 15 seconds (a teaser question/shock to the
-  viewer), relatable conflict, rising tension, a twist (can be gently magical: a jadui pot/tree/stick), an emotional
-  payoff, and a clear moral. Gentle humour in several scenes. The last scene shows the happy ending.
+- STRUCTURE over {n_scenes} scenes (this is what makes viewers stay):
+  * ONE clear protagonist (role hero) with a GOAL the viewer cares about in scene 1 (save the family's land, pay for
+    the child's school, win the fair, get the stolen pot back...).
+  * ONE villain / obstacle (role greedy or villain) who wants the opposite, with a believable, funny-mean personality.
+  * 2-3 ESCALATING beats: each attempt by the hero is blocked and the stakes rise (a threat, a deadline, a loss);
+    the low point comes around scene 8-9 with real tears.
+  * A TWIST that is SET UP earlier (setup_scene: the viewer sees or hears the clue) and PAYS OFF later
+    (twist_scene); it can be gently magical (a jadui pot / tree / stick) or clever (the hero's wit).
+  * An EMOTIONAL PAYOFF: the villain gets his comeuppance or changes, the hero wins the goal, a hug, happy tears.
+  * The MORAL is said NATURALLY by a character in the last scene (the elder or the hero, in their own words) - not
+    preached by the narrator.
+  Gentle humour in several scenes (a funny habit, a running joke). The last scene shows the happy ending.
+- THE STORY IS TOLD THROUGH DIALOGUE AND ACTION, NOT NARRATION. The narrator only opens the story (a warm storyteller
+  opener + teaser), gives a very short transition at the start of some scenes ("that night...", "the next morning..."),
+  and says the moral at the very end. Everything else is characters talking and doing.
 - LOGIC (most important): every scene must follow from the one before (cause -> effect); nobody acts out of their
   role. Give every character ONE plain job ("money-lender", "fruit seller", "farmer", "housewife", "schoolboy") and keep
   props and sets true to it: a food cart belongs only to the person whose job sells that food; a money-lender lends from
@@ -489,8 +501,10 @@ Polish EVERY line below into natural, simple, spoken {lang_name} {script_hint}. 
 Fix: wrong, invented, misspelt or bookish words; the wrong word for a thing; unnatural or translated phrasing; wrong
 gender / respect endings; and any line that does not make sense here or contradicts the scene plan - rewrite it so it
 does. Keep each line's speaker, meaning, order and length (never shorter than 70% of the original). No stage
-directions, speaker names, quotes or emoji. The first line of scene 0 is a hook question to the viewer about this
-story's real twist - make it clear and gripping in plain words.
+directions, speaker names, quotes or emoji. The first line of scene 0 is the narrator's warm storyteller opener (like a
+grandparent: "once in a village...") ending with a gripping teaser about this story's twist - keep it short and warm.
+Make every character line sound like real people talking: short sentences, natural exclamations and fillers, the right
+respect words between them (elders, husband/wife, king/minister), each character's own way of speaking.
 CHARACTERS: {chars}
 SCENES: {scenes}
 Return ONLY JSON: {{"scenes": [{{"index": <scene index>, "lines": ["<line 0 text>", "<line 1 text>", "..."]}}],
@@ -598,6 +612,47 @@ def edit_lines(got, idx, scenes_plan, o, lang, lang_name, script_hint, chars_des
     return changed, [str(x)[:220] for x in r["flags"]][:10], model
 
 
+OPENER = {"te": "'ఒక ఊరిలో ...' / 'అనగనగా ఒక ఊరిలో ...'", "hi": "'एक गाँव में ...' / 'बहुत समय पहले, एक गाँव में ...'",
+          "en": "'Once upon a time, in a small village ...'"}
+TRANS_EX = {"te": "'ఆ రాత్రి...', 'మరుసటి రోజు ఉదయం...', 'కొన్ని రోజుల తర్వాత...'",
+            "hi": "'उस रात...', 'अगली सुबह...', 'कुछ दिन बाद...'", "en": "'That night...', 'The next morning...'"}
+EXCL = {"te": "అయ్యో!, అబ్బా!, ఓహో!, అరె!, ఏంటి?", "hi": "अरे!, हाय राम!, अच्छा!, क्या?, वाह!", "en": "Oh no!, Wow!, What?"}
+NARR_MAX_WORDS = 16
+
+
+def limit_narration(story):
+    """Narration is minimal: the opener (scene 0, first line, kept as is), one short transition as a scene's first line,
+    and the moral at the end. Any other narrator line is dropped (the dialogue carries the story); an over-long
+    transition keeps only its first sentence."""
+    dropped = 0
+    for i, sc in enumerate(story["scenes"]):
+        keep = []
+        for k, ln in enumerate(sc["lines"]):
+            if ln.get("speaker") != "narrator":
+                keep.append(ln)
+                continue
+            if (i == 0 and k == 0) or (sc.get("moral_card") and k == len(sc["lines"]) - 1):
+                keep.append(ln)
+                continue
+            if k == 0 and not any(l.get("speaker") == "narrator" for l in keep):
+                words = ln["text"].split()
+                if len(words) > NARR_MAX_WORDS:
+                    first = re.split(r"(?<=[.!?।])\s+", ln["text"])[0]
+                    if len(first.split()) <= NARR_MAX_WORDS + 4:
+                        ln["text"] = first
+                    else:
+                        dropped += 1
+                        continue
+                keep.append(ln)
+                continue
+            dropped += 1
+        if len([l for l in keep if l.get("speaker") != "narrator"]) >= 3:
+            sc["lines"] = keep
+        else:
+            dropped -= len(sc["lines"]) - len(keep)
+    return dropped
+
+
 # ======================================================================================== stage 2: dialogue
 DIALOGUE = """You are writing the {lang_name} dialogue script of an animated moral story for the YouTube channel "Bounce Bhai".
 Write natively in {lang_name} {script_hint} - natural, simple, spoken {lang_name}, with warmth and gentle humour. NOT a
@@ -613,8 +668,13 @@ FULL SCENE PLAN (for context): {plan}
 {previous}
 Now write scenes {first} to {last} only. LENGTH MATTERS: every scene needs {lines_lo}-{lines_hi} lines and AT LEAST
 {chars_target} {lang_name} characters of spoken text in total ({secs} seconds of audio). Mostly lively DIALOGUE between
-characters with back-and-forth reactions, small jokes, feelings and details of village life (at most 1 in 4 lines is
-narrator); each line 1-3 sentences.{hook}
+characters with back-and-forth reactions, small jokes, feelings and details of village life; each line 1-3 short
+sentences, the way people really talk (interruptions, exclamations like {excl}, questions, calling each other by name or
+relation).
+NARRATION RULES (strict): the story is carried by DIALOGUE and ACTION. The narrator may speak AT MOST ONE line per
+scene, ONLY as that scene's FIRST line, and only for a short warm transition of at most 12 words, like a grandparent
+telling a bedtime story ({trans_ex}). Never let the narrator explain feelings, motives or what the characters are about
+to say - show it in their words instead. Most scenes need no narrator line at all.{hook}
 Each line object:
 - speaker: "narrator" or a character id from CHARACTERS - nobody else may speak (no extra villagers); the narrator
   only describes in the third person and never says a character's words or "I / me / my"
@@ -829,19 +889,22 @@ def main(out, lang):
         rng_ = list(range(b0, min(n, b0 + batch)))
         hook = ""
         if b0 == 0:
-            hook = ("\nSCENE 0 MUST OPEN WITH A HOOK: the first line is the narrator speaking to the viewer, teasing THIS story's"
-                    " real twist as a clear, gripping question in plain words (e.g. 'One small clay pot - why did the greediest"
-                    " man in the village beg an old woman for it? Watch till the end!'), under 15 seconds, no bizarre images,"
-                    " then the story starts.")
+            hook = ("\nSCENE 0 OPENS LIKE A STORYTELLER: its first line is the narrator's warm opener in the classic style "
+                    f"({OPENER[lang]}) that introduces the hero and their world in one or two short sentences and ends with a "
+                    "gripping teaser about THIS story's twist (e.g. 'In a village lived Ramu, a poor potter with one clay pot. "
+                    "Who knew that pot would make the greediest man in the village beg?'), under 15 seconds. Then the "
+                    "characters take over with dialogue straight away.")
         if rng_[-1] == n - 1:
-            hook += ("\nThe LAST scene ends with the happy ending and the characters' feelings; do NOT state the moral as a"
-                     " narrator line, it is added separately.")
+            hook += ("\nThe LAST scene ends with the happy ending and the characters' feelings, and ONE character (the elder "
+                     "or the hero) says the moral naturally in their own words to the others (not as a lecture, one or two"
+                     " sentences). Do NOT add a narrator moral line, it is added separately.")
         prompt = DIALOGUE.format(lang_name=lang_name, script_hint=script_hint, title=o["title"], theme=o.get("theme"),
                                  moral_en=o.get("moral_en") or o["moral"], synopsis=o.get("synopsis") or o.get("theme"),
                                  chars=chars_desc, plan=plan, guide=LANG_GUIDE[lang],
                                  previous=("The previous scene ended with: " + prev_tail) if prev_tail else "",
                                  first=rng_[0], last=rng_[-1], lines_lo=lines_lo, lines_hi=lines_hi,
                                  chars_target=chars_target, secs=int(per_scene), hook=hook, exprs=EXPRS,
+                                 excl=EXCL[lang], trans_ex=TRANS_EX[lang],
                                  actions=ACTIONS, objects=OBJECTS, sfx=SFX)
         got, m = chat(prompt, sysmsg, lambda x, r=rng_: validate_dialogue(x, lang, ids, r), max_tokens=12000,
                       tries_per_model=1, label=f"scenes {rng_[0]}-{rng_[-1]}", effort="low")
@@ -909,6 +972,10 @@ def main(out, lang):
     for sc in story["scenes"]:
         for ln in sc["lines"]:
             ln["text"] = fix_words(ln["text"], lang)
+    nd = limit_narration(story)
+    print(f"::notice title=narration::{nd} extra narrator lines dropped; narrator lines now "
+          f"{sum(1 for sc in story['scenes'] for l in sc['lines'] if l.get('speaker') == 'narrator')} of "
+          f"{sum(len(sc['lines']) for sc in story['scenes'])}", flush=True)
     dd = dedupe_lines(story)
     if dd:
         print(f"::notice title=dedupe::dropped {dd} repeated lines", flush=True)

@@ -176,7 +176,172 @@ def _separate(items, lo, hi):
     return {it[0]: x for it, x in zip(items, xs)}
 
 
-def plan_scene(story, sc, looks):
+TALK_HW = 2.45     # conversation partners: head centres 2.45 head-widths apart (faces ~1.45 head-widths apart)
+NEAR_HW = 2.0      # a child beside its parent / two people standing together who do not talk much
+GROUP_HW = 2.3     # everybody else in the line-up
+KIDS = ("boy", "girl")
+_HW = {}
+
+
+def head_w(look):
+    """Head width (world px, incl. hair / crown) of a character standing at rest."""
+    k = id(look)
+    if k not in _HW:
+        P = LC.rest_pose(); P["scale"] = SCALE; P["y"] = FLOOR; P["x"] = 960; P["facing"] = 1
+        hb = LC.geometry(look, P)["head_box"]
+        _HW[k] = hb[2] - hb[0]
+    return _HW[k]
+
+
+def scene_pairs(story, sc, ids):
+    """How much each pair interacts in a scene: lines addressed to each other, replies, gives, and kid -> parent."""
+    chars = char_index(story)
+    w = {}
+
+    def add(a, b, v):
+        if a in ids and b in ids and a != b:
+            k = tuple(sorted((a, b)))
+            w[k] = w.get(k, 0) + v
+    prev = None
+    for ln in sc["lines"]:
+        sp = ln.get("speaker") if ln.get("speaker") in ids else (ln.get("actor") if ln.get("actor") in ids else None)
+        tg = ln.get("target") if ln.get("target") in ids else None
+        if sp and tg:
+            add(sp, tg, 2.0 + (4.0 if (ln.get("action") or "") in ("give", "take", "hug", "comfort") else 0))
+        elif sp and prev and prev != sp:
+            add(sp, prev, 1.0)
+        if sp:
+            prev = sp
+    for k in ids:   # a child stands beside the adult it is with (the one it talks to most, else a parent role)
+        if chars[k].get("type") in KIDS:
+            adults = [o for o in ids if chars[o].get("type") not in KIDS]
+            if adults:
+                par = max(adults, key=lambda o: (w.get(tuple(sorted((k, o))), 0),
+                                                  chars[o].get("role") in ("mother", "father", "parent", "elder", "wife", "hero")))
+                add(k, par, 3.0)
+    return w
+
+
+def stage_layout(story, sc, ids, want, looks, enters, cart_owner, memo):
+    """Marks on the ground line for one scene. Order: brute force over permutations, scoring talk partners next to
+    each other, kids beside their parent, entering characters / the cart owner at an end, the writer's requested order
+    and the order the same people had in the previous scene (screen direction stays consistent across scenes)."""
+    import itertools
+    chars = char_index(story)
+    n = len(ids)
+    out = {"x": {}, "side": {}, "centre": 960.0, "cart_x": None, "prop_x": None}
+    if not n:
+        return out
+    w = scene_pairs(story, sc, ids)
+    prev = (memo or {}).get("order", {})
+    wr = {cid: want[k] for k, cid in enumerate(ids)}
+    best = None
+    perms = itertools.permutations(ids) if n <= 6 else [tuple(sorted(ids, key=lambda c: wr[c]))]
+    for perm in perms:
+        r = {c: k for k, c in enumerate(perm)}
+        sc_ = 0.0
+        for (a, b), v in w.items():
+            d = abs(r[a] - r[b])
+            sc_ += v * (d - 1) * 2.2
+        for c in perm:
+            if (c in enters or c == cart_owner) and 0 < r[c] < n - 1:
+                sc_ += 3.0
+        for a, b in itertools.combinations(perm, 2):
+            if (wr[a] < wr[b]) != (r[a] < r[b]) and abs(wr[a] - wr[b]) > 0.05:
+                sc_ += 0.8
+            k = tuple(sorted((a, b)))
+            if k in prev and prev[k] != ((r[k[0]] < r[k[1]])):
+                sc_ += 1.6
+        if best is None or sc_ < best[0]:
+            best = (sc_, perm)
+    order = list(best[1])
+    # neighbour distances in head widths of the pair
+    xs = [0.0]
+    for a, b in zip(order, order[1:]):
+        k = tuple(sorted((a, b)))
+        kid = (chars[a].get("type") in KIDS) != (chars[b].get("type") in KIDS)
+        f = TALK_HW if w.get(k, 0) >= 2 and not kid else (NEAR_HW if kid else GROUP_HW)
+        xs.append(xs[-1] + f * (head_w(looks[a]) + head_w(looks[b])) / 2)
+    span = xs[-1]
+    extra_l = extra_r = 0.0
+    cart_side = 0
+    if cart_owner in order:
+        # the cart stands on the owner's outer side
+        cart_side = -1 if order.index(cart_owner) == 0 and n > 1 else 1
+        if n == 1:
+            cart_side = 1
+        cw = 470 * SCALE
+        gapc = CHAR_HALF + 40 + cw / 2
+        if cart_side < 0:
+            extra_l = gapc + cw / 2
+        else:
+            extra_r = gapc + cw / 2
+    lim = 1640.0
+    if span + extra_l + extra_r > lim and span > 0:   # too wide for the stage: tighten (never below 1.9 head-widths)
+        f = max(1.9 / TALK_HW, (lim - extra_l - extra_r) / span)
+        xs = [x * f for x in xs]
+        span = xs[-1]
+    left = 960 - (span + extra_l + extra_r) / 2 + extra_l
+    for c, x in zip(order, xs):
+        out["x"][c] = left + x
+    mid = left + span / 2
+    out["centre"] = mid
+    for k, c in enumerate(order):
+        out["side"][c] = -1 if (k < n / 2 - 0.01 or (n == 1 and out["x"][c] < 960)) else 1
+        if n % 2 == 1 and k == n // 2:
+            out["side"][c] = -1 if wr[c] < 0.5 else 1
+    if cart_owner in order:
+        ox = out["x"][cart_owner]
+        out["cart_x"] = ox + cart_side * (CHAR_HALF + 40 + 235 * SCALE)
+    prop = sc.get("prop")
+    if prop and not cart_owner:
+        l_, r_ = prop_extent("stage", prop, 0.0)
+        half = max(-l_, r_)
+        lx = out["x"][order[0]] - CHAR_HALF - 50 - r_
+        rx = out["x"][order[-1]] + CHAR_HALF + 50 - l_
+        req = sc.get("prop_pos")
+        try:
+            req = float(req)
+        except Exception:
+            req = None
+        lfit, rfit = lx - half > 60, rx + half < W - 60
+        if lfit and (not rfit or (req is not None and req < 0.5) or (req is None and lx > W - rx)):
+            out["prop_x"] = lx
+        elif rfit:
+            out["prop_x"] = rx
+        else:   # no room at either end: shift the whole group away from the prop
+            sh = (half + 60 - (lx - half)) if lx > W - rx else -(rx + half - (W - 60))
+            for c in order:
+                out["x"][c] += sh
+            out["prop_x"] = (lx if lx > W - rx else rx) + sh
+            out["centre"] += sh
+    if memo is not None:
+        po = dict(memo.get("order", {}))
+        for a, b in itertools.combinations(order, 2):
+            k = tuple(sorted((a, b)))
+            po[k] = out["x"][k[0]] < out["x"][k[1]]
+        memo["order"] = po
+    return out
+
+
+def line_addressee(sc, li, actor, tracks, t):
+    """Who a line is said to: its target, else the previous / next speaker, else the nearest person on stage."""
+    on = lambda c: c in tracks and c != actor and -100 < _x_at(tracks[c], t) < W + 100
+    ln = sc["lines"][li]
+    if on(ln.get("target")):
+        return ln["target"]
+    for k in list(range(li - 1, -1, -1))[:3] + list(range(li + 1, len(sc["lines"])))[:2]:
+        o = sc["lines"][k].get("speaker")
+        if on(o):
+            return o
+    if actor not in tracks:
+        return None
+    ax = _x_at(tracks[actor], t)
+    near = [o for o in tracks if on(o)]
+    return min(near, key=lambda o: abs(_x_at(tracks[o], t) - ax)) if near else None
+
+
+def plan_scene(story, sc, looks, memo=None):
     """Tracks for every character in the scene (times absolute)."""
     chars = char_index(story)
     t0, t1 = sc["start"], sc["end"]
@@ -209,17 +374,13 @@ def plan_scene(story, sc, looks):
     if cart and not owner:
         owner = next((c["id"] for c in cast if chars[c["id"]].get("role") in ("vendor", "hero", "seller", "greedy")),
                      cast[0]["id"] if cast else None)
-    # ---- standing positions: requested order, spaced so nobody overlaps anybody (or someone else's cart)
-    items = []
-    for i, c in enumerate(cast):
-        lo_, ro_ = -CHAR_HALF, CHAR_HALF
-        if cart and c["id"] == owner:
-            xw = pos_x(want[i])
-            cl, cr = prop_extent("cart", cart, xw, owner, looks)
-            lo_, ro_ = min(lo_, cl - xw), max(ro_, cr - xw)
-        items.append([c["id"], pos_x(want[i]), lo_, ro_])
-    pos = _separate(items, pos_x(0.06), pos_x(0.94))
-    # child cart owners stand beside the cart on the side facing the middle: the cart itself is at pos[owner]
+    # ---- STAGE MARKS: one fixed mark per character for the whole scene (cuts never move anybody; the left-to-right
+    # order is the 180-degree line). Conversation partners stand at talking distance, children beside their parent,
+    # the cart / prop beside the group (never in front of or behind anybody).
+    ids = [c["id"] for c in cast]
+    enters = {c["id"] for c in cast if c.get("enter")}
+    lay = stage_layout(story, sc, ids, want, looks, enters, owner if cart else None, memo)
+    pos = lay["x"]
     tracks = {}
     for c in cast:
         cid = c["id"]
@@ -227,46 +388,24 @@ def plan_scene(story, sc, looks):
         e0 = LC.expr_name(c.get("expression") or c.get("emotion"))
         tracks[cid] = {"keys": [(t0, x)], "walks": [], "expr": [(t0 - 1, e0)], "gest": [],
                        "hold": [(t0 - 1, LP.obj_name(c.get("holding")))],
-                       "speak": [], "face": [(t0 - 1, 1 if x < 960 else -1)], "fx": [], "hidden_until": None, "gone_after": None,
-                       "base": x, "hop": [], "acts": [], "front": [(t0 - 1, False)]}
+                       "speak": [], "face": [(t0 - 1, 1 if x < lay["centre"] else -1)], "fx": [], "hidden_until": None,
+                       "gone_after": None, "base": x, "hop": [], "acts": [], "front": [(t0 - 1, False)], "mark": x}
         if c.get("enter"):
-            # come in from the side with nobody standing in the way (no walking through people)
-            left_clear = not any(ox < x for oc, ox in pos.items() if oc != cid)
-            right_clear = not any(ox > x for oc, ox in pos.items() if oc != cid)
-            from_left = left_clear if left_clear != right_clear else x < 960
-            tracks[cid]["keys"] = [(t0, -260 if from_left else W + 260)]
+            # enter from the side of the mark (leftmost mark -> from the left), so nobody walks through anybody
+            tracks[cid]["keys"] = [(t0, -260 if lay["side"][cid] < 0 else W + 260)]
             tracks[cid]["pending_enter"] = x
     props = []
     if cart and owner:
-        props.append(("cart", cart, pos[owner], owner))
+        props.append(("cart", cart, lay["cart_x"], owner))
     elif prop:
-        # a free spot for the prop: as far from every standing position as possible (prefers the requested side)
-        stand = list(pos.values())
-        l_, r_ = prop_extent("stage", prop, 0.0)
-        best = None
-        req = sc.get("prop_pos")
-        for k in range(0, 41):
-            px = pos_x(0.06 + 0.88 * k / 40)
-            clear = min([abs(px - sx) - (max(-l_, r_) + CHAR_HALF + 30) for sx in stand] + [400])
-            score = (min(clear, 60), -abs(px - pos_x(req)) if req is not None else -abs(px - 960) * 0.2)
-            if best is None or score > best[0]:
-                best = (score, px)
-        props.append(("stage", prop, best[1], None))
+        props.append(("stage", prop, lay["prop_x"], None))
     stage_key = stage_obj_key(prop) if (prop and not cart) else None
     obstacles = [prop_extent(pk, nm, px, own, looks) + (own,) for pk, nm, px, own in props]
     gives = []
     lines = sc["lines"]
     walk_end = {cid: -1e9 for cid in tracks}
     cuts = []                       # forced camera cuts (the cart owner steps out from behind the cart on a cut)
-    cart_x = pos[owner] + cart_dx(pos[owner], owner, looks) if (cart and owner) else None
-    front_state = {"on": False, "t": -1e9}
-    if cart_x is not None:
-        first = next((l_ for l_ in lines if (l_.get("speaker") == owner or l_.get("actor") == owner)), None)
-        if first is not None and not _vendor_line(first) and looks[owner]["height"] >= 0.8:
-            fx_ = _front_x(cart_x, owner, pos)
-            tracks[owner]["keys"] = [(t0, fx_)]
-            tracks[owner]["front"] = [(t0 - 1, True)]
-            front_state = {"on": True, "t": t0}
+    cart_x = None
 
     def free_x(cid, want_x, t_at, x_from):
         """Nearest x to want_x where cid stands clear of everybody (at t_at and later) and of props."""
@@ -310,37 +449,21 @@ def plan_scene(story, sc, looks):
         # facing: speaker faces target (or nearest), listeners face speaker
         if actor:
             ax = _x_at(tracks[actor], ls)
-            if tgt is None:
-                others = [o for o in tracks if o != actor and -200 < _x_at(tracks[o], ls) < W + 200]
-                tgt_face = min(others, key=lambda o: abs(_x_at(tracks[o], ls) - ax)) if others else None
-            else:
-                tgt_face = tgt
+            tgt_face = tgt if tgt else line_addressee(sc, li, actor, tracks, ls + 0.3)
             if tgt_face:
                 tracks[actor]["face"].append((ls - 0.15, 1 if _x_at(tracks[tgt_face], ls) > ax else -1))
             for o in tracks:
                 if o != actor and sp in tracks:
                     tracks[o]["face"].append((ls - 0.05 + 0.12 * (hash(o) % 3), 1 if ax > _x_at(tracks[o], ls) else -1))
-        # the cart owner: behind the cart to sell / call out / count money, out in front of it for everything else
-        # (the switch happens on a forced camera cut, so it never pops on screen)
-        far_give = False
-        if actor and tgt and act == "give" and -100 < _x_at(tracks[tgt], ls) < W + 100:
-            far_give = abs(_x_at(tracks[tgt], ls) - _x_at(tracks[actor], ls)) > SEP + 140
-        if cart_x is not None and actor == owner and looks[owner]["height"] >= 0.8 and ls - walk_end[owner] > 0.3:
-            want = (not _vendor_line(ln)) or act in ("walk", "run", "exit") or far_give
-            if want != front_state["on"] and ls - front_state["t"] > 4.0:
-                tro = tracks[owner]
-                x_old = _x_at(tro, ls - 0.06)
-                x_new = _front_x(cart_x, owner, {o: _x_at(tracks[o], ls) for o in tracks}) if want else cart_x - 20
-                tro["keys"].append((ls - 0.07, x_old)); tro["keys"].append((ls - 0.06, x_new))
-                tro["keys"].sort(key=lambda a: a[0])
-                tro["front"].append((ls - 0.06, want))
-                cuts.append(ls - 0.06)
-                front_state = {"on": want, "t": ls}
         # somebody who left earlier and speaks / acts again walks back in first
         if actor and act != "exit" and tracks[actor].get("pending_enter") is None and not (-100 < _x_at(tracks[actor], ls) < W + 100):
             tracks[actor]["pending_enter"] = tracks[actor]["base"]
         # movement
-        if actor and (act in ("walk", "run", "enter", "exit") or tracks[actor].get("pending_enter") is not None or far_give):
+        # movement: only to reach a mark (entering / coming back) or to leave. Somebody already on stage never wanders
+        # off their mark (a narrated "walked to ..." happens between scenes)
+        on_now = actor and -150 < _x_at(tracks[actor], ls) < W + 150
+        if actor and (act == "exit" or tracks[actor].get("pending_enter") is not None or
+                      (act in ("walk", "run", "enter") and not on_now and tracks[actor].get("gone_after") is None)):
             tr = tracks[actor]
             ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
             x0 = _x_at(tr, ws)
@@ -349,6 +472,7 @@ def plan_scene(story, sc, looks):
                 others = [ox for ox in others if -100 < ox < W + 100]
                 nl = sum(1 for ox in others if ox < x0); nr = sum(1 for ox in others if ox > x0)
                 x1 = -300 if (nl < nr or (nl == nr and x0 < 960)) else W + 300
+                tr["gone_after"] = ws
             elif tr.get("pending_enter") is not None:
                 x1 = tr.pop("pending_enter")
             else:
@@ -405,6 +529,19 @@ def plan_scene(story, sc, looks):
                 tracks[tgt]["expr"].append((ls + 0.4, "worried"))
             elif e == "cry" and LC.expr_name(tracks[tgt]["expr"][-1][1]) not in ("greedy", "sly", "angry"):
                 tracks[tgt]["expr"].append((ls + 0.4, "sad"))
+        # the listener's reaction in the beat after the line (the reaction shot is on them)
+        rb = ln.get("react_by")
+        if rb in tracks and rb != actor:
+            rx_ = LC.expr_name(ln.get("react_expr") or (ln.get("reactions") or {}).get(rb) or
+                               {"angry": "scared", "cry": "sad", "sad": "sad", "happy": "happy", "laugh": "laugh",
+                                "surprised": "surprised", "greedy": "worried", "proud": "worried", "sly": "worried",
+                                "scared": "worried", "worried": "worried"}.get(LC.expr_name(emo) if emo else "", "thinking"))
+            tracks[rb]["expr"].append((le - 0.2, rx_))
+            ra = {"scared": "scared", "sad": "sad", "laugh": "laugh", "surprised": "surprised", "happy": "celebrate",
+                  "worried": "think", "thinking": "think", "angry": "stomp", "cry": "cry"}.get(rx_, "think")
+            if ra == "celebrate" and LM.hsh(rb, li) < 0.6:
+                ra = "laugh"
+            tracks[rb]["acts"].append((le + 0.02, le + max(0.9, ln.get("react_gap", 1.0)) + 0.3, ra))
         # acting beats (long_motion): timed actions from the words, the writer's action and the feeling
         beats = [b for b in (ln.get("beats") or []) if b[2] in tracks]
         for b0, b1, who, name in beats:
@@ -585,7 +722,7 @@ def _last2(seq, t):
 
 
 # ============================================================================================ camera
-SHOT_Z = {"wide": 1.0, "two": 1.28, "medium": 1.55, "close": 2.15}
+SHOT_Z = {"wide": 1.0, "two": 1.45, "medium": 1.8, "close": 2.25}
 PUSH = 1.065         # the slow push-in over a shot (z grows up to 3.5-6 %)
 WIDE_DRIFT = 32.0
 
@@ -609,14 +746,17 @@ def prop_extent(kind, name, px, owner=None, looks=None):
 
 
 def cart_dx(px, owner, looks):
-    """A child owner would vanish behind the counter: the cart stands beside them instead."""
-    if not looks or not owner or looks[owner]["height"] >= 0.8:
-        return 20
-    return (-1 if px < W / 2 else 1) * 250 * SCALE
+    """Carts are placed by stage_layout beside their owner (px is the cart centre): nobody stands behind one."""
+    return 0
 
 
 def clamp_cam(cx, cy, z):
     hw, hh = W / 2 / z, H / 2 / z
+    if os.environ.get("BB_NO_PLATES") != "1":   # painted plates: the frame stays inside the painting
+        l, t, r, b = LS.plate_rect()
+        cx = max(l + 4 + hw, min(r - 4 - hw, cx))
+        cy = max(t + 4 + hh, min(b - 4 - hh, cy))
+        return cx, cy, z
     cx = max(LS.X0 + 120 + hw, min(LS.X1 - 120 - hw, cx))
     cy = max(-150 + hh, min(H + 260 - hh, cy))
     return cx, cy, z
@@ -811,7 +951,8 @@ class Renderer:
         self.looks = {c["id"]: LC.make_look(c, seed * 131 + sum(map(ord, c["id"]))) for c in story["characters"]}
         self.scenes = story["scenes"]
         LM.assign_beats(story)      # what everybody DOES on every line (words + writer action + feeling)
-        self.plans = [plan_scene(story, sc, self.looks) for sc in self.scenes]
+        memo = {}
+        self.plans = [plan_scene(story, sc, self.looks, memo) for sc in self.scenes]
         self.sets = {}
         self.cache = {}
         self.blink_seed = {cid: (sum(map(ord, cid)) % 97) / 97.0 for cid in self.looks}
@@ -1038,99 +1179,126 @@ class Renderer:
                 out[cid] = g
         return out
 
+    def mentioned(self, ln, ids):
+        """Characters a narration line names (Telugu / Hindi / English name, or its first word)."""
+        txt = (ln.get("text") or "").lower()
+        out = []
+        for c in self.story["characters"]:
+            if c["id"] not in ids:
+                continue
+            keys = {c.get("name") or "", c.get("name_en") or "", c["id"]}
+            for k in list(keys):
+                parts = k.split()
+                if parts:
+                    keys.add(parts[0])
+            stems = [k.lower() for k in keys if len(k) >= 2]
+            # Telugu / Hindi inflect the name (గోపి -> గోపికి): match the stem minus its last letter for long names
+            stems += [k[:-1] for k in stems if len(k) >= 4 and not k.isascii()]
+            hit = [txt.find(k) for k in stems if k and txt.find(k) >= 0]
+            if hit:
+                out.append((min(hit), c["id"]))
+        return [cid for _, cid in sorted(out)]
+
+    def addressee(self, sc_i, li, actor, t):
+        return line_addressee(self.scenes[sc_i], li, actor, self.plans[sc_i]["tracks"], t)
+
     def plan_shots(self, sc_i):
-        """Shots like a TV cartoon: a short establishing wide, then medium / close shots on whoever speaks or acts
-        (narration cuts to the character it describes), a new shot on every line and every 3-6 s inside long lines
-        (closer on the speaker, or a reaction shot of the listener), forced cuts where the cart owner steps out."""
+        """Cartoon shot grammar. An establishing wide at the scene start; a two-shot (speaker + the one spoken to) to
+        open a conversation and for any action between them; shot / reverse-shot singles on the SPEAKER as it goes on;
+        closer singles for emotional lines; a reaction shot of the LISTENER only in the beat after a line ends. The
+        speaker is in every shot of their own line. Narration shows the characters it names."""
         sc = self.scenes[sc_i]
         tracks = self.plans[sc_i]["tracks"]
-        cuts = self.plans[sc_i].get("cuts", [])
-        wants = [(sc["start"], "wide", (), None, None)]
+        lines = sc["lines"]
 
         def on_stage(cid, t):
-            return -100 < _x_at(tracks[cid], t) < W + 100
+            return cid in tracks and -100 < _x_at(tracks[cid], t) < W + 100
 
-        def partner(actor, t, tgt=None):
-            if tgt:
-                return tgt
-            ax = _x_at(tracks[actor], t)
-            near = [o for o in tracks if o != actor and on_stage(o, t)]
-            return min(near, key=lambda o: abs(_x_at(tracks[o], t) - ax)) if near else None
-
-        last_kind = "wide"
-        for li, ln in enumerate(sc["lines"]):
+        everyone = lambda t: tuple(c for c in tracks if on_stage(c, t + 0.3))
+        est_end = sc["start"] + 2.4
+        wants = [(sc["start"], "wide", everyone(sc["start"] + 1.5), None, None, "establish")]
+        pair_prev, singles = None, 0
+        for li, ln in enumerate(lines):
             sp = ln.get("speaker")
-            actor = sp if sp in tracks else ln.get("actor") if ln.get("actor") in tracks else None
-            emo = LC.expr_name(ln.get("emotion")) if ln.get("emotion") else None
-            act = ln.get("action") or ""
             t, te_line = ln["start"], ln["end"]
-            if li == 0 and t - sc["start"] < 1.2:
-                wants[0] = (sc["start"], "wide", (), None, None)
-            if actor is None:   # narration about nobody in particular: the people on stage, not the empty set
-                ids = [c for c in tracks if on_stage(c, t + 0.3)][:2]
-                wants.append((t - 0.05, "two" if ids else "wide", tuple(ids), None, None))
-                last_kind = "two"
-                continue
-            tgt = ln.get("target") if ln.get("target") in tracks and ln.get("target") != actor else None
+            ts = max(t - 0.05, est_end) if li == 0 or t < est_end else t - 0.05
+            if ts > te_line - 0.8 and li == 0:
+                continue        # a short first line plays over the establishing wide
+            emo = LC.expr_name(ln.get("emotion")) if ln.get("emotion") else None
+            act = (ln.get("action") or "").lower()
             beats = [b_[3] for b_ in (ln.get("beats") or [])]
-            if act in ("walk", "run", "enter", "exit", "give") or any(b_ in ("give", "take") for b_ in beats):
-                kind = "two" if len(tracks) > 1 else "medium"
-            elif ln.get("close") or (emo in EMOTIONAL and emo != "sad") or act in ("cry",) or \
-                    any(b_ in ("cry", "laugh", "scratch", "think", "eat", "drink", "burn", "surprised") for b_ in beats):
-                kind = "close"
-            else:
-                kind = ("medium", "two", "close", "medium")[li % 4] if last_kind != "medium" else ("close", "two")[li % 2]
-            sp_ = partner(actor, t + 0.3, tgt)
-            subj = (actor,) + ((sp_,) if sp_ and kind != "close" else ())
-            if kind == "close" and sp_:
-                subj = (actor,)
+            if sp not in tracks:   # narration: the characters it names (or its actor), else the whole stage
+                if li == 0 and t < est_end + 1.0:
+                    continue        # the opening line plays over the establishing wide
+                ids = [c for c in self.mentioned(ln, list(tracks)) if on_stage(c, t + 0.3)]
+                actor = ln.get("actor") if on_stage(ln.get("actor"), t + 0.3) else None
+                if actor and actor not in ids:
+                    ids = [actor] + ids
+                if not ids:
+                    wants.append((ts, "wide", everyone(t), None, None, "narration"))
+                else:
+                    wants.append((ts, "two" if len(ids) > 1 else "medium", tuple(ids[:3]), ids[0], None, "narration"))
+                pair_prev = None
+                continue
+            mate = self.addressee(sc_i, li, sp, t + 0.3)
+            pair = tuple(sorted((sp, mate))) if mate else None
+            moving = act in ("walk", "run", "enter", "exit", "give", "take") or any(b_ in ("give", "take") for b_ in beats) or \
+                any(ws <= te_line and we >= t - 0.3 for ws, we, *_ in tracks[sp]["walks"])
+            strong = ln.get("close") or (emo in EMOTIONAL and emo not in ("greedy",)) or act == "cry" or \
+                any(b_ in ("cry", "laugh", "surprised", "scared", "stomp") for b_ in beats)
             arrive = None
-            if act in ("walk", "run", "enter") or (act == "give" and tracks[actor]["walks"]):
-                ends = [we for ws, we, *_ in tracks[actor]["walks"] if ws <= t + 0.8 and we >= t - 0.3]
+            if moving:
+                ends = [we for ws, we, *_ in tracks[sp]["walks"] if ws <= te_line and we >= t - 0.3]
                 arrive = max(ends) if ends else None
-            wants.append((t - 0.05, kind, subj, actor, arrive))
-            last_kind = kind
-            # long line: cut again every 3-6 s on a stressed word (closer on the speaker, or the listener reacting)
+                kind, subj = ("two", (sp, mate)) if mate else ("medium", (sp,))
+                singles = 0
+            elif not mate:
+                kind, subj = ("close" if strong else "medium"), (sp,)
+            elif pair != pair_prev:       # a new conversation (or the first line of one): the two-shot
+                kind, subj = "two", (sp, mate)
+                singles = 0
+            elif strong:
+                kind, subj = "close", (sp,)
+                singles += 1
+            elif singles >= 3:            # come back to the two-shot now and then
+                kind, subj = "two", (sp, mate)
+                singles = 0
+            else:
+                kind, subj = "medium", (sp,)
+                singles += 1
+            pair_prev = pair
+            wants.append((ts, kind, subj, sp, arrive, "line"))
+            # a long line: one change of framing on a stressed word, still on the speaker
             dur = te_line - t
-            if dur > 5.2 and kind != "two" or dur > 6.5:
-                n_more = 1 if dur < 9.5 else 2
+            if dur > 6.5 and not moving:
                 st = self.stress.get((sc_i, li)) or []
-                for m in range(1, n_more + 1):
-                    want_t = t + dur * m / (n_more + 1)
-                    ct = min(st, key=lambda x: abs(x - want_t)) if st else want_t
-                    if ct - wants[-1][0] < 2.6 or te_line - ct < 2.0:
-                        continue
-                    walking = any(ws - 0.2 <= ct <= we + 0.2 for ws, we, *_ in tracks[actor]["walks"])
-                    if walking:
-                        continue
-                    if sp_ and on_stage(sp_, ct) and sp in tracks and (m % 2 == 1) and kind == "close":
-                        wants.append((ct - 0.04, "close", (sp_,), sp_, None))        # reaction shot
-                    elif kind != "close":
-                        wants.append((ct - 0.04, "close", (actor,), actor, None))
-                    else:
-                        wants.append((ct - 0.04, "medium", subj if len(subj) > 1 else (actor,) + ((sp_,) if sp_ else ()), actor, None))
+                want_t = t + dur * 0.5
+                ct = min(st, key=lambda x: abs(x - want_t)) if st else want_t
+                if ct - ts > 2.6 and te_line - ct > 2.2:
+                    alt = ("close", (sp,)) if kind != "close" else (("two", (sp, mate)) if mate else ("medium", (sp,)))
+                    wants.append((ct - 0.04, alt[0], alt[1], sp, None, "line"))
+            # reaction shot: the listener, in the beat AFTER the line (long_voice leaves that beat)
+            rb = ln.get("react_by")
+            nxt = lines[li + 1]["start"] if li + 1 < len(lines) else sc["end"]
+            if rb and rb != sp and on_stage(rb, te_line) and nxt - te_line >= 0.55:
+                wants.append((te_line + 0.06, "close", (rb,), rb, None, "reaction"))
         if sc.get("moral_card"):
-            wants.append((sc["lines"][-1]["start"] - 0.05, "wide", (), None, None))
+            wants.append((lines[-1]["start"] - 0.05, "wide", everyone(lines[-1]["start"]), None, None, "moral"))
         wants.sort(key=lambda w_: w_[0])
         shots = []
-        for k, (ts, kind, subj, actor, arrive) in enumerate(wants):
+        for k, (ts, kind, subj, actor, arrive, tag) in enumerate(wants):
             te = wants[k + 1][0] if k + 1 < len(wants) else sc["end"]
             if te - ts < 0.05:
                 continue
             ta = min(te - 0.15, arrive) if arrive and arrive > ts else ts   # a walker is framed where they arrive
+            subj = tuple(c for c in subj if c)
             cam = self.solve_shot(sc_i, kind, subj, ta, te)
-            forced = any(ts - 0.2 <= c <= ts + 0.2 for c in cuts)
-            if shots and not forced:
+            if shots:
                 p = shots[-1]
                 if p[1] == cam[3] and abs(p[4] - cam[2]) < 0.15 and abs(p[2] - cam[0]) < 260 and abs(p[3] - cam[1]) < 110 \
                         and self.cam_ok(sc_i, (p[2], p[3], p[4]), p[1], subj, ta, te):
                     continue    # same framing still valid: hold the shot (its slow push-in carries on)
-            if shots and forced:
-                p = shots[-1]
-                if abs(p[2] - cam[0]) < 120 and abs(p[4] - cam[2]) < 0.2:   # make the cut read as a cut
-                    alt = "close" if kind != "close" else "medium"
-                    cam = self.solve_shot(sc_i, alt, subj[:1] if alt == "close" else subj, ta, te)
-            shots.append((ts, cam[3]) + cam[:3])
+            shots.append((ts, cam[3]) + cam[:3] + (tag, subj))
         return shots
 
     def solve_shot(self, sc_i, kind, subj, ta, tb):
@@ -1194,7 +1362,7 @@ class Renderer:
             if subj and len(subj) > 1:
                 return self.solve_shot(sc_i, kind, subj[:1], ta, tb)
             if subj:
-                return self.solve_shot(sc_i, "wide" if kind != "wide" else kind, (), ta, tb) if kind != "wide" else (960.0, 540.0, 1.0, "wide")
+                return self.solve_shot(sc_i, "wide", subj, ta, tb) if kind != "wide" else (960.0, 540.0, 1.0, "wide")
             return (960.0, 540.0, 1.0, kind)
         return best[1]
 

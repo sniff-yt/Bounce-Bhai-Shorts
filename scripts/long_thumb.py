@@ -48,6 +48,34 @@ def glow(cv, x, y, r, col=(255, 240, 150)):
     cv.drawCircle(x, y, r, g)
 
 
+def thumb_plate(story, main_id):
+    """The painted set of the story's most dramatic scene with the main character (blurred a little), as a skia image."""
+    import long_sets as LS
+    best, score = None, -1
+    for i, sc in enumerate(story["scenes"]):
+        ids = [c.get("id") if isinstance(c, dict) else c for c in sc.get("cast") or []]
+        sc_ = (2 if main_id in ids else 0) + {"tense": 2, "sad": 1.5, "magical": 2.5}.get(sc.get("mood"), 0) + \
+            (0.5 if sc.get("set") not in ("house_interior",) else 0)
+        if sc_ > score:
+            best, score = sc, sc_
+    if not best:
+        return None
+    pf, _ = LS.plate_file(LS.set_name(best.get("set")), best.get("time", "day"))
+    if not pf:
+        return None
+    im = Image.open(pf).convert("RGB")
+    w, h = im.size
+    # the upper 80 % of the painting (the empty ground band is not interesting), 16:9
+    ch = int(h * 0.8); cw = int(ch * 16 / 9)
+    if cw > w:
+        cw = w; ch = int(w * 9 / 16)
+    x0 = (w - cw) // 2
+    im = im.crop((x0, 0, x0 + cw, ch)).resize((TW, TH), Image.LANCZOS).filter(ImageFilter.GaussianBlur(1.6))
+    im = ImageEnhance.Color(im).enhance(1.2)
+    a = np.ascontiguousarray(np.array(im.convert("RGBA")))
+    return skia.Image.fromarray(a, colorType=skia.kRGBA_8888_ColorType)
+
+
 def make(path):
     story = json.load(open(path, encoding="utf-8"))
     lang = story.get("lang", "hi")
@@ -71,7 +99,26 @@ def make(path):
     surf = skia.Surface(arr, colorType=skia.kRGBA_8888_ColorType, alphaType=skia.kPremul_AlphaType)
     cv = surf.getCanvas()
     c1, c2, c3 = PALETTES[expr]
-    burst(cv, 430, 330, c1, c2, c3)
+    plate = thumb_plate(story, main_id)
+    if plate is not None:
+        # the story's own painted set (rich and detailed like the big kahani channels), with a coloured glow + soft
+        # sunburst behind the main character so the faces pop off it
+        cv.drawImageRect(plate, skia.Rect.MakeWH(TW, TH), skia.SamplingOptions(skia.FilterMode.kLinear))
+        g = skia.Paint(AntiAlias=True)
+        g.setShader(skia.GradientShader.MakeRadial(skia.Point(430, 330), 760, [C(c1, 170), C(c2, 90), C(c3, 0)], [0, 0.4, 1.0]))
+        cv.drawRect(skia.Rect.MakeWH(TW, TH), g)
+        n = 22
+        for k_ in range(0, n, 2):
+            a0, a1 = k_ * 2 * math.pi / n, (k_ + 1) * 2 * math.pi / n
+            p_ = skia.Path(); p_.moveTo(430, 330)
+            p_.lineTo(430 + math.cos(a0) * 1600, 330 + math.sin(a0) * 1600); p_.lineTo(430 + math.cos(a1) * 1600, 330 + math.sin(a1) * 1600)
+            p_.close()
+            cv.drawPath(p_, paint((255, 255, 255), 22))
+        v = skia.Paint(AntiAlias=True)
+        v.setShader(skia.GradientShader.MakeRadial(skia.Point(TW / 2, TH / 2), 860, [C((0, 0, 0), 0), C((0, 0, 0), 150)], [0.55, 1.0]))
+        cv.drawRect(skia.Rect.MakeWH(TW, TH), v)
+    else:
+        burst(cv, 430, 330, c1, c2, c3)
     # second character (smaller, right, reacting)
     if second:
         P = LC.rest_pose()
@@ -95,7 +142,7 @@ def make(path):
         P.update(tears=1.0, mouth=0.75, smile=-1.0)
     if expr == "angry":
         P.update(mouth=0.7, red=1.0)
-    k = 2.05 / look["height"]
+    k = 1.88 / look["height"]
     P.update(x=400, y=640 * k * look["height"] * 0.98 + 95, scale=k, facing=1, head_turn=0.35, gaze=(0.45, 0.0))
     P["lh"], P["rh"] = POSE.get(expr, POSE["surprised"])
     if obj and expr in ("greedy", "happy"):

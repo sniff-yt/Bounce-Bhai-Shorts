@@ -58,6 +58,7 @@ jobs:
             out/*.mp4
             out/*_thumb.jpg
             out/long_*.json
+            out/sample_*.json
             out/*_speech.wav
             out/*_mix.wav
           retention-days: 5

@@ -10,7 +10,9 @@ LANG_CODE="${1:-te}"
 run() { local log; log=$(mktemp); set +e; "$@" 2>&1 | tee "$log"; local rc=${PIPESTATUS[0]}; set -e
   if [ "$rc" -ne 0 ]; then echo "::error title=$(basename "$2")::$(tail -n 6 "$log" | tr '\n' ' ' | cut -c1-900)"; exit "$rc"; fi; }
 PUBLISH="${2:-}"
+STORY_IN="${3:-}"          # sample mode: optional existing story json to reuse (skips the writer)
 NAME="long_${LANG_CODE}_$(date -u +%Y%m%d_%H%M)"
+[ "$PUBLISH" = "sample" ] && NAME="sample_${LANG_CODE}_$(date -u +%Y%m%d_%H%M)"
 J="out/$NAME.json"
 mkdir -p out
 echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
@@ -18,13 +20,36 @@ python -c "from PIL import features; import sys; sys.exit(0 if features.check('r
   echo "::error::Pillow has no raqm text shaping: Telugu/Devanagari text would render broken"; exit 1; }
 
 T=$SECONDS
-run python scripts/write_long_story.py "$J" "$LANG_CODE"
+if [ -n "$STORY_IN" ] && [ -f "$STORY_IN" ]; then
+  python - "$STORY_IN" "$J" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1], encoding="utf-8"))
+for sc in s["scenes"]:     # strip an earlier voicing so the story is voiced again
+    for ln in sc["lines"]:
+        for k in ("audio", "voice", "dur", "start", "end", "words", "beats", "react_by", "react_gap", "tts_match"):
+            ln.pop(k, None)
+    for k in ("start", "end"):
+        sc.pop(k, None)
+for k in ("duration", "speech_wav", "mix_wav", "voices", "voices_gemini", "end_screen", "sfx_cues", "scene_moods", "thumb", "video"):
+    s.pop(k, None)
+json.dump(s, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+PY
+else
+  run python scripts/write_long_story.py "$J" "$LANG_CODE"
+fi
+[ "$PUBLISH" = "sample" ] && run python scripts/long_sample.py "$J"
 echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
 run python scripts/long_voice.py "$J"
 echo "::notice title=timing::voices $((SECONDS - T))s"; T=$SECONDS
 run python engine/long2d.py plan "$J"
-# frame checker on the render plan: heads in frame, spacing, unique props, planted feet, natural joints (warning gate)
-python scripts/long_qc.py "$J" --report "out/${NAME}_qc.json" || echo "::warning title=frame QC::the render plan has frame issues (see out/${NAME}_qc.json in the artifact)"
+# frame + STAGING checker on the render plan. Staging failures (speaker not on screen, a cut moving somebody, the
+# 180-degree rule, partners apart / not facing, a listener cut inside a line) stop the episode; frame warnings don't.
+set +e
+python scripts/long_qc.py "$J" --report "out/${NAME}_qc.json"
+QC=$?
+set -e
+if [ "$QC" -eq 2 ]; then echo "::error title=staging QC::staging failed (see out/${NAME}_qc.json)"; exit 1; fi
+[ "$QC" -ne 0 ] && echo "::warning title=frame QC::soft frame warnings (see out/${NAME}_qc.json in the artifact)"
 run python scripts/long_audio.py "$J"
 echo "::notice title=timing::plan+music+sfx $((SECONDS - T))s"; T=$SECONDS
 run python scripts/long_thumb.py "$J"
@@ -48,7 +73,7 @@ print(f"::notice title=video::{dur / 60:.2f} min, {v['width']}x{v['height']}, au
       f"title={s['title']}, moral={s['moral']}")
 if not has_audio or v["width"] != 1920:
     raise SystemExit("bad output video")
-if not (9.0 * 60 <= dur <= 10.0 * 60):
+if not s["scenes"][0].get("start") is None and len(s["scenes"]) > 2 and not (9.0 * 60 <= dur <= 10.0 * 60):
     print(f"::warning title=length::video is {dur / 60:.2f} min (target 9-10)")
 s["video"] = mp4
 json.dump(s, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
