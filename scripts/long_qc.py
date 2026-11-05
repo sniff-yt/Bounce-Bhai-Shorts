@@ -254,6 +254,11 @@ def staging_checks(r, story, issues, step=0.25):
                             hw_s, hw_m = L.head_w(r.looks[sp]), L.head_w(r.looks[mate])
                             gap = (abs(Ps["x"] - Pm["x"]) - (hw_s + hw_m) / 2) / ((hw_s + hw_m) / 2)
                             between = [o for o in tracks if o not in (sp, mate) and min(Ps["x"], Pm["x"]) < r.pose(t, i, o)["x"] < max(Ps["x"], Pm["x"])]
+                            # the empty mark of somebody who walks in later (a deliberate gap they step into) is a split, not a far pair
+                            hole = [o for o in tracks if o not in (sp, mate) and tracks[o].get("mark") is not None and
+                                    min(Ps["x"], Pm["x"]) < tracks[o]["mark"] < max(Ps["x"], Pm["x"]) and
+                                    any(ws_ > t for ws_, *_ in tracks[o]["walks"])]
+                            between = between or hole
                             if gap > PARTNER_GAP_MAX:
                                 issues["partner_split" if between else "partner_far"].append(
                                     {"t": round(t, 2), "scene": i, "line": li, "pair": [sp, mate], "gap_hw": round(gap, 2)})

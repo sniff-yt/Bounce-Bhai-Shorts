@@ -235,6 +235,21 @@ def stage_layout(story, sc, ids, want, looks, enters, cart_owner, memo):
     w = scene_pairs(story, sc, ids)
     prev = (memo or {}).get("order", {})
     wr = {cid: want[k] for k, cid in enumerate(ids)}
+    first_in = {}
+    for li, ln in enumerate(sc.get("lines") or []):
+        for cid in (ln.get("speaker"), ln.get("actor"), ln.get("target")):
+            if cid in ids and cid not in first_in:
+                first_in[cid] = li
+    talks = []    # (a, b, line) for lines said to somebody: an entrant who arrives later must not stand between them
+    prev_sp = None
+    for li, ln in enumerate(sc.get("lines") or []):
+        sp_, tg_ = ln.get("speaker"), ln.get("target")
+        if sp_ in ids and tg_ in ids and tg_ != sp_:
+            talks.append((sp_, tg_, li))
+        elif sp_ in ids and prev_sp in ids and prev_sp != sp_:
+            talks.append((sp_, prev_sp, li))
+        if sp_ in ids:
+            prev_sp = sp_
     best = None
     perms = itertools.permutations(ids) if n <= 6 else [tuple(sorted(ids, key=lambda c: wr[c]))]
     for perm in perms:
@@ -244,8 +259,20 @@ def stage_layout(story, sc, ids, want, looks, enters, cart_owner, memo):
             d = abs(r[a] - r[b])
             sc_ += v * (d - 1) * 2.2
         for c in perm:
-            if (c in enters or c == cart_owner) and 0 < r[c] < n - 1:
+            if c == cart_owner and 0 < r[c] < n - 1:
+                sc_ += 12.0     # the cart stands on the owner's outer side: an owner in the middle puts it among people
+            elif c in enters and 0 < r[c] < n - 1:
                 sc_ += 3.0
+        for c in enters:        # an entrant comes in from the nearer end: nobody already standing may be in the way
+            k = r[c]
+            way = perm[:k] if k < n / 2 - 0.01 else perm[k + 1:]
+            for o in way:
+                if o not in enters or first_in.get(o, 0) < first_in.get(c, 0):
+                    sc_ += 1.5     # walking in front of people is fine when nothing else works
+        for a, b, li in talks:   # a hole (an entrant's empty mark) between two people talking before it arrives
+            lo, hi_ = sorted((r[a], r[b]))
+            if any(c in enters and first_in.get(c, 0) > li for c in perm[lo + 1:hi_]):
+                sc_ += 2.5
         for a, b in itertools.combinations(perm, 2):
             if (wr[a] < wr[b]) != (r[a] < r[b]) and abs(wr[a] - wr[b]) > 0.05:
                 sc_ += 0.8
@@ -446,82 +473,88 @@ def plan_scene(story, sc, looks, memo=None):
                 obj_give_t = ls + (le - ls) * 0.3
         if sp in tracks:
             tracks[sp]["speak"].append((ls, le, li))
-        # facing: speaker faces target (or nearest), listeners face speaker
-        if actor:
-            ax = _x_at(tracks[actor], ls)
-            tgt_face = tgt if tgt else line_addressee(sc, li, actor, tracks, ls + 0.3)
-            if tgt_face:
-                tracks[actor]["face"].append((ls - 0.15, 1 if _x_at(tracks[tgt_face], ls) > ax else -1))
-            for o in tracks:
-                if o != actor and sp in tracks:
-                    tracks[o]["face"].append((ls - 0.05 + 0.12 * (hash(o) % 3), 1 if ax > _x_at(tracks[o], ls) else -1))
         # somebody who left earlier and speaks / acts again walks back in first
         if actor and act != "exit" and tracks[actor].get("pending_enter") is None and not (-100 < _x_at(tracks[actor], ls) < W + 100):
             tracks[actor]["pending_enter"] = tracks[actor]["base"]
         # movement
         # movement: only to reach a mark (entering / coming back) or to leave. Somebody already on stage never wanders
         # off their mark (a narrated "walked to ..." happens between scenes)
-        on_now = actor and -150 < _x_at(tracks[actor], ls) < W + 150
-        if actor and (act == "exit" or tracks[actor].get("pending_enter") is not None or
-                      (act in ("walk", "run", "enter") and not on_now and tracks[actor].get("gone_after") is None)):
-            tr = tracks[actor]
-            ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
-            if tr.get("pending_enter") is not None and act != "exit":
-                # an entrance finishes BEFORE the line: the speaker walks in (from their side) during the previous
-                # beat, arrives on the mark and then speaks on camera
-                d_in = max(0.6, min(4.5, abs(tr["pending_enter"] - _x_at(tr, ls)) / (WALK_SPEED * (0.78 if looks[actor]["kid"] else 1.0))))
-                ws = max(t0 + 0.3, walk_end[actor] + 0.15, ls - d_in - 0.3)
-            x0 = _x_at(tr, ws)
-            if act == "exit":   # leave by the side with fewer people in the way
-                others = [_x_at(tro, ws) for o, tro in tracks.items() if o != actor]
-                others = [ox for ox in others if -100 < ox < W + 100]
-                nl = sum(1 for ox in others if ox < x0); nr = sum(1 for ox in others if ox > x0)
-                x1 = -300 if (nl < nr or (nl == nr and x0 < 960)) else W + 300
-                tr["gone_after"] = ws
-            elif tr.get("pending_enter") is not None:
-                x1 = tr.pop("pending_enter")
-            else:
-                to = ln.get("to")
-                if to is None and tgt:
-                    tx = _x_at(tracks[tgt], ls)
-                    x1 = tx - SEP if tx > x0 else tx + SEP
-                else:
-                    x1 = pos_x(to if to is not None else (0.5 if abs(x0 - 960) > 200 else (0.25 if x0 > 960 else 0.75)))
-            speed = WALK_SPEED * (1.8 if act == "run" else 1.0) * (0.78 if looks[actor]["kid"] else 1.0)
-            dur0 = max(0.6, min(4.5, abs(x1 - x0) / speed))
-            if act == "exit" and sp == actor:   # say the line first, then walk off as it ends
-                ws = max(ws, le - dur0 * 0.4)
-            entering = x0 < -150 or x0 > W + 150
-            if act != "exit":
-                if not entering:
-                    # don't walk through somebody standing in the way: stop beside the first one
-                    for o, tro in tracks.items():
-                        ox = _x_at(tro, ws)
-                        if o != actor and -200 < ox < W + 200 and min(x0, x1) < ox < max(x0, x1):
-                            x1 = min(x1, ox - SEP) if x1 > x0 else max(x1, ox + SEP)
-                x1 = free_x(actor, x1, ws + dur0, x0)
-                if entering:   # enter from the side with nobody in between
+        def _move(actor, act, tgt):
+            on_now = actor and -150 < _x_at(tracks[actor], ls) < W + 150
+            if actor and (act == "exit" or tracks[actor].get("pending_enter") is not None or
+                          (act in ("walk", "run", "enter") and not on_now and tracks[actor].get("gone_after") is None)):
+                tr = tracks[actor]
+                ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
+                if tr.get("pending_enter") is not None and act != "exit":
+                    # an entrance finishes BEFORE the line: the speaker walks in (from their side) during the previous
+                    # beat, arrives on the mark and then speaks on camera
+                    d_in = max(0.6, min(4.5, abs(tr["pending_enter"] - _x_at(tr, ls)) / (WALK_SPEED * (0.78 if looks[actor]["kid"] else 1.0))))
+                    ws = max(t0 + 0.3, walk_end[actor] + 0.15, ls - d_in - 0.3)
+                x0 = _x_at(tr, ws)
+                if act == "exit":   # leave by the side with fewer people in the way
                     others = [_x_at(tro, ws) for o, tro in tracks.items() if o != actor]
-                    others = [ox for ox in others if -200 < ox < W + 200]
-                    lc = not any(ox < x1 for ox in others)
-                    rc = not any(ox > x1 for ox in others)
-                    x0 = -260 if (lc if lc != rc else x1 < 960) else W + 260
-                    tr["keys"] = [(k_[0], x0) for k_ in tr["keys"] if k_[0] <= ws] or [(t0, x0)]
-            x1 = max(-320, min(W + 320, x1))
-            if abs(x1 - x0) > 60:
-                dur = max(0.6, min(4.5, abs(x1 - x0) / speed))
-                tr["keys"].append((ws, x0)); tr["keys"].append((ws + dur, x1))
-                tr["keys"].sort(key=lambda a: a[0])
-                tr["walks"].append((ws, ws + dur, x0, x1, 1.8 if act == "run" else 1.0))
-                walk_end[actor] = ws + dur
-                if act != "exit":   # arrived: turn to the person spoken to (or the nearest one)
-                    te_ = ws + dur
-                    near = [o for o in tracks if o != actor and -200 < _x_at(tracks[o], te_) < W + 200]
-                    fo = tgt if tgt else (min(near, key=lambda o: abs(_x_at(tracks[o], te_) - x1)) if near else None)
-                    if fo:
-                        tr["face"].append((te_ + 0.05, 1 if _x_at(tracks[fo], te_) > x1 else -1))
-                        for o in near:   # and the others look at the newcomer
-                            tracks[o]["face"].append((te_ + 0.1, 1 if x1 > _x_at(tracks[o], te_) else -1))
+                    others = [ox for ox in others if -100 < ox < W + 100]
+                    nl = sum(1 for ox in others if ox < x0); nr = sum(1 for ox in others if ox > x0)
+                    x1 = -300 if (nl < nr or (nl == nr and x0 < 960)) else W + 300
+                    tr["gone_after"] = ws
+                elif tr.get("pending_enter") is not None:
+                    x1 = tr.pop("pending_enter")
+                else:
+                    to = ln.get("to")
+                    if to is None and tgt:
+                        tx = _x_at(tracks[tgt], ls)
+                        x1 = tx - SEP if tx > x0 else tx + SEP
+                    else:
+                        x1 = pos_x(to if to is not None else (0.5 if abs(x0 - 960) > 200 else (0.25 if x0 > 960 else 0.75)))
+                speed = WALK_SPEED * (1.8 if act == "run" else 1.0) * (0.78 if looks[actor]["kid"] else 1.0)
+                dur0 = max(0.6, min(4.5, abs(x1 - x0) / speed))
+                if act == "exit" and sp == actor:   # say the WHOLE line on camera, then walk off as it ends
+                    ws = max(ws, le - 0.1)
+                entering = x0 < -150 or x0 > W + 150
+                if act != "exit":
+                    if not entering:
+                        # don't walk through somebody standing in the way: stop beside the first one
+                        for o, tro in tracks.items():
+                            ox = _x_at(tro, ws)
+                            if o != actor and -200 < ox < W + 200 and min(x0, x1) < ox < max(x0, x1):
+                                x1 = min(x1, ox - SEP) if x1 > x0 else max(x1, ox + SEP)
+                    x1 = free_x(actor, x1, ws + dur0, x0)
+                    if entering:   # enter from the side with nobody in between
+                        others = [_x_at(tro, ws) for o, tro in tracks.items() if o != actor]
+                        others = [ox for ox in others if -200 < ox < W + 200]
+                        lc = not any(ox < x1 for ox in others)
+                        rc = not any(ox > x1 for ox in others)
+                        x0 = -260 if (lc if lc != rc else x1 < 960) else W + 260
+                        tr["keys"] = [(k_[0], x0) for k_ in tr["keys"] if k_[0] <= ws] or [(t0, x0)]
+                x1 = max(-320, min(W + 320, x1))
+                if abs(x1 - x0) > 60:
+                    dur = max(0.6, min(4.5, abs(x1 - x0) / speed))
+                    tr["keys"].append((ws, x0)); tr["keys"].append((ws + dur, x1))
+                    tr["keys"].sort(key=lambda a: a[0])
+                    tr["walks"].append((ws, ws + dur, x0, x1, 1.8 if act == "run" else 1.0))
+                    walk_end[actor] = ws + dur
+                    if act != "exit":   # arrived: turn to the person spoken to (or the nearest one)
+                        te_ = ws + dur
+                        near = [o for o in tracks if o != actor and -200 < _x_at(tracks[o], te_) < W + 200]
+                        fo = tgt if tgt else (min(near, key=lambda o: abs(_x_at(tracks[o], te_) - x1)) if near else None)
+                        if fo:
+                            tr["face"].append((te_ + 0.05, 1 if _x_at(tracks[fo], te_) > x1 else -1))
+                            for o in near:   # and the others look at the newcomer
+                                tracks[o]["face"].append((te_ + 0.1, 1 if x1 > _x_at(tracks[o], te_) else -1))
+        # an entrant spoken TO before their own first line walks in first (nobody talks to an empty spot)
+        if tgt and tgt != actor and tracks[tgt].get("pending_enter") is not None and not (-100 < _x_at(tracks[tgt], ls) < W + 100):
+            _move(tgt, "enter", None)
+        _move(actor, act, tgt)
+        tgt_on = tgt if (tgt and -100 < _x_at(tracks[tgt], ls) < W + 100) else None
+        # facing: speaker faces target (or nearest), listeners face speaker
+        if actor:
+            ax = _x_at(tracks[actor], ls)
+            tgt_face = tgt_on if tgt_on else line_addressee(sc, li, actor, tracks, ls + 0.3)
+            if tgt_face:
+                tracks[actor]["face"].append((ls - 0.15, 1 if _x_at(tracks[tgt_face], ls) > ax else -1))
+            for o in tracks:
+                if o != actor and sp in tracks:
+                    tracks[o]["face"].append((ls - 0.05 + 0.12 * (hash(o) % 3), 1 if ax > _x_at(tracks[o], ls) else -1))
         # expression
         e = LC.expr_name(emo) if emo else (LC.expr_name(ACTION_EXPR[act]) if act in ACTION_EXPR else None)
         if actor and e:
@@ -1259,7 +1292,8 @@ class Renderer:
                 any(b_ in ("cry", "laugh", "surprised", "scared", "stomp") for b_ in beats)
             arrive = None
             if moving:
-                ends = [we for ws, we, *_ in tracks[sp]["walks"] if ws <= te_line and we >= t - 0.3]
+                # framed where they arrive - unless the walk leaves the stage (an exit is framed where it starts)
+                ends = [we for ws, we, wx0, wx1, *_ in tracks[sp]["walks"] if ws <= te_line and we >= t - 0.3 and -150 < wx1 < W + 150]
                 arrive = max(ends) if ends else None
                 kind, subj = ("two", (sp, mate)) if mate else ("medium", (sp,))
                 singles = 0
