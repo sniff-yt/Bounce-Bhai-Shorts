@@ -109,7 +109,7 @@ for model in pref[:4]:
         rec.update(mime=mime, dur=round(len(a) / 24000, 2), rms_db=round(20 * np.log10(np.sqrt((a ** 2).mean()) + 1e-9), 1),
                    f0=round(pitch_med(a)), heard=heard, sim=round(difflib.SequenceMatcher(None, norm(text), norm(heard)).ratio(), 2),
                    words=len(wj.get("words") or []), werr=wj.get("error"))
-        print(json.dumps(rec, ensure_ascii=False), flush=True)
+        print(json.dumps(rec, ensure_ascii=False, default=float), flush=True)
         report["samples"].append(rec)
         time.sleep(2)
-json.dump(report, open(f"{out}/report.json", "w"), ensure_ascii=False, indent=1)
+json.dump(report, open(f"{out}/report.json", "w"), ensure_ascii=False, indent=1, default=float)
