@@ -326,7 +326,8 @@ def gemini_pass(story, base, jobs_spec):
         text = ln["text"]
         best = None
         tries = 0
-        for model in GT.MODELS:
+        k0 = home.get(sp, 0)
+        for model in GT.MODELS[k0:] + GT.MODELS[:k0]:
             if model in G.dead:
                 continue
             for plain in (False, True):
@@ -360,9 +361,14 @@ def gemini_pass(story, base, jobs_spec):
         stats["models"][best[1]] = stats["models"].get(best[1], 0) + 1
         return best
 
+    # each character's home model (busiest characters on different models, so the per-minute quotas add up)
+    cnt = {}
+    for ln, p in jobs_spec:
+        cnt[ln.get("speaker", "narrator")] = cnt.get(ln.get("speaker", "narrator"), 0) + 1
+    home = {c: k % max(1, min(3, len(GT.MODELS))) for k, c in enumerate(sorted(cnt, key=lambda c: -cnt[c]))}
     out = {}
     t0 = time.time()
-    with cf.ThreadPoolExecutor(int(os.environ.get("BB_TTS_WORKERS", "3"))) as ex:
+    with cf.ThreadPoolExecutor(int(os.environ.get("BB_TTS_WORKERS", "4"))) as ex:
         futs = {ex.submit(one, ln, p): (ln, p) for ln, p in jobs_spec}
         for f in cf.as_completed(futs):
             ln, p = futs[f]

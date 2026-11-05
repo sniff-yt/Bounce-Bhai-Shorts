@@ -21,8 +21,11 @@ import numpy as np
 import requests
 
 BASE = "https://generativelanguage.googleapis.com/v1beta"
-MODELS = [m for m in os.environ.get("BB_TTS_MODELS", "gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts,"
-                                    "gemini-3.1-flash-tts-preview,gemini-3.8-flash-tts").split(",") if m]
+# probe (run 41990024145): with the director's-notes / transcript prompt all three speak only the transcript (Whisper
+# match 0.86-1.0 on Telugu); 2.5-pro-preview-tts has no quota on this key. Each model has its own per-minute quota,
+# so characters are spread over the models (one character stays on one model = one consistent voice).
+MODELS = [m for m in os.environ.get("BB_TTS_MODELS", "gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,"
+                                    "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts").split(",") if m]
 SR_G = 24000
 LANG_NAME = {"te": "Telugu", "hi": "Hindi", "en": "Indian English"}
 
