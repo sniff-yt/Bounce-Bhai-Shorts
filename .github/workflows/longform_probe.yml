@@ -1,0 +1,63 @@
+name: Long Story Probe
+
+# Dev probes for the long-form pipeline (never uploads): Gemini TTS voices check, or a ~75 s one-scene sample episode.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'tts | sample'
+        required: true
+        default: 'tts'
+      lang:
+        description: 'te | hi | en'
+        required: false
+        default: 'te'
+      story:
+        description: 'optional repo path of a story json to sample (skips the writer)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      BB_X264: veryfast
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg libgl1 libegl1 libfontconfig1 libx11-6 libfribidi0 libraqm0 libharfbuzz0b
+          pip install -q numpy pillow requests edge-tts skia-python==144.0.post2
+          mkdir -p assets/fonts
+          for f in NotoSansTelugu/hinted/ttf/NotoSansTelugu-Bold.ttf NotoSansTelugu/hinted/ttf/NotoSansTelugu-Black.ttf \
+                   NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Bold.ttf NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Black.ttf \
+                   NotoSans/hinted/ttf/NotoSans-Bold.ttf NotoSans/hinted/ttf/NotoSans-Black.ttf; do
+            b=$(basename "$f"); [ -s "assets/fonts/$b" ] || curl -sfL -o "assets/fonts/$b" "https://github.com/notofonts/notofonts.github.io/raw/main/fonts/$f"
+          done
+      - name: TTS probe
+        if: inputs.mode == 'tts'
+        run: python scripts/tts_probe.py out/probe "${{ inputs.lang }}"
+      - name: Sample episode
+        if: inputs.mode == 'sample'
+        run: bash scripts/make_long.sh "${{ inputs.lang }}" sample "${{ inputs.story }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-${{ inputs.mode }}
+          path: |
+            out/probe/
+            out/*.mp4
+            out/*_thumb.jpg
+            out/long_*.json
+            out/*_speech.wav
+            out/*_mix.wav
+          retention-days: 5
