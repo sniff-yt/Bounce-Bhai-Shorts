@@ -128,7 +128,7 @@ def style_prompt(v, ln, lang, plain=False):
     if plain:
         return f"Say it {st}. {L}."
     return (f"Voice acting for an Indian cartoon. You are {v['persona']} Say the line {st}. Natural spoken {L} with "
-            f"real emotion and natural pacing, never robotic.")
+            f"real emotion and an unhurried, natural pace (never rushed, never robotic).")
 
 
 def group_notes(v, lns, lang):
@@ -145,7 +145,7 @@ def group_notes(v, lns, lang):
     who = (f"You are {v['persona']}. Storytelling voice: slow, warm, gentle pauses."
            if v["kind"] == "narrator" else f"Voice acting for an Indian cartoon. You are {v['persona']}")
     return (f"{who} The transcript has {len(lns)} separate lines from one scene. Perform each line with its own feeling "
-            f"({'; '.join(dirs)}), in natural spoken {L} with real emotion, never robotic. Leave a clear silent pause of "
+            f"({'; '.join(dirs)}), in natural spoken {L} with real emotion and an unhurried, natural pace (never rushed, never robotic). Leave a clear silent pause of "
             f"about one second between the lines. Do not say the line numbers or these notes.")
 
 
