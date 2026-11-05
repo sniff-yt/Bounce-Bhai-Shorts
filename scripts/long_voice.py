@@ -368,8 +368,61 @@ def gemini_pass(story, base, jobs_spec):
     home = {c: k % max(1, min(3, len(GT.MODELS))) for k, c in enumerate(sorted(cnt, key=lambda c: -cnt[c]))}
     out = {}
     t0 = time.time()
+
+    def take(group):
+        """Several lines of one character in one scene, in ONE request (quota), cut at the pauses; lines whose words
+        do not check out are left for the per-line pass."""
+        sp = group[0][0].get("speaker", "narrator")
+        v = gv.get(sp) or gv["narrator"]
+        texts = [ln["text"] for ln, p in group]
+        k0 = home.get(sp, 0)
+        for model in GT.MODELS[k0:] + GT.MODELS[:k0]:
+            if model in G.dead:
+                continue
+            try:
+                pcm = G.synth(model, v["gemini"], GT.group_notes(v, [ln for ln, p in group], lang), "\n\n".join(texts))
+            except Exception as e:
+                print(f"gemini take {model} {sp}: {str(e)[:140]}", flush=True)
+                continue
+            wp = group[0][1] + "_take.wav"
+            GT.write_pcm_wav(wp, pcm)
+            heard, ww = whisper(wp)
+            if not ww:
+                return {}
+            a = np.frombuffer(pcm, np.int16).astype(np.float32) / 32768
+            parts = GT.split_take(texts, ww, a, GT.SR_G)
+            if not parts:
+                return {}
+            got = {}
+            for (ln, p), (s0, s1, rel, sim) in zip(group, parts):
+                if sim < 0.78 or (s1 - s0) < 0.4 * GT.SR_G:
+                    continue
+                piece = (a[s0:s1] * 32767).astype(np.int16).tobytes()
+                pp = p + "_g0.wav"
+                GT.write_pcm_wav(pp, piece)
+                c0 = s0 / GT.SR_G
+                pw = [[w0 - c0, w1 - c0, w] for w0, w1, w in ww if s0 / GT.SR_G <= (w0 + w1) / 2 < s1 / GT.SR_G]
+                got[id(ln)] = (sim, model, pp, pw, (s1 - s0) / GT.SR_G)
+            stats["take_ok"] = stats.get("take_ok", 0) + len(got)
+            return got
+        return {}
+
+    groups = []
+    if os.environ.get("BB_TTS_BATCH", "1") == "1":
+        by = {}
+        for ln, p in jobs_spec:
+            si = int(os.path.basename(p)[1:3])
+            by.setdefault((si, ln.get("speaker", "narrator")), []).append((ln, p))
+        for key_, items in by.items():
+            for k in range(0, len(items), 4):
+                if len(items[k:k + 4]) >= 2:
+                    groups.append(items[k:k + 4])
     with cf.ThreadPoolExecutor(int(os.environ.get("BB_TTS_WORKERS", "4"))) as ex:
-        futs = {ex.submit(one, ln, p): (ln, p) for ln, p in jobs_spec}
+        for res in ex.map(take, groups):
+            out.update(res)
+    print(f"gemini takes: {len(groups)} requests voiced {len(out)} lines in {time.time() - t0:.0f}s", flush=True)
+    with cf.ThreadPoolExecutor(int(os.environ.get("BB_TTS_WORKERS", "4"))) as ex:
+        futs = {ex.submit(one, ln, p): (ln, p) for ln, p in jobs_spec if id(ln) not in out}
         for f in cf.as_completed(futs):
             ln, p = futs[f]
             try:
@@ -380,7 +433,8 @@ def gemini_pass(story, base, jobs_spec):
             if r:
                 out[id(ln)] = r
     sims = [r[0] for r in out.values()]
-    print(f"::notice title=gemini tts::{stats['ok']}/{len(jobs_spec)} lines in {time.time() - t0:.0f}s, models {stats['models']}, "
+    stats["ok"] += stats.get("take_ok", 0)
+    print(f"::notice title=gemini tts::{stats['ok']}/{len(jobs_spec)} lines (in takes {stats.get('take_ok', 0)}) in {time.time() - t0:.0f}s, models {stats['models']}, "
           f"retries {stats['retry']}, failed {stats['fail']} (edge-tts for those), whisper word match median "
           f"{(sorted(sims)[len(sims) // 2] if sims else 0):.2f}, calls {G.calls}", flush=True)
     return out, gv

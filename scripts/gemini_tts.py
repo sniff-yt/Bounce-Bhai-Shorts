@@ -129,6 +129,71 @@ def style_prompt(v, ln, lang, plain=False):
             f"real emotion and natural pacing, never robotic.")
 
 
+def group_notes(v, lns, lang):
+    """Director's notes for several lines of ONE character performed in one take (one request instead of N)."""
+    L = LANG_NAME.get(lang, "Telugu")
+    dirs = []
+    for k, ln in enumerate(lns):
+        emo = (ln.get("emotion") or "neutral").lower()
+        st = EMO_STYLE.get(emo, EMO_STYLE["neutral"])
+        act = (ln.get("action") or "").lower()
+        if act in ACT_STYLE:
+            st = ACT_STYLE[act] + ", " + st
+        dirs.append(f"line {k + 1}: {st}")
+    who = (f"You are {v['persona']}. Storytelling voice: slow, warm, gentle pauses."
+           if v["kind"] == "narrator" else f"Voice acting for an Indian cartoon. You are {v['persona']}")
+    return (f"{who} The transcript has {len(lns)} separate lines from one scene. Perform each line with its own feeling "
+            f"({'; '.join(dirs)}), in natural spoken {L} with real emotion, never robotic. Leave a clear silent pause of "
+            f"about one second between the lines. Do not say the line numbers or these notes.")
+
+
+def split_take(lines_text, ww, a, sr):
+    """Cut one take of several lines into per-line pieces at the quietest point between them.
+    Returns [(s0, s1, words_rel_to_s0, sim)] in samples, or None if the lines cannot be found."""
+    full = " ".join(lines_text)
+    dur = len(a) / sr
+    e = env100(a, sr)
+    words = align(full, ww, dur, e)
+    if not words:
+        return None
+    n_tok = [len(t.split()) for t in lines_text]
+    spans, k = [], 0
+    for n in n_tok:
+        seg = words[k:k + n]
+        if not seg:
+            return None
+        spans.append((seg[0][0], seg[-1][1], seg))
+        k += n
+    cuts = [0.0]
+    for i in range(len(spans) - 1):
+        a0, b0 = spans[i][1], spans[i + 1][0]
+        if b0 < a0 + 0.08:
+            a0, b0 = min(a0, b0) - 0.25, max(a0, b0) + 0.25
+        i0, i1 = max(0, int(a0 * 100)), min(len(e) - 1, int(b0 * 100) + 1)
+        if i1 <= i0:
+            return None
+        w = e[i0:i1 + 1]
+        thr = w.min() + 0.12 * (w.max() - w.min() + 1e-9)
+        best, run0 = (0, i0), None
+        for jj, val in enumerate(list(w) + [1e9]):
+            if val <= thr and run0 is None:
+                run0 = jj
+            elif val > thr and run0 is not None:
+                if jj - run0 > best[0]:
+                    best = (jj - run0, i0 + (run0 + jj) // 2)
+                run0 = None
+        cuts.append(best[1] / 100.0)
+    cuts.append(dur)
+    out = []
+    for i, (t0, t1, seg) in enumerate(spans):
+        c0, c1 = cuts[i], cuts[i + 1]
+        heard = " ".join(w[2] for w in ww if c0 <= (w[0] + w[1]) / 2 < c1)
+        sim = similarity(heard, lines_text[i]) if ww else 0.7
+        rel = [[max(0.0, w0 - c0), max(0.0, w1 - c0), w] for w0, w1, w in seg]
+        out.append((int(c0 * sr), int(c1 * sr), rel, sim))
+    return out
+
+
 def make_prompt(notes, text):
     return f"# DIRECTOR'S NOTES (do not read aloud)\n{notes}\n\n# TRANSCRIPT (say exactly this, nothing else)\n{text}"
 
