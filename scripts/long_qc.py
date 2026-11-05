@@ -79,7 +79,7 @@ def check(story, step=0.25):
                     A, B = ids[a], ids[b]
                     if poses[A].get("_walking") or poses[B].get("_walking"):
                         continue
-                    if not (visible[A] or visible[B]):
+                    if not (visible[A] or visible[B]) or not all(-100 < poses[c]["x"] < L.W + 100 for c in (A, B)):
                         continue
                     al, _, ar, _ = geo[A]["body"]
                     bl, _, br, _ = geo[B]["body"]

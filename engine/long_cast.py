@@ -157,7 +157,8 @@ def _ik(sx, sy, tx, ty, a, b, side, down_w=1.0, side_w=0.5):
     centre on `side`) and downward, so elbows never fold up/inward. Returns (elbow, hand)."""
     dx, dy = tx - sx, ty - sy
     d0 = math.hypot(dx, dy)
-    d = max(abs(a - b) + 1, min(a + b - 0.5, d0))
+    d_min = math.sqrt(max(0.0, a * a + b * b - 2 * a * b * math.cos(math.radians(20))))   # elbow never folds < 20 deg
+    d = max(d_min, abs(a - b) + 1, min(a + b - 0.5, d0))
     if d0 < 1e-3:
         dx, dy, d0 = 0.0, 1.0, 1.0
     ux, uy = dx / d0, dy / d0
@@ -255,7 +256,19 @@ def rig(look, P):
                     ux = side * 0.9; uy = uy * 0.45
                     n = math.hypot(ux, uy); ux, uy = ux / n, uy / n
             tx, ty = hx_ + ux * clear, hy_ + uy * clear
-        (ex, ey), (wx, wy) = _ik(sx, sy, tx, ty, d["up"], d["lo"], side)
+        for _ in range(3):   # the hand centre sits beyond the wrist: keep IT off the face too
+            (ex, ey), (wx, wy) = _ik(sx, sy, tx, ty, d["up"], d["lo"], side)
+            fx_, fy_ = wx - ex, wy - ey
+            n = max(1e-6, math.hypot(fx_, fy_))
+            hcx_, hcy_ = wx + fx_ / n * d["hand_r"] * 0.55, wy + fy_ / n * d["hand_r"] * 0.55
+            dh = math.hypot(hcx_ - hx_, hcy_ - hy_)
+            if dh >= clear + 2:
+                break
+            ux, uy = ((hcx_ - hx_) / dh, (hcy_ - hy_) / dh) if dh > 1e-3 else (side, 0.0)
+            if ux * side < 0.25:
+                ux = side * 0.9; uy *= 0.45
+                nn = math.hypot(ux, uy); ux, uy = ux / nn, uy / nn
+            tx, ty = tx + ux * (clear + 4 - dh), ty + uy * (clear + 4 - dh)
         R["sh" + key[0]] = rot(sx, sy)
         R["el" + key[0]] = rot(ex, ey)
         R["wr" + key[0]] = rot(wx, wy)

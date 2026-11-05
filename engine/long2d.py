@@ -290,13 +290,19 @@ def plan_scene(story, sc, looks):
             for o in tracks:
                 if o != actor and sp in tracks:
                     tracks[o]["face"].append((ls - 0.05 + 0.12 * (hash(o) % 3), 1 if ax > _x_at(tracks[o], ls) else -1))
+        # somebody who left earlier and speaks / acts again walks back in first
+        if actor and act != "exit" and tracks[actor].get("pending_enter") is None and not (-100 < _x_at(tracks[actor], ls) < W + 100):
+            tracks[actor]["pending_enter"] = tracks[actor]["base"]
         # movement
         if actor and (act in ("walk", "run", "enter", "exit") or tracks[actor].get("pending_enter") is not None):
             tr = tracks[actor]
             ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
             x0 = _x_at(tr, ws)
-            if act == "exit":
-                x1 = -300 if x0 < 960 else W + 300
+            if act == "exit":   # leave by the side with fewer people in the way
+                others = [_x_at(tro, ws) for o, tro in tracks.items() if o != actor]
+                others = [ox for ox in others if -100 < ox < W + 100]
+                nl = sum(1 for ox in others if ox < x0); nr = sum(1 for ox in others if ox > x0)
+                x1 = -300 if (nl < nr or (nl == nr and x0 < 960)) else W + 300
             elif tr.get("pending_enter") is not None:
                 x1 = tr.pop("pending_enter")
             else:
@@ -308,6 +314,8 @@ def plan_scene(story, sc, looks):
                     x1 = pos_x(to if to is not None else (0.5 if abs(x0 - 960) > 200 else (0.25 if x0 > 960 else 0.75)))
             speed = WALK_SPEED * (1.8 if act == "run" else 1.0) * (0.78 if looks[actor]["kid"] else 1.0)
             dur0 = max(0.6, min(4.5, abs(x1 - x0) / speed))
+            if act == "exit" and sp == actor:   # say the line first, then walk off as it ends
+                ws = max(ws, le - dur0 * 0.4)
             entering = x0 < -150 or x0 > W + 150
             if act != "exit":
                 if not entering:
@@ -464,7 +472,7 @@ def _last2(seq, t):
 
 # ============================================================================================ camera
 SHOT_Z = {"wide": 1.0, "two": 1.28, "medium": 1.55, "close": 2.15}
-PUSH = 1.04          # the slow push-in over a shot (z grows up to 3.5 %)
+PUSH = 1.065         # the slow push-in over a shot (z grows up to 3.5-6 %)
 WIDE_DRIFT = 32.0
 
 
@@ -509,13 +517,9 @@ def camera_at(shots, t, scene_end):
     ts, kind, cx, cy, z = s[:5]
     nxt = shots[cur + 1][0] if cur + 1 < len(shots) else scene_end
     prog = (t - ts) / max(0.5, nxt - ts)
-    # a gentle glide from the previous shot when it is nearly the same framing, otherwise a clean cut
-    if cur > 0:
-        p = shots[cur - 1]
-        if p[1] == kind and abs(p[4] - z) < 0.12 and abs(p[2] - cx) < 220 and abs(p[3] - cy) < 90:
-            k = ease((t - ts) / 0.8)
-            cx, cy, z = lerp(p[2], cx, k), lerp(p[3], cy, k), lerp(p[4], z, k)
-    z *= 1 + 0.035 * max(0.0, min(1.0, prog))
+    # every shot change is a clean cut (a nearly identical framing is held instead, see plan_shots); slow push-in,
+    # capped so a long held shot does not creep in forever
+    z *= 1 + min(0.06, 0.035 * max(0.0, min(1.0, prog)) * max(1.0, (nxt - ts) / 8.0))
     if kind == "wide":
         cx += 30 * math.sin(t / 6.0)
     return clamp_cam(cx, cy, z)
@@ -871,6 +875,11 @@ class Renderer:
                 continue
             ta = min(te - 0.15, arrive) if arrive and arrive > ts else ts   # a walker is framed where they arrive
             cam = self.solve_shot(sc_i, kind, subj, ta, te)
+            if shots:
+                p = shots[-1]
+                if p[1] == cam[3] and abs(p[4] - cam[2]) < 0.15 and abs(p[2] - cam[0]) < 260 and abs(p[3] - cam[1]) < 110 \
+                        and self.cam_ok(sc_i, (p[2], p[3], p[4]), p[1], subj, ta, te):
+                    continue    # same framing still valid: hold the shot (its slow push-in carries on)
             shots.append((ts, cam[3]) + cam[:3])
         return shots
 
@@ -910,7 +919,7 @@ class Renderer:
                     l_, r_ = c["reach"]
                     hl, ht, hr, hb = c["head_box"]
                     bl, _, br, _ = c["body"]
-                    cands |= {l_ - hw_out - 2, r_ + hw_out + 2, hl + hw_in + 1, hr - hw_in - 1, bl + hw_in + 1, br - hw_in - 1}
+                    cands |= {l_ - hw_out - 18, r_ + hw_out + 18, hl + hw_in + 1, hr - hw_in - 1, bl + hw_in + 1, br - hw_in - 1}
             for l_, r_ in props:
                 cands |= {l_ + hw_in + 1, r_ - hw_in - 1, l_ - hw_out - 2, r_ + hw_out + 2}
             for cx in cands:
@@ -939,6 +948,17 @@ class Renderer:
             return (960.0, 540.0, 1.0, kind)
         return best[1]
 
+    def cam_ok(self, sc_i, cam, kind, subj, ta, tb):
+        cx, cy, z = cam
+        n = max(2, min(14, int((tb - ta) / 0.35) + 1))
+        G = [self.geoms(sc_i, ta + 0.06 + (tb - ta - 0.12) * k / (n - 1)) for k in range(n)]
+        props = [prop_extent(pk, nm, px, own, self.looks) for pk, nm, px, own in self.plans[sc_i]["props"]]
+        drift = WIDE_DRIFT if kind == "wide" else 0.0
+        zin = z * PUSH
+        res = self._eval_cam(cx, z, kind, tuple(c for c in subj if c in G[0]), G, props,
+                             W / 2 / zin - (14 + drift) / zin, W / 2 / z + drift, H / 2 / zin, cy_fixed=cy)
+        return res is not None and res[0] == 0
+
     def _eval_cam(self, cx, z, kind, subj, G, props, hw_in, hw_out, hh, cy_fixed=None):
         Li, Ri, Lo, Ro = cx - hw_in, cx + hw_in, cx - hw_out, cx + hw_out
         soft = 0
@@ -948,7 +968,7 @@ class Renderer:
                 l_, r_ = c["reach"]
                 hl, ht, hr, hb = c["head_box"]
                 bl, _, br, _ = c["body"]
-                out = r_ <= Lo or l_ >= Ro
+                out = r_ <= Lo - 16 or l_ >= Ro + 16      # margin: gesture wobble between the samples
                 head_in = hl >= Li and hr <= Ri
                 if cid in subj and not head_in:
                     return None
