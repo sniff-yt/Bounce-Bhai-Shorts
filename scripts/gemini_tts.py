@@ -42,10 +42,12 @@ VOICE_POOL = {
     "villain_f": ["Pulcherrima", "Kore"],
     "oldwoman": ["Gacrux", "Vindemiatrix", "Achernar"],
     "girl": ["Leda", "Laomedeia", "Zephyr"],
-    "boy": ["Puck", "Laomedeia", "Leda"],
+    "boy": ["Laomedeia", "Leda", "Zephyr"],
 }
 # formant / pitch factor (asetrate): >1 younger / smaller
-FORMANT = {"girl": 1.16, "boy": 1.12, "oldman": 0.97, "oldwoman": 0.98}
+# probe: Leda already sounds like a child (median 370 Hz, Whisper match 1.0), so kids get only a small lift; the
+# F0 gate below raises it further when a child voice comes out too low
+FORMANT = {"girl": 1.05, "boy": 1.04, "oldman": 0.97, "oldwoman": 0.98}
 F0_MIN_KID = 265.0      # a child's median pitch must reach this (Hz), else the formant is raised
 
 EMO_STYLE = {
