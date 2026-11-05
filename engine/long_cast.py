@@ -122,10 +122,13 @@ GRIP = {   # how a held object sits in the hand: hang (hand grips the rim/neck, 
     "fish": ("palm", 0, -26), "mango": ("palm", 0, -30), "roti": ("palm", 0, -26), "bread": ("palm", 0, -26),
     "coins": ("palm", 0, -18), "chai": ("pinch", 4, -6), "letter": ("pinch", 20, -8), "money": ("pinch", 22, -6),
     "coin": ("pinch", 10, -14), "key": ("pinch", 10, 0), "flower": ("pinch", 0, -30), "book": ("pinch", 18, -6),
-    "gift": ("pinch", 22, -14), "necklace": ("hang", 0, 10), "stick": ("pinch", 0, 0), "umbrella": ("pinch", 0, 40),
+    "gift": ("pinch", 22, -14), "ice_cream": ("pinch", 0, -22), "necklace": ("hang", 0, 10), "stick": ("pinch", 0, 0), "umbrella": ("pinch", 0, 40),
 }
 HELD_SCALE = {"magic_pot": 1.25, "gold_pot": 1.25, "pot": 1.2, "rice_sack": 1.1}
 FACE_CLEAR = 0.32   # a hand may overlap the face outline by at most this fraction of its radius
+
+
+LEG_REST = 0.992   # standing: legs nearly straight (a slight natural knee bend), never a squat
 
 
 def dims(look):
@@ -135,9 +138,9 @@ def dims(look):
          "sh_x": (70 if not fem else 62) * wdt * (0.82 if kid else 1.0),
          "waist": (62 if not fem else 54) * wdt * (0.85 if kid else 1.0),
          "head_r": 90.0 * look["head"], "up": 110.0 if not kid else 80.0, "lo": 104.0 if not kid else 76.0,
-         "aw": 36.0 if not kid else 28.0, "hand_r": 23.0 if not kid else 19.0, "lw": 54.0 if not kid else 42.0,
+         "aw": 44.0 if not kid else 34.0, "hand_r": 27.0 if not kid else 22.0, "lw": 54.0 if not kid else 42.0,
          "ankle": 24.0, "hip_dx": 30 * wdt}
-    d["hip_rest"] = -(d["leg"] * 0.975 + d["ankle"])
+    d["hip_rest"] = -(d["leg"] * LEG_REST + d["ankle"])
     return d
 
 
@@ -363,19 +366,45 @@ def _taper(cv, pts, widths, col, ink_w=8.0):
         cv.drawPath(p, fp)
 
 
-def _hand(cv, x, y, ang, r, skin, side=1, fist=False):
-    """A mitten hand centred at (x, y), fingers pointing along `ang` (radians), thumb on the upper/front side."""
+def _capsule(x0, y0, x1, y1, w):
+    p = skia.Path()
+    dx, dy = x1 - x0, y1 - y0
+    n = max(1e-6, math.hypot(dx, dy))
+    nx, ny = -dy / n * w / 2, dx / n * w / 2
+    p.moveTo(x0 + nx, y0 + ny); p.lineTo(x1 + nx, y1 + ny); p.lineTo(x1 - nx, y1 - ny); p.lineTo(x0 - nx, y0 - ny); p.close()
+    p.addCircle(x0, y0, w / 2); p.addCircle(x1, y1, w / 2)
+    return p
+
+
+def _hand(cv, x, y, ang, r, skin, side=1, fist=False, shape=None):
+    """A cartoon hand centred at (x, y), fingers along `ang` (radians). Shapes: open (palm + four fingers + thumb),
+    palm (open, fingers together), point (fist + index finger), fist / hold / pinch (closed), cup (curled)."""
+    shape = shape or ("fist" if fist else "open")
     cv.save(); cv.translate(x, y); cv.rotate(math.degrees(ang) - 90)
-    if fist:
-        fill_ink(cv, oval(0, 0, r * 0.95, r * 0.95), skin, w=4.5)
-        cv.drawPath(poly([(-r * 0.5, r * 0.25), (r * 0.5, r * 0.25)], close=False), stroke(shade(skin, 0.7), 3))
+    parts = []
+    if shape in ("fist", "hold", "pinch", "cup", "point"):
+        parts.append(oval(0, r * 0.1, r * 0.92, r * 0.88))
+        parts.append(_capsule(side * r * 0.62, -r * 0.1, side * r * 0.78, r * 0.42, r * 0.42))   # thumb
+        if shape == "point":
+            parts.append(_capsule(-side * r * 0.05, r * 0.5, -side * r * 0.08, r * 1.75, r * 0.38))
     else:
-        th = smooth_closed([(r * 0.55 * side, -r * 0.5), (r * 1.15 * side, -r * 0.05), (r * 0.95 * side, r * 0.35),
-                            (r * 0.45 * side, r * 0.05)])
-        fill_ink(cv, th, skin, w=4)
-        fill_ink(cv, oval(0, r * 0.12, r * 0.82, r * 1.0), skin, w=4.5)
-        cv.drawPath(poly([(-r * 0.25, r * 0.55), (-r * 0.25, r * 0.95)], close=False), stroke(shade(skin, 0.72), 2.5))
-        cv.drawPath(poly([(r * 0.15, r * 0.6), (r * 0.15, r * 0.98)], close=False), stroke(shade(skin, 0.72), 2.5))
+        spread = 0.16 if shape == "open" else 0.0
+        parts.append(oval(0, r * 0.1, r * 0.8, r * 0.82))
+        for k, fx in enumerate((-0.48, -0.16, 0.16, 0.46)):
+            ln_ = (1.12, 1.3, 1.26, 1.05)[k]
+            fx2 = fx * (1 + spread * 1.6)
+            parts.append(_capsule(fx * r, r * 0.45, fx2 * r, r * ln_, r * 0.34))
+        parts.append(_capsule(side * r * 0.55, -r * 0.05, side * r * (1.05 + spread), r * 0.42, r * 0.36))   # thumb
+    ink = stroke(INK, 4.5)
+    for pp in parts:
+        cv.drawPath(pp, ink)
+    fp = paint(skin)
+    for pp in parts:
+        cv.drawPath(pp, fp)
+    if shape in ("fist", "hold", "pinch", "cup", "point"):
+        for k in range(3):   # knuckle creases
+            cv.drawPath(poly([(-r * 0.55 + k * r * 0.36, r * 0.62), (-r * 0.5 + k * r * 0.36, r * 0.82)], close=False),
+                        stroke(shade(skin, 0.7), 2.5))
     cv.restore()
 
 
@@ -407,7 +436,7 @@ def _arm(cv, look, R, P, side, skin, sleeve_col, sleeve_long, t, hold=None):
     S, E, Wr, Hc = R["sh" + k], R["el" + k], R["wr" + k], R["hand" + k]
     aw = d["aw"]
     col = skin if side > 0 else shade(skin, 0.9)
-    _taper(cv, [S, E, Wr], [aw + 6, aw, aw - 7], col)
+    _taper(cv, [S, E, Wr], [aw + 4, aw + 1, aw - 4], col)
     if sleeve_col is not None:
         sc = sleeve_col if side > 0 else shade(sleeve_col, 0.9)
         if sleeve_long:
@@ -431,8 +460,12 @@ def _arm(cv, look, R, P, side, skin, sleeve_col, sleeve_long, t, hold=None):
         grip = (g, Hc[0] + dx * hs, Hc[1] + dy * hs, hs)
         if g in ("hang", "pinch"):
             long_props.draw_object(cv, hold, grip[1], grip[2], hs, t)
-    fist = P.get("fist" + k, False) or (grip is not None and grip[0] == "hang")
-    _hand(cv, Hc[0], Hc[1], ang, d["hand_r"], col, side=side, fist=fist)
+    shape = P.get("shape_" + k)
+    if grip is not None:
+        shape = "fist" if grip[0] in ("hang", "pinch") else "palm"
+    elif shape is None:
+        shape = "fist" if P.get("fist" + k, False) else "open"
+    _hand(cv, Hc[0], Hc[1], ang, d["hand_r"], col, side=side, shape=shape)
     if grip and grip[0] == "palm":
         import long_props
         long_props.draw_object(cv, hold, grip[1], grip[2], grip[3], t)

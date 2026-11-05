@@ -14,6 +14,11 @@ checks each frame for:
   joints         elbows folded backwards / inward, knees bent backwards, impossible joint angles
   hand_face      a hand clipping through a face
   facing         a speaker turned away from the person spoken to
+MOTION checks (sampled at 8 fps, what the viewer sees moving):
+  frozen         a character on screen > 3 s with no pose change (arms, head, hips, lean, position, facing)
+  speaker_static a speaker with no gesture / action change for > 2 s while talking
+  narration_idle a narrator line about a character (named / actor) with no visible matching action beat
+  turn_squash    a character drawn narrower than full width (|facing| < 1) - turns must mirror, never squash
 Prints a summary (GitHub ::warning annotations per failing category) and exits 1 when anything fails.
 """
 import json, math, os, sys
@@ -165,7 +170,97 @@ def check(story, step=0.25):
                 if abs(dx) > 40 and (dx > 0) != (P["facing"] > 0) and t - ln["start"] > 0.6 and not just_walked:
                     issues["facing"].append(dict(where(cid), target=tgt))
             t += step
+    motion_checks(r, story, issues)
     return issues, n_frames
+
+
+SIG_TOL = {"lh": 16.0, "rh": 16.0, "head_tilt": 3.5, "hip_shift": 4.5, "lean": 2.5, "x": 10.0, "dip": 4.0}
+
+
+def _sig(P):
+    return {"lh": P["lh"], "rh": P["rh"], "head_tilt": P["head_tilt"], "hip_shift": P["hip_shift"], "lean": P["lean"],
+            "x": P["x"], "dip": P["dip"], "facing": 1 if P["facing"] > 0 else -1, "hold": P.get("hold"),
+            "smile": round(P.get("smile", 0), 1), "gest": (P.get("_gest"), P.get("_act"))}
+
+
+def _changed(a, b):
+    for k, tol in SIG_TOL.items():
+        va, vb = a[k], b[k]
+        if isinstance(va, tuple):
+            if math.hypot(va[0] - vb[0], va[1] - vb[1]) > tol:
+                return True
+        elif abs(va - vb) > tol:
+            return True
+    return a["facing"] != b["facing"] or a["hold"] != b["hold"] or abs(a["smile"] - b["smile"]) > 0.25
+
+
+def motion_checks(r, story, issues, fps=8.0):
+    for k in ("frozen", "speaker_static", "narration_idle", "turn_squash"):
+        issues.setdefault(k, [])
+    es = story.get("end_screen")
+    for i, sc in enumerate(r.scenes):
+        tracks = r.plans[i]["tracks"]
+        end = sc["end"] - 0.3
+        if sc.get("moral_card"):
+            end = min(end, sc["lines"][-1]["start"] - 0.3)
+        if es:
+            end = min(end, es[0] - 0.1)
+        last_sig, last_t, flagged = {}, {}, {}
+        last_g, last_gt = {}, {}
+        vis_time = {}
+        t = sc["start"] + 0.35
+        shot_i = None
+        while t < end:
+            cam = L.camera_at(r.shots[i], t, sc["end"])
+            si = max(k_ for k_, sh in enumerate(r.shots[i]) if sh[0] <= t) if r.shots[i][0][0] <= t else 0
+            fl, ft, fr, fb, z = frame_rect(cam)
+            for cid in tracks:
+                P = r.pose(t, i, cid)
+                if abs(P["facing"]) < 0.99:
+                    issues["turn_squash"].append({"t": round(t, 2), "scene": i, "char": cid, "facing": round(P["facing"], 2)})
+                g = LC.geometry(r.looks[cid], P)
+                rl, rr = g["reach"]
+                visible = not (rr <= fl or rl >= fr)
+                vis_time.setdefault(cid, []).append((t, visible))
+                sig = _sig(P)
+                if not visible or si != shot_i and cid not in last_sig:
+                    last_sig[cid], last_t[cid] = sig, t
+                if not visible:
+                    flagged[cid] = False
+                    continue
+                if cid not in last_sig or _changed(sig, last_sig[cid]):
+                    last_sig[cid], last_t[cid], flagged[cid] = sig, t, False
+                elif t - last_t[cid] > 3.0 and not flagged.get(cid):
+                    issues["frozen"].append({"t": round(last_t[cid], 2), "scene": i, "char": cid, "held_s": round(t - last_t[cid], 1)})
+                    flagged[cid] = True
+                if r.speaking(t, i, cid) and not P.get("_walking"):
+                    gk = (P.get("_gest"), P.get("_act"))
+                    if cid not in last_g or last_g[cid] != gk or t - last_gt.get(cid, -9) > 50:
+                        if cid in last_g and last_g[cid] == gk:
+                            pass
+                        last_g[cid], last_gt[cid] = gk, t
+                    elif t - last_gt[cid] > 2.0:
+                        issues["speaker_static"].append({"t": round(last_gt[cid], 2), "scene": i, "char": cid, "gesture": list(map(str, gk))})
+                        last_gt[cid] = t
+                else:
+                    last_g.pop(cid, None)
+            shot_i = si
+            t += 1.0 / fps
+        # narration lines: the character they describe must visibly act, on screen, while they are told
+        for li, ln in enumerate(sc["lines"]):
+            if ln.get("speaker") in tracks:
+                continue
+            actor = ln.get("actor") if ln.get("actor") in tracks else None
+            if not actor:
+                continue
+            beats = [b for b in (ln.get("beats") or []) if b[2] == actor]
+            moved = any(ws < ln["end"] and we > ln["start"] for ws, we, *_ in tracks[actor]["walks"])
+            if not beats and not moved:
+                issues["narration_idle"].append({"t": ln["start"], "scene": i, "char": actor, "why": "no action beat"})
+                continue
+            seen = [v for tt, v in vis_time.get(actor, []) if ln["start"] <= tt <= ln["end"]]
+            if seen and sum(seen) < 0.5 * len(seen):
+                issues["narration_idle"].append({"t": ln["start"], "scene": i, "char": actor, "why": "actor off screen"})
 
 
 def _taken(plan, poses, t):

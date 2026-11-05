@@ -108,7 +108,8 @@ TYPES = "man, woman, oldman, oldwoman, boy, girl"
 COSTUMES = "lungi, dhoti, kurta, shirt, saree, salwar, frock, pavadai, shorts, royal, royal_f"
 COLORS = "red, maroon, orange, saffron, yellow, green, parrot, teal, blue, sky, purple, pink, magenta, white, cream, brown, grey, gold, indigo"
 ACTIONS = ("talk, walk, run, enter, exit, point, give, take, wave, cry, laugh, angry, surprised, scared, think, hips, "
-           "proud, celebrate, beg, greedy, scratch, greet, sad, show, stop, shrug, count, eat, sell, cook, comfort, shout")
+           "proud, celebrate, beg, greedy, scratch, greet, sad, show, stop, shrug, count, eat, drink, sell, cook, comfort, "
+           "shout, call_out, stomp, look_around, sneak, touch, sprinkle, burn")
 EXPRS = "neutral, happy, laugh, sad, cry, angry, surprised, scared, greedy, sly, thinking, proud, worried, ashamed"
 OBJECTS = ("coin, coins, coin_bag, money, gold_pot, pot, magic_pot, mango, roti, letter, basket, umbrella, stick, gift, "
            "bowl, plate, flower, key, lamp, samosa, pani_puri, chai, momos, rice_sack, book, necklace, fish, jar")
@@ -619,7 +620,9 @@ Each line object:
   only describes in the third person and never says a character's words or "I / me / my"
 - text: the spoken words in {lang_name} only (no stage directions, no speaker names, no quotes, no emoji)
 - emotion: one of {exprs}
-- action (optional, the speaker's acting; for narrator lines use "actor" to name who acts): one of {actions}
+- action (REQUIRED: what the speaker visibly DOES while saying it - it must match the words, e.g. a seller calling
+  customers = call_out, handing money = give with object, scolding = stomp or point; for narrator lines it is what the
+  described character does, and "actor" names that character): one of {actions}
 - target (optional): character id the line is said to / given to / pointed at
 - object (optional, for give/take/show/count/eat): one of {objects}
 - to (optional, for walk/run): 0.1-0.9 where to walk

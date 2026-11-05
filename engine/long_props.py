@@ -10,7 +10,7 @@ from toon2d import rgb, C, shade, paint, stroke, fill_ink, oval, rrect, poly, sm
 GOLD, GOLD_D = rgb("f2c230"), rgb("c8901a")
 OBJECTS = ["coin", "coins", "coin_bag", "gold_pot", "pot", "mango", "roti", "letter", "basket", "umbrella", "stick",
            "gift", "bowl", "plate", "flower", "key", "lamp", "magic_pot", "samosa", "pani_puri", "chai", "momos",
-           "rice_sack", "book", "seed", "egg", "bread", "jar", "money", "necklace", "fish", "water"]
+           "rice_sack", "book", "seed", "egg", "bread", "jar", "money", "necklace", "fish", "water", "ice_cream"]
 OBJ_ALIASES = {"coins_bag": "coin_bag", "money_bag": "coin_bag", "bag": "coin_bag", "gold": "gold_pot",
                "treasure": "gold_pot", "matka": "pot", "pitcher": "pot", "fruit": "mango", "apple": "mango",
                "chapati": "roti", "food": "plate", "tea": "chai", "cup": "chai", "glass": "chai", "note": "letter",
@@ -18,7 +18,7 @@ OBJ_ALIASES = {"coins_bag": "coin_bag", "money_bag": "coin_bag", "bag": "coin_ba
                "rupees": "money", "cash": "money", "notes": "money", "diya": "lamp", "jewel": "necklace",
                "jewellery": "necklace", "jewelry": "necklace", "magic": "magic_pot", "rice": "rice_sack",
                "sack": "rice_sack", "seeds": "seed", "water_pot": "pot", "jug": "jar", "gold_coin": "coin",
-               "coin_pot": "gold_pot", "dumplings": "momos", "momo": "momos", "pen": "stick", "rope": "stick"}
+               "coin_pot": "gold_pot", "icecream": "ice_cream", "ice_cream_cone": "ice_cream", "cone": "ice_cream", "kulfi": "ice_cream", "dumplings": "momos", "momo": "momos", "pen": "stick", "rope": "stick"}
 
 
 def obj_name(o):
@@ -133,6 +133,13 @@ def draw_object(cv, name, x, y, s=1.0, t=0.0):
     elif name == "necklace":
         cv.drawPath(oval(0, 0, 34, 28), stroke(GOLD, 7))
         fill_ink(cv, oval(0, 28, 10, 12), rgb("d9343b"), w=3)
+    elif name == "ice_cream":   # a cone with two scoops, held at the cone
+        fill_ink(cv, poly([(-17, -14), (17, -14), (0, 34)]), rgb("e0a454"), w=4)
+        for k in range(3):
+            cv.drawPath(poly([(-12 + k * 9, -12), (-2 + k * 6, 20)], close=False), stroke(rgb("b9782c"), 2.5))
+        fill_ink(cv, oval(0, -24, 19, 15), rgb("f6a6c8"), w=4)
+        fill_ink(cv, oval(0, -42, 15, 13), rgb("fff3d6"), w=4)
+        cv.drawCircle(4, -54, 5, paint(rgb("d9343b")))
     cv.restore()
 
 

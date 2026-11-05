@@ -26,6 +26,7 @@ import long_cast as LC
 import long_props as LP
 import long_sets as LS
 import visemes as VZ
+import long_motion as LM
 from toon2d import rgb, C, paint, stroke, fill_ink, oval, rrect, poly, smooth_closed, INK
 
 FPS = 24
@@ -89,10 +90,23 @@ GEST = {   # hand targets (out, down) relative to each shoulder, adult units: (f
     "scratch": ((10, 196), (40, -168)), "greet": ((-44, 64), (-50, 62)), "sad": ((4, 204), (4, 204)),
     "show": ((10, 196), (124, 6)), "stop": ((10, 196), (166, -40)), "shrug": ((82, 52), (82, 52)),
     "worried": ((22, 170), (-32, 114)), "eat": ((10, 196), (74, 66)),
+    # speaking gestures (changed on stressed words) and listening poses
+    "talk_open": ((12, 190), (84, 104)), "talk_both": ((-92, 104), (92, 96)), "talk_up": ((14, 186), (112, 58)),
+    "talk_low": ((10, 196), (46, 156)), "talk_self": ((14, 188), (-34, 92)), "talk_chop": ((18, 180), (88, 92)),
+    "talk_count": ((-64, 98), (-14, 92)), "talk_wide": ((60, 70), (126, 30)), "talk_fist": ((22, 164), (92, 70)),
+    "fold": ((-62, 112), (-48, 120)), "clasp": ((-36, 150), (-24, 152)), "chin": ((-52, 116), (-30, 18)),
 }
+GEST_SHAPE = {"point": ("open", "point"), "angry": ("fist", "fist"), "hips": ("fist", "fist"), "proud": ("fist", "fist"),
+              "think": ("open", "fist"), "chin": ("open", "fist"), "fold": ("fist", "fist"), "clasp": ("fist", "open"),
+              "talk_fist": ("fist", "fist"), "talk_count": ("palm", "point"), "talk_up": ("open", "palm"),
+              "talk_both": ("palm", "palm"), "give": ("open", "palm"), "receive": ("palm", "palm"), "shrug": ("palm", "palm"),
+              "cry": ("open", "fist"), "greedy": ("open", "open"), "rest": ("open", "open"), "sad": ("open", "open")}
 HOLD_POSE = {"hang": (36, 168), "palm": (86, 96), "pinch": (72, 116)}
 STICK_POSE = (56, 176)
 GEST_D = {"rest": 0.55}   # transition time into a gesture (s)
+EXPR_BLEND = 0.45          # expression cross-blend (s)
+TURN_T = 0.2               # a turn: head through the front + blink, the body mirrors at the midpoint
+SMOOTH_W = (0.28, 0.24, 0.19, 0.14, 0.09, 0.06)   # hand-target low-pass (follow-through, soft arcs)
 FREE_HAND = {"give", "show", "receive", "celebrate", "wave", "point", "eat", "stop"}
 ACTION_GEST = {"point": "point", "give": "give", "wave": "wave", "cry": "cry", "angry": "angry", "surprised": "surprised",
                "shocked": "surprised", "scared": "scared", "think": "think", "hips": "hips", "proud": "proud",
@@ -214,7 +228,7 @@ def plan_scene(story, sc, looks):
         tracks[cid] = {"keys": [(t0, x)], "walks": [], "expr": [(t0 - 1, e0)], "gest": [],
                        "hold": [(t0 - 1, LP.obj_name(c.get("holding")))],
                        "speak": [], "face": [(t0 - 1, 1 if x < 960 else -1)], "fx": [], "hidden_until": None, "gone_after": None,
-                       "base": x, "hop": []}
+                       "base": x, "hop": [], "acts": [], "front": [(t0 - 1, False)]}
         if c.get("enter"):
             # come in from the side with nobody standing in the way (no walking through people)
             left_clear = not any(ox < x for oc, ox in pos.items() if oc != cid)
@@ -243,6 +257,16 @@ def plan_scene(story, sc, looks):
     gives = []
     lines = sc["lines"]
     walk_end = {cid: -1e9 for cid in tracks}
+    cuts = []                       # forced camera cuts (the cart owner steps out from behind the cart on a cut)
+    cart_x = pos[owner] + cart_dx(pos[owner], owner, looks) if (cart and owner) else None
+    front_state = {"on": False, "t": -1e9}
+    if cart_x is not None:
+        first = next((l_ for l_ in lines if (l_.get("speaker") == owner or l_.get("actor") == owner)), None)
+        if first is not None and not _vendor_line(first) and looks[owner]["height"] >= 0.8:
+            fx_ = _front_x(cart_x, owner, pos)
+            tracks[owner]["keys"] = [(t0, fx_)]
+            tracks[owner]["front"] = [(t0 - 1, True)]
+            front_state = {"on": True, "t": t0}
 
     def free_x(cid, want_x, t_at, x_from):
         """Nearest x to want_x where cid stands clear of everybody (at t_at and later) and of props."""
@@ -275,6 +299,12 @@ def plan_scene(story, sc, looks):
         tgt = ln.get("target") if ln.get("target") in tracks and ln.get("target") != actor else None
         act = (ln.get("action") or "talk").lower().strip()
         emo = ln.get("emotion")
+        obj_give_t = None
+        if act == "give" and tgt and actor:
+            if not ln.get("object"):
+                ln["object"] = _infer_object(ln.get("text"))
+            if LP.obj_name(ln.get("object")):
+                obj_give_t = ls + (le - ls) * 0.3
         if sp in tracks:
             tracks[sp]["speak"].append((ls, le, li))
         # facing: speaker faces target (or nearest), listeners face speaker
@@ -290,11 +320,27 @@ def plan_scene(story, sc, looks):
             for o in tracks:
                 if o != actor and sp in tracks:
                     tracks[o]["face"].append((ls - 0.05 + 0.12 * (hash(o) % 3), 1 if ax > _x_at(tracks[o], ls) else -1))
+        # the cart owner: behind the cart to sell / call out / count money, out in front of it for everything else
+        # (the switch happens on a forced camera cut, so it never pops on screen)
+        far_give = False
+        if actor and tgt and act == "give" and -100 < _x_at(tracks[tgt], ls) < W + 100:
+            far_give = abs(_x_at(tracks[tgt], ls) - _x_at(tracks[actor], ls)) > SEP + 140
+        if cart_x is not None and actor == owner and looks[owner]["height"] >= 0.8 and ls - walk_end[owner] > 0.3:
+            want = (not _vendor_line(ln)) or act in ("walk", "run", "exit") or far_give
+            if want != front_state["on"] and ls - front_state["t"] > 4.0:
+                tro = tracks[owner]
+                x_old = _x_at(tro, ls - 0.06)
+                x_new = _front_x(cart_x, owner, {o: _x_at(tracks[o], ls) for o in tracks}) if want else cart_x - 20
+                tro["keys"].append((ls - 0.07, x_old)); tro["keys"].append((ls - 0.06, x_new))
+                tro["keys"].sort(key=lambda a: a[0])
+                tro["front"].append((ls - 0.06, want))
+                cuts.append(ls - 0.06)
+                front_state = {"on": want, "t": ls}
         # somebody who left earlier and speaks / acts again walks back in first
         if actor and act != "exit" and tracks[actor].get("pending_enter") is None and not (-100 < _x_at(tracks[actor], ls) < W + 100):
             tracks[actor]["pending_enter"] = tracks[actor]["base"]
         # movement
-        if actor and (act in ("walk", "run", "enter", "exit") or tracks[actor].get("pending_enter") is not None):
+        if actor and (act in ("walk", "run", "enter", "exit") or tracks[actor].get("pending_enter") is not None or far_give):
             tr = tracks[actor]
             ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
             x0 = _x_at(tr, ws)
@@ -359,8 +405,33 @@ def plan_scene(story, sc, looks):
                 tracks[tgt]["expr"].append((ls + 0.4, "worried"))
             elif e == "cry" and LC.expr_name(tracks[tgt]["expr"][-1][1]) not in ("greedy", "sly", "angry"):
                 tracks[tgt]["expr"].append((ls + 0.4, "sad"))
-        # gestures
+        # acting beats (long_motion): timed actions from the words, the writer's action and the feeling
+        beats = [b for b in (ln.get("beats") or []) if b[2] in tracks]
+        for b0, b1, who, name in beats:
+            if name == "give" and obj_give_t is not None and who == actor:
+                gt_ = max(obj_give_t, walk_end[actor] + 0.75)
+                b0 = max(ls, gt_ - 0.75); b1 = max(b1, gt_ + 1.5)
+            if any(ws <= b0 + 0.3 <= we for ws, we, *_ in tracks[who]["walks"]) and name not in ("sneak", "look_around", "call_out", "wave"):
+                b0 = max(b0, max(we for ws, we, *_ in tracks[who]["walks"] if ws <= b0 + 0.3 <= we) + 0.1)
+                if b1 - b0 < 0.9:
+                    continue
+            tracks[who]["acts"].append((b0, b1, name))
+            if name in LM.ACTION_HOLD and not _last(tracks[who]["hold"], b0 + 0.01):
+                ho = LM.ACTION_HOLD[name] or (_infer_object(ln.get("text")) if _infer_object(ln.get("text")) in
+                                              ("ice_cream", "mango", "roti") else "roti")
+                tracks[who]["hold"].append((b0 + 0.2, ho)); tracks[who]["hold"].append((b1 + 0.35, None))
+            ex_ = LM.ACTION_EXPR.get(name)
+            if ex_ and (not emo or LC.expr_name(emo) in ("neutral", "happy", "thinking") or name in ("cry", "laugh", "surprised", "stomp")):
+                tracks[who]["expr"].append((b0 + 0.05, ex_))
+            fx_ = LM.ACTION_FX.get(name)
+            if fx_:
+                tracks[who]["fx"].append((b0 + 0.2, min(b1, b0 + (1.3 if fx_ == "bang" else 2.6)), fx_))
+            if "hop" in LM.ACTIONS.get(name, {}):
+                tracks[who]["hop"].append(b0 + LM.ACTIONS[name]["hop"] + 0.1)
+        # gestures (writer actions the library does not cover)
         g = ACTION_GEST.get(act)
+        if beats and actor and LM.WRITER_MAP.get(act) in LM.ACTIONS:
+            g = None
         if actor and g:
             gs = ls if act not in ("walk", "run", "enter", "exit") else ls + 0.6
             tracks[actor]["gest"].append((gs, le + 0.15, g))
@@ -379,11 +450,14 @@ def plan_scene(story, sc, looks):
         if actor and obj:
             on_stage = stage_key is not None and obj == stage_key
             if act == "give" and tgt:
-                gs, ge = ls + (le - ls) * 0.3, ls + (le - ls) * 0.3 + 0.9
+                gs = max(obj_give_t or 0, walk_end[actor] + 0.75)
+                ge = gs + 0.9
                 tracks[actor]["hold"].append((ls - 0.3, obj))
                 tracks[actor]["hold"].append((gs, None))
                 tracks[tgt]["hold"].append((ge, obj))
-                tracks[tgt]["gest"].append((gs - 0.3, ge + 0.6, "receive"))
+                tracks[tgt]["acts"].append((gs - 0.45, ge + 0.9, "take"))
+                if not any(a_ <= gs <= b_ and n_ == "give" for a_, b_, n_ in tracks[actor]["acts"]):
+                    tracks[actor]["acts"].append((gs - 0.75, ge + 0.6, "give"))
                 tracks[tgt]["expr"].append((ge, "happy" if LC.expr_name(tracks[tgt]["expr"][-1][1]) != "greedy" else "greedy"))
                 gives.append((gs, ge, obj, actor, tgt))
             elif act in ("take", "receive"):
@@ -402,7 +476,47 @@ def plan_scene(story, sc, looks):
             tr["keys"] = [(t0, x0), (t0 + 0.2, x0), (t0 + 0.2 + d, x1)] + [k for k in tr["keys"][1:] if k[0] > t0 + 0.2 + d]
             tr["walks"].append((t0 + 0.2, t0 + 0.2 + d, x0, x1, 1.0))
     _unique_holds(tracks, gives)
-    return {"tracks": tracks, "props": props, "gives": gives, "owner": owner, "stage_key": stage_key}
+    for tr in tracks.values():
+        tr["acts"].sort(key=lambda a: a[0])
+        tr["front"].sort(key=lambda a: a[0])
+        # never two actions at once: an earlier one ends when the next starts
+        for k in range(len(tr["acts"]) - 1):
+            a0, a1, n_ = tr["acts"][k]
+            if a1 > tr["acts"][k + 1][0]:
+                tr["acts"][k] = (a0, max(a0 + 0.4, tr["acts"][k + 1][0]), n_)
+    return {"tracks": tracks, "props": props, "gives": gives, "owner": owner, "stage_key": stage_key, "cuts": sorted(cuts)}
+
+
+def _vendor_line(ln):
+    """A line the cart owner says / does from behind his cart: selling, calling out, counting money, working."""
+    a = (ln.get("action") or "").lower()
+    if a in ("sell", "shout", "call", "count", "cook", "work"):
+        return True
+    return any(b[3] in LM.VENDOR_ACTS for b in (ln.get("beats") or []))
+
+
+def _front_x(cart_x, owner, xs):
+    """Where the cart owner stands in front of his cart: shifted toward the people he talks to."""
+    others = [x for o, x in xs.items() if o != owner and -100 < x < W + 100]
+    side = 1 if (sum(1 for x in others if x > cart_x) >= sum(1 for x in others if x < cart_x) if others else cart_x < 960) else -1
+    x = cart_x + side * 80
+    for _ in range(12):
+        if all(abs(x - ox) >= SEP - 10 for ox in others):
+            break
+        x -= side * 14
+    return x
+
+
+def _infer_object(text):
+    t = (text or "").lower()
+    for keys, obj in ((("ఐస్ క్రీమ్", "ఐస్", "आइसक्रीम", "ice cream", "kulfi", "कुल्फी"), "ice_cream"),
+                      (("రూపాయ", "డబ్బు", "పైసలు", "रुपये", "पैसे", "money", "rupee", "coin"), "coins"),
+                      (("నీళ్ళు", "నీరు", "पानी", "water"), "pot"), (("మామిడి", "आम", "mango"), "mango"),
+                      (("రొట్టె", "రోటీ", "रोटी", "roti"), "roti"), (("టీ", "చాయ్", "चाय", "tea", "chai"), "chai"),
+                      (("పువ్వు", "फूल", "flower"), "flower"), (("సంచి", "थैला", "bag"), "coin_bag")):
+        if any(k in t for k in keys):
+            return obj
+    return None
 
 
 def _unique_holds(tracks, gives):
@@ -696,6 +810,7 @@ class Renderer:
         seed = int(story.get("seed", 7))
         self.looks = {c["id"]: LC.make_look(c, seed * 131 + sum(map(ord, c["id"]))) for c in story["characters"]}
         self.scenes = story["scenes"]
+        LM.assign_beats(story)      # what everybody DOES on every line (words + writer action + feeling)
         self.plans = [plan_scene(story, sc, self.looks) for sc in self.scenes]
         self.sets = {}
         self.cache = {}
@@ -723,7 +838,32 @@ class Renderer:
                         d = (ln["end"] - ln["start"]) * len(x) / tot
                         words.append([t, t + d * 0.92, x]); t += d
                 self.vis[(si, li)] = VZ.Track(VZ.line_keys(words, self.lang))
+        # stressed words (nods, hand beats, gesture changes) per line, and per scene for the listeners
+        self.stress = {}
+        self.stress_scene = []
+        for si, sc in enumerate(self.scenes):
+            allst = []
+            for li, ln in enumerate(sc["lines"]):
+                st = LM.stress_times(ln.get("words") or [[ln["start"], ln["end"], ln.get("text", "")]])
+                self.stress[(si, li)] = st
+                allst += [(x, ln.get("speaker"), li) for x in st]
+            self.stress_scene.append(sorted(allst))
+        for pl in self.plans:   # expression blend states (each change starts from where the face really is)
+            for tr in pl["tracks"].values():
+                S, prev_t, prev_e = [], None, None
+                for ts, e in tr["expr"]:
+                    E = LC.EXPR[LC.expr_name(e)]
+                    if prev_t is None:
+                        S.append(dict(E))
+                    else:
+                        k = ease((ts - prev_t) / EXPR_BLEND)
+                        S.append({key: lerp(S[-1][key], LC.EXPR[LC.expr_name(prev_e)][key], k) for key in E})
+                    prev_t, prev_e = ts, e
+                tr["expr_S"] = S
+                tr["expr_t"] = [x[0] for x in tr["expr"]]
+                tr["act_t"] = [a[0] for a in tr["acts"]]
         self.gtracks = {(si, cid): self.build_gestures(si, cid) for si, pl in enumerate(self.plans) for cid in pl["tracks"]}
+        self.gkeys_t = {k: [x[0] for x in v] for k, v in self.gtracks.items()}
         self.shots = [self.plan_shots(si) for si in range(len(self.scenes))]
 
     # ---------------------------------------------------------------- audio envelope for lip-sync
@@ -769,22 +909,48 @@ class Renderer:
 
     # ---------------------------------------------------------------- gesture timelines (eased keyframes)
     def build_gestures(self, sc_i, cid):
+        """Arm keyframes: speaking gestures that change on stressed words (every ~1-1.7 s), listening poses that cycle
+        every 2.6-4.6 s, and the writer's static gestures. Actions (long_motion) are a separate layer over these."""
         tr = self.plans[sc_i]["tracks"][cid]
         sc = self.scenes[sc_i]
         segs = []
         for gs, ge, g in tr["gest"]:
             segs.append((gs, ge + 0.25, g, 3))
         for a, b, li in tr["speak"]:
-            pat = TALK_PATTERNS[li % len(TALK_PATTERNS)]
-            n = max(1, int(round((b - a) / 2.6)))
-            for k in range(n):
-                segs.append((a + (b - a) * k / n, a + (b - a) * (k + 1) / n + (0.3 if k == n - 1 else 0), pat[k % len(pat)], 2))
-        ex = tr["expr"]
-        for k, (ts, e) in enumerate(ex):
-            te = ex[k + 1][0] if k + 1 < len(ex) else sc["end"] + 1
-            g = IDLE_GEST.get(LC.expr_name(e))
-            if g:
-                segs.append((ts + 0.2, te, g, 1))
+            ln = sc["lines"][li]
+            pool = LM.TALK_SETS[LM.TALK_MOOD.get(LC.expr_name(ln.get("emotion")), "neutral")]
+            times = [a]
+            for x in self.stress.get((sc_i, li)) or []:
+                if x - times[-1] >= 1.0 + 0.7 * LM.hsh(cid, li, round(x, 2)) and b - x > 0.6:
+                    times.append(x)
+            filled = []
+            for k, x in enumerate(times):   # never more than ~1.8 s on one speaking gesture
+                filled.append(x)
+                nxt = times[k + 1] if k + 1 < len(times) else b
+                while nxt - filled[-1] > 1.9:
+                    filled.append(filled[-1] + 1.3 + 0.4 * LM.hsh(cid, li, len(filled)))
+            times = [x for x in filled if x < b - 0.4] or [a]
+            k0 = int(LM.hsh(cid, sc_i, li) * len(pool))
+            for k, x in enumerate(times):
+                g = pool[(k0 + k) % len(pool)]
+                end = times[k + 1] if k + 1 < len(times) else b + 0.35
+                segs.append((x, end, g, 2))
+        t, k, prev_g = sc["start"], 0, None
+        while t < sc["end"] + 1:
+            d = 2.0 + 1.1 * LM.hsh(cid, sc_i, k)
+            e = LC.expr_name(_last(tr["expr"], t + 0.3, "neutral"))
+            pool = LM.LISTEN_SETS.get(LM.LISTEN_MOOD.get(e, "neutral"), LM.LISTEN_SETS["neutral"])
+            j = int(LM.hsh(cid, k, sc_i, "l") * len(pool))
+            g = pool[j]
+            if self.looks[cid].get("stick") and g in ("fold", "clasp"):
+                g = "rest"
+            if g == prev_g:
+                g = pool[(j + 1) % len(pool)] if len(pool) > 1 else g
+                if self.looks[cid].get("stick") and g in ("fold", "clasp"):
+                    g = "chin" if prev_g != "chin" else "rest"
+            prev_g = g
+            segs.append((t, t + d, g, 1))
+            t += d; k += 1
         bounds = sorted({x for sg in segs for x in (sg[0], sg[1])})
         keys, cur = [], "rest"
         for a, b in zip(bounds, bounds[1:]):
@@ -797,29 +963,69 @@ class Renderer:
         clean = []
         for k, (t_, g) in enumerate(keys):
             nxt = keys[k + 1][0] if k + 1 < len(keys) else 1e9
-            if nxt - t_ < 0.45 and g in ("rest", "talk_a", "talk_b", "talk_c", "talk_d") and clean:
+            if nxt - t_ < 0.45 and clean:
                 continue
             if clean and clean[-1][1] == g:
                 continue
             clean.append((t_, g))
         out, prev_t, prev_from, prev_g = [], -1e9, GEST["rest"], "rest"
         for t_, g in clean:
-            k = ease((t_ - prev_t) / GEST_D.get(prev_g, 0.4))
+            k = ease((t_ - prev_t) / GEST_D.get(prev_g, 0.42))
             frm = (lerp2(prev_from[0], GEST[prev_g][0], k), lerp2(prev_from[1], GEST[prev_g][1], k))
             out.append((t_, g, frm))
             prev_t, prev_from, prev_g = t_, frm, g
         return out
 
     def gesture_at(self, sc_i, cid, t):
-        """(back hand, front hand, gesture, weight) with eased transitions between keyframes."""
+        """(back hand, front hand, gesture, weight): eased in-betweens that travel on an arc and settle with a small
+        overshoot (follow-through)."""
         keys = self.gtracks[(sc_i, cid)]
-        i = bisect.bisect_right([k[0] for k in keys], t) - 1
+        i = bisect.bisect_right(self.gkeys_t[(sc_i, cid)], t) - 1
         if i < 0:
             return GEST["rest"][0], GEST["rest"][1], "rest", 1.0
         t_, g, frm = keys[i]
-        k = ease((t - t_) / GEST_D.get(g, 0.4))
+        D = GEST_D.get(g, 0.42)
+        u = (t - t_) / D
+        k = ease(u)
+        if 0.65 < u < 1.35:
+            k += 0.06 * math.sin(math.pi * (u - 0.65) / 0.7)
         tl, tr_ = GEST[g]
-        return lerp2(frm[0], tl, k), lerp2(frm[1], tr_, k), g, k
+        lh, rh = lerp2(frm[0], tl, k), lerp2(frm[1], tr_, k)
+        if 0 < u < 1:   # arcs: the hand lifts a little mid-move instead of sliding in a straight line
+            a_ = math.sin(math.pi * u)
+            dl = math.hypot(tl[0] - frm[0][0], tl[1] - frm[0][1]); dr = math.hypot(tr_[0] - frm[1][0], tr_[1] - frm[1][1])
+            lh = (lh[0] + 0.05 * dl * a_, lh[1] - 0.16 * dl * a_); rh = (rh[0] + 0.08 * dr * a_, rh[1] - 0.18 * dr * a_)
+        return lh, rh, g, min(1.0, max(0.0, k))
+
+    def act_at(self, sc_i, cid, t):
+        """The acting beat in effect: (name, seconds in, length, weight) or None. Fades in 0.28 s, out 0.4 s."""
+        tr = self.plans[sc_i]["tracks"][cid]
+        i = bisect.bisect_right(tr["act_t"], t) - 1
+        while i >= 0:
+            a0, a1, name = tr["acts"][i]
+            if t < a1 + 0.42:
+                w = ease((t - a0) / 0.28) * (1 - ease((t - a1) / 0.42))
+                return name, t - a0, a1 - a0, w
+            break
+        return None
+
+    def arm_targets(self, sc_i, cid, t):
+        """Gesture layer blended with the action layer: (lh, rh, shape_l, shape_r, gesture, gk, action, body, w)."""
+        lh, rh, g, gk = self.gesture_at(sc_i, cid, t)
+        sl, sr = GEST_SHAPE.get(g, ("open", "open"))
+        a = self.act_at(sc_i, cid, t)
+        body, name, w = {}, None, 0.0
+        if a:
+            name, u, dur, w = a
+            A = LM.evaluate(name, u, dur, t)
+            if "l" in A:
+                lh = lerp2(lh, A["l"], w)
+            if "r" in A:
+                rh = lerp2(rh, A["r"], w)
+            if w > 0.5:
+                sl, sr = A.get("ls", sl), A.get("rs", sr)
+            body = A
+        return lh, rh, sl, sr, g, gk, name, body, w
 
     # ---------------------------------------------------------------- camera planning (heads in frame)
     def geoms(self, sc_i, t):
@@ -833,41 +1039,79 @@ class Renderer:
         return out
 
     def plan_shots(self, sc_i):
+        """Shots like a TV cartoon: a short establishing wide, then medium / close shots on whoever speaks or acts
+        (narration cuts to the character it describes), a new shot on every line and every 3-6 s inside long lines
+        (closer on the speaker, or a reaction shot of the listener), forced cuts where the cart owner steps out."""
         sc = self.scenes[sc_i]
         tracks = self.plans[sc_i]["tracks"]
+        cuts = self.plans[sc_i].get("cuts", [])
         wants = [(sc["start"], "wide", (), None, None)]
+
+        def on_stage(cid, t):
+            return -100 < _x_at(tracks[cid], t) < W + 100
+
+        def partner(actor, t, tgt=None):
+            if tgt:
+                return tgt
+            ax = _x_at(tracks[actor], t)
+            near = [o for o in tracks if o != actor and on_stage(o, t)]
+            return min(near, key=lambda o: abs(_x_at(tracks[o], t) - ax)) if near else None
+
+        last_kind = "wide"
         for li, ln in enumerate(sc["lines"]):
             sp = ln.get("speaker")
             actor = sp if sp in tracks else ln.get("actor") if ln.get("actor") in tracks else None
             emo = LC.expr_name(ln.get("emotion")) if ln.get("emotion") else None
             act = ln.get("action") or ""
-            t = ln["start"]
-            if actor is None:
-                kind = "wide"
-            elif act in ("walk", "run", "enter", "exit", "give"):
-                kind = "two" if len(tracks) > 1 else "wide"
-            elif ln.get("close") or (emo in EMOTIONAL and emo != "sad") or (emo == "sad" and li % 2 == 0) or act in ("cry",):
+            t, te_line = ln["start"], ln["end"]
+            if li == 0 and t - sc["start"] < 1.2:
+                wants[0] = (sc["start"], "wide", (), None, None)
+            if actor is None:   # narration about nobody in particular: the people on stage, not the empty set
+                ids = [c for c in tracks if on_stage(c, t + 0.3)][:2]
+                wants.append((t - 0.05, "two" if ids else "wide", tuple(ids), None, None))
+                last_kind = "two"
+                continue
+            tgt = ln.get("target") if ln.get("target") in tracks and ln.get("target") != actor else None
+            beats = [b_[3] for b_ in (ln.get("beats") or [])]
+            if act in ("walk", "run", "enter", "exit", "give") or any(b_ in ("give", "take") for b_ in beats):
+                kind = "two" if len(tracks) > 1 else "medium"
+            elif ln.get("close") or (emo in EMOTIONAL and emo != "sad") or act in ("cry",) or \
+                    any(b_ in ("cry", "laugh", "scratch", "think", "eat", "drink", "burn", "surprised") for b_ in beats):
                 kind = "close"
             else:
-                kind = "medium" if li % 3 != 2 else "two"
-            subj = ()
-            if actor:
-                tgt = ln.get("target") if ln.get("target") in tracks and ln.get("target") != actor else None
-                if tgt is None:
-                    ax = _x_at(tracks[actor], t + 0.3)
-                    near = [o for o in tracks if o != actor and -100 < _x_at(tracks[o], t + 0.3) < W + 100]
-                    if near:
-                        tgt = min(near, key=lambda o: abs(_x_at(tracks[o], t + 0.3) - ax))
-                subj = (actor,) + ((tgt,) if tgt else ())
-            if li == 0 and kind != "wide" and t - sc["start"] < 1.2:
-                wants[0] = (sc["start"], "wide", (), None, None)
+                kind = ("medium", "two", "close", "medium")[li % 4] if last_kind != "medium" else ("close", "two")[li % 2]
+            sp_ = partner(actor, t + 0.3, tgt)
+            subj = (actor,) + ((sp_,) if sp_ and kind != "close" else ())
+            if kind == "close" and sp_:
+                subj = (actor,)
             arrive = None
-            if actor and act in ("walk", "run", "enter"):
+            if act in ("walk", "run", "enter") or (act == "give" and tracks[actor]["walks"]):
                 ends = [we for ws, we, *_ in tracks[actor]["walks"] if ws <= t + 0.8 and we >= t - 0.3]
                 arrive = max(ends) if ends else None
             wants.append((t - 0.05, kind, subj, actor, arrive))
+            last_kind = kind
+            # long line: cut again every 3-6 s on a stressed word (closer on the speaker, or the listener reacting)
+            dur = te_line - t
+            if dur > 5.2 and kind != "two" or dur > 6.5:
+                n_more = 1 if dur < 9.5 else 2
+                st = self.stress.get((sc_i, li)) or []
+                for m in range(1, n_more + 1):
+                    want_t = t + dur * m / (n_more + 1)
+                    ct = min(st, key=lambda x: abs(x - want_t)) if st else want_t
+                    if ct - wants[-1][0] < 2.6 or te_line - ct < 2.0:
+                        continue
+                    walking = any(ws - 0.2 <= ct <= we + 0.2 for ws, we, *_ in tracks[actor]["walks"])
+                    if walking:
+                        continue
+                    if sp_ and on_stage(sp_, ct) and sp in tracks and (m % 2 == 1) and kind == "close":
+                        wants.append((ct - 0.04, "close", (sp_,), sp_, None))        # reaction shot
+                    elif kind != "close":
+                        wants.append((ct - 0.04, "close", (actor,), actor, None))
+                    else:
+                        wants.append((ct - 0.04, "medium", subj if len(subj) > 1 else (actor,) + ((sp_,) if sp_ else ()), actor, None))
         if sc.get("moral_card"):
             wants.append((sc["lines"][-1]["start"] - 0.05, "wide", (), None, None))
+        wants.sort(key=lambda w_: w_[0])
         shots = []
         for k, (ts, kind, subj, actor, arrive) in enumerate(wants):
             te = wants[k + 1][0] if k + 1 < len(wants) else sc["end"]
@@ -875,11 +1119,17 @@ class Renderer:
                 continue
             ta = min(te - 0.15, arrive) if arrive and arrive > ts else ts   # a walker is framed where they arrive
             cam = self.solve_shot(sc_i, kind, subj, ta, te)
-            if shots:
+            forced = any(ts - 0.2 <= c <= ts + 0.2 for c in cuts)
+            if shots and not forced:
                 p = shots[-1]
                 if p[1] == cam[3] and abs(p[4] - cam[2]) < 0.15 and abs(p[2] - cam[0]) < 260 and abs(p[3] - cam[1]) < 110 \
                         and self.cam_ok(sc_i, (p[2], p[3], p[4]), p[1], subj, ta, te):
                     continue    # same framing still valid: hold the shot (its slow push-in carries on)
+            if shots and forced:
+                p = shots[-1]
+                if abs(p[2] - cam[0]) < 120 and abs(p[4] - cam[2]) < 0.2:   # make the cut read as a cut
+                    alt = "close" if kind != "close" else "medium"
+                    cam = self.solve_shot(sc_i, alt, subj[:1] if alt == "close" else subj, ta, te)
             shots.append((ts, cam[3]) + cam[:3])
         return shots
 
@@ -986,6 +1236,11 @@ class Renderer:
         for l_, r_ in props:
             if not (l_ >= Li and r_ <= Ri) and r_ > Lo and l_ < Ro:
                 soft += 1
+        if subj and (len(subj) == 1 or kind == "close") and subj[0] in G[0]:
+            # a close / single shot keeps its subject near the middle (not squeezed against the frame edge)
+            hx_ = sum(g[subj[0]]["head"][0] for g in G if subj[0] in g) / max(1, sum(1 for g in G if subj[0] in g))
+            if abs(hx_ - cx) > 0.55 * hw_in:
+                soft += 1
         if cy_fixed is not None:
             cy = cy_fixed
         elif kind == "wide" or top > 1e8:
@@ -1015,61 +1270,81 @@ class Renderer:
             if ws <= t <= we:
                 walking = (ws, we, x0, x1, sp)
         P["_walking"] = walking is not None
-        # facing, with a quick cut-out turn (squash through the middle) when it changes
+        P["_front"] = bool(_last(tr["front"], t, False))
+        # ---- facing. A turn is never a squash: the head swings to the front, the character blinks and dips a
+        # little, and the body flips (mirrors) in that instant
         if walking:
             face, since, prev = (1 if walking[3] > walking[2] else -1), 1e9, None
             pf = _last(tr["face"], walking[0] - 1e-3, 1)
-            if t - walking[0] < 0.16 and pf != face:
+            if t - walking[0] < TURN_T and pf != face:
                 since, prev = t - walking[0], pf
         else:
             face, since, prev = _last2(tr["face"], t)
-            # coming out of a walk: turn from the walking direction
-            for ws, we, x0, x1, sp in tr["walks"]:
-                if we <= t < we + 0.16:
+            for ws, we, x0, x1, sp in tr["walks"]:   # coming out of a walk: turn from the walking direction
+                if we <= t < we + TURN_T:
                     wf = 1 if x1 > x0 else -1
                     if wf != face:
                         since, prev = t - we, wf
-        if prev is not None and prev != face and since < 0.16:
-            u = ease(since / 0.16)
-            f = lerp(prev, face, u)
-            P["facing"] = (1 if f >= 0 else -1) * max(0.25, abs(f))
-            P["_turn_blink"] = math.sin(min(1.0, since / 0.16) * math.pi)
+        turn_u = None
+        if prev is not None and prev != face and since < TURN_T:
+            turn_u = since / TURN_T
+            P["facing"] = prev if turn_u < 0.5 else face
         else:
             P["facing"] = face
-        # expression with a short blend
-        e, since_e, preve = _last2(tr["expr"], t)
-        k = ease(since_e / 0.3)
-        A, B = LC.EXPR[LC.expr_name(preve)], LC.EXPR[LC.expr_name(e)]
-        for key in A:
+        # ---- expression: blended from wherever the face is when it changes
+        i = bisect.bisect_right(tr["expr_t"], t) - 1
+        i = max(0, i)
+        e = tr["expr"][i][1]
+        k = ease((t - tr["expr"][i][0]) / EXPR_BLEND) if t >= tr["expr"][i][0] else 1.0
+        A, B = tr["expr_S"][i], LC.EXPR[LC.expr_name(e)]
+        for key in B:
             P[key] = lerp(A[key], B[key], k)
         ename = LC.expr_name(e)
         period = 3.1 + bs * 2.2
         ph = (t + bs * 7) % period
         if ph < 0.13:
             P["blink"] = math.sin(ph / 0.13 * math.pi)
-        # idle life: breathing (chest), slow weight shift (hips) and sway (lean); feet stay planted
+        # ---- idle life: breathing, and a weight shift every ~5 s (hips settle over the planted feet, shoulders
+        # counter-lean); feet stay planted
         P["breath"] = math.sin(t * 2 * math.pi / 3.6 + bs * 6)
-        P["hip_shift"] = 3.0 * math.sin(t * 0.55 + bs * 5)
-        P["lean"] = 0.8 * math.sin(t * 0.45 + bs * 3)
-        P["dip"] = 1.5 + 1.5 * math.sin(t * 2 * math.pi / 3.6 + bs * 6 + 1.2)
-        if P.get("_turn_blink"):   # people blink as they turn their head
-            P["blink"] = max(P["blink"], P["_turn_blink"])
+        seg_len = 4.2 + bs * 1.8
+        q = (t + bs * 9) / seg_len
+        n = int(math.floor(q))
+        h0, h1 = (LM.hsh(cid, n) - 0.5) * 13, (LM.hsh(cid, n + 1) - 0.5) * 13
+        hip = lerp(h0, h1, ease(min(1.0, (q - n) * seg_len / 0.9)))
+        P["hip_shift"] = hip
+        P["lean"] = -hip * 0.12 + 0.6 * math.sin(t * 0.45 + bs * 3)
+        P["dip"] = 0.5 + 0.5 * math.sin(t * 2 * math.pi / 3.6 + bs * 6 + 1.2)
         if (t + bs * 13) % 17.0 < 0.34:   # an occasional double blink
             u = ((t + bs * 13) % 17.0) / 0.34
             P["blink"] = max(P["blink"], abs(math.sin(u * 2 * math.pi)))
         # eyes: small saccades (look around a little, then back to the person in front)
         seg = int((t + bs * 5) / 2.3)
-        hsh = (seg * 2654435761 + int(bs * 1000)) % 1000 / 1000.0
-        gx = 0.35 + (0.22 * (hsh - 0.5) if hsh > 0.45 else 0.0)
-        gy = (0.05 if ename != "sad" else 0.5) + (0.12 * (hsh - 0.7) if hsh > 0.7 else 0.0)
-        P["gaze"] = (gx, gy)
-        P["head_turn"] = 0.4
+        hh_ = (seg * 2654435761 + int(bs * 1000)) % 1000 / 1000.0
+        gx = 0.35 + (0.22 * (hh_ - 0.5) if hh_ > 0.45 else 0.0)
+        gy = (0.05 if ename != "sad" else 0.5) + (0.12 * (hh_ - 0.7) if hh_ > 0.7 else 0.0)
+        head_turn = 0.4
         P["head_tilt"] = {"sad": 6, "cry": 8, "ashamed": 9, "proud": -5, "thinking": 6, "greedy": -3, "worried": 4}.get(ename, 0)
         P["head_tilt"] += 1.5 * math.sin(t * 0.9 + bs * 4)
         speaking = self.speaking(t, sc_i, cid)
-        if speaking:   # talkers nod and lift their brows a little as they speak
-            P["head_tilt"] += 2.2 * math.sin(t * 3.7 + bs * 2) * (1 if ename not in ("cry", "sad") else 0.5)
-            P["brow_up"] += 0.18 * max(0.0, math.sin(t * 1.9 + bs * 4))
+        beat = 0.0   # speaking: head nods + brow lifts + a small hand beat on stressed words
+        if speaking:
+            for a_, b_, li in tr["speak"]:
+                if a_ - 0.1 <= t <= b_ + 0.1:
+                    for st in self.stress.get((sc_i, li)) or []:
+                        if st <= t < st + 0.38:
+                            beat = max(beat, math.sin(math.pi * (t - st) / 0.38))
+            P["head_tilt"] += 3.8 * beat * (1 if ename not in ("cry", "sad") else 0.5)
+            P["brow_up"] += 0.25 * beat
+            P["lean"] += 1.4 * beat
+        else:   # listening: nod on some of the speaker's stressed words, lean in a little
+            st_list = self.stress_scene[sc_i]
+            j = bisect.bisect_right(st_list, (t - 0.15, "~", 1e9)) - 1
+            for st, spk, li in st_list[max(0, j - 2): j + 1]:
+                if spk != cid and spk in self.plans[sc_i]["tracks"] and LM.hsh(cid, round(st, 2)) < 0.5:
+                    u = (t - st - 0.15) / 0.45
+                    if 0 <= u <= 1:
+                        P["head_tilt"] += 4.5 * math.sin(math.pi * u)
         vis = self.mouth(t, sc_i, cid)
         P["vis"] = vis
         P["mouth"] = vis["open"] if vis else 0.0
@@ -1081,46 +1356,66 @@ class Renderer:
         if ename == "laugh" and not speaking:
             P["vis"] = None
             P["mouth"] = max(P["mouth"], 0.45 + 0.3 * math.sin(t * 22))
-            P["dip"] += 5 * abs(math.sin(t * 11))
+            P["dip"] += 3 * abs(math.sin(t * 11))
         if ename == "cry":
-            P["dip"] += 2.5 * abs(math.sin(t * 8.5))
+            P["dip"] += 1.5 * abs(math.sin(t * 8.5))
             if not speaking:
                 P["vis"] = None
                 P["mouth"] = max(P["mouth"], 0.2 + 0.1 * math.sin(t * 9))
         if ename == "scared":
-            P["hip_shift"] += 2.5 * math.sin(t * 41)
+            P["hip_shift"] += 2.0 * math.sin(t * 41)
         P["highlight"] = 1.0 if speaking else 0.0
-        # ---- arms: eased gesture keyframes
-        lh, rh, g, gk = self.gesture_at(sc_i, cid, t)
-        if g == "wave":
+        # ---- arms: gesture + action layers, low-pass filtered (soft arcs, the far hand trails = overlapping action)
+        lh, rh, sl, sr, g, gk, aname, body, aw = self.arm_targets(sc_i, cid, t)
+        accl, accr, wsum = [0.0, 0.0], [0.0, 0.0], 0.0
+        for kk, wk in enumerate(SMOOTH_W):
+            l_ = self.arm_targets(sc_i, cid, t - 0.07 - kk * 0.035)[0]
+            r_ = self.arm_targets(sc_i, cid, t - kk * 0.035)[1] if kk else rh
+            accl[0] += l_[0] * wk; accl[1] += l_[1] * wk; accr[0] += r_[0] * wk; accr[1] += r_[1] * wk; wsum += wk
+        lh = (accl[0] / wsum, accl[1] / wsum); rh = (accr[0] / wsum, accr[1] / wsum)
+        if g == "wave" and not aname:
             rh = (rh[0] + 26 * math.sin(t * 11) * gk, rh[1])
-        elif g == "angry":
-            rh = (rh[0] + 6 * math.sin(t * 22) * gk, rh[1] + 8 * math.sin(t * 22) * gk)
-            P["fistr"] = gk > 0.5
-        elif g == "greedy":
-            rh = (rh[0] + 12 * math.sin(t * 12) * gk, rh[1] + 4 * math.sin(t * 24) * gk)
-        elif g.startswith("talk"):
-            rh = (rh[0] + 10 * math.sin(t * 2.3 + bs * 5) * gk, rh[1] + 9 * math.sin(t * 3.1 + bs * 3) * gk)
-        elif g == "beg":
-            P["lean"] += 6 * gk
-        elif g == "celebrate":
-            lh = (lh[0], lh[1] + 16 * math.sin(t * 10) * gk); rh = (rh[0], rh[1] - 16 * math.sin(t * 10) * gk)
-        elif g == "cry":
-            rh = (rh[0] + 4 * math.sin(t * 6), rh[1] + 6 * math.sin(t * 6))
-            P["fistr"] = True
-        elif g == "hips":
-            P["fistl"] = P["fistr"] = gk > 0.6
+        elif g in ("angry", "talk_fist") and not aname:
+            rh = (rh[0] + 5 * math.sin(t * 20) * gk, rh[1] + 6 * math.sin(t * 20) * gk)
+        elif g == "greedy" and not aname:
+            rh = (rh[0] + 10 * math.sin(t * 12) * gk, rh[1] + 4 * math.sin(t * 24) * gk)
+        elif g.startswith("talk") and not aname:
+            rh = (rh[0] + 6 * math.sin(t * 2.3 + bs * 5) * gk, rh[1] + 6 * math.sin(t * 3.1 + bs * 3) * gk + 9 * beat)
+        P["shape_l"], P["shape_r"] = sl, sr
+        P["fistl"], P["fistr"] = sl == "fist", sr == "fist"
+        if body and aw > 0:   # the action's body acting
+            P["lean"] += body.get("lean", 0.0) * aw
+            P["dip"] += body.get("dip", 0.0) * aw
+            P["head_tilt"] += body.get("tilt", 0.0) * aw
+            P["hip_shift"] += body.get("hip", 0.0) * aw
+            if "turn" in body:
+                head_turn = lerp(head_turn, body["turn"], aw)
+            if "gx" in body:
+                gx = lerp(gx, body["gx"], aw)
+            if "gy" in body:
+                gy = lerp(gy, body["gy"], aw)
+            if body.get("foot", 0) > 0.5 and not walking:
+                P["rf"] = (6.0, body["foot"] * aw)
+        P["dip"] = max(-3.0, P["dip"])
+        if turn_u is not None:   # the turn: head through the front, blink, a small dip
+            head_turn *= abs(1 - 2 * turn_u)
+            P["blink"] = max(P["blink"], math.sin(math.pi * turn_u))
+            P["dip"] += 5 * math.sin(math.pi * turn_u)
+        P["head_turn"] = head_turn
+        P["gaze"] = (gx, gy)
         # breathing moves the hands a little with the shoulders
         lh = (lh[0], lh[1] - 2 * P["breath"]); rh = (rh[0], rh[1] - 2 * P["breath"])
-        # ---- held object locks the near hand into a carrying pose (unless the gesture uses that hand)
+        # ---- held object locks the near hand into a carrying pose (unless the gesture / action uses that hand)
         hold, hsince, _ = _last2(tr["hold"], t)
         hold = LP.obj_name(hold) if hold else None
         P["hold"] = hold
-        if hold and g not in FREE_HAND:
+        if hold and g not in FREE_HAND and not (aname in LM.HELD_FREE and aw > 0.3):
             grip = LC.GRIP.get(hold, ("pinch", 0, 0))[0]
             hp = HOLD_POSE[grip]
             kh = ease(min(hsince, 5.0) / 0.3) if hsince < 1e8 else 1.0
-            rh = lerp2(rh, hp, kh)
+            rh = lerp2(rh, hp, kh * (1 - (aw if aname else 0.0)))
+        if hold:
+            P["shape_r"] = "hold"
         if look.get("stick"):
             lh = STICK_POSE
         # an outstretched hand stops short of the person in front (no arms through bodies)
@@ -1145,14 +1440,14 @@ class Renderer:
             phase = (dl / (2 * step) + 0.25) % 1.0
             w_end = max(0.0, min(1.0, (Dl - dl) / (step * 0.5)))
             w_lift = min(1.0, dl / (step * 0.3) + 0.15) * w_end
-            vert = leg * 0.975
+            vert = leg * LC.LEG_REST
             need = 0.0
             for key, p0 in (("rf", phase), ("lf", (phase + 0.5) % 1.0)):
                 if p0 < 0.5:
                     off, lift = step / 2 - (p0 / 0.5) * step, 0.0
                 else:
-                    q = (p0 - 0.5) / 0.5
-                    off, lift = -step / 2 + ease(q) * step, math.sin(q * math.pi) * leg * 0.16
+                    q_ = (p0 - 0.5) / 0.5
+                    off, lift = -step / 2 + ease(q_) * step, math.sin(q_ * math.pi) * leg * 0.16
                 off *= w_end
                 P[key] = (off, lift * w_lift)
                 if lift * w_lift < 1:
@@ -1160,12 +1455,14 @@ class Renderer:
             php = phase - 0.25
             P["dip"] = max(P["dip"], 7 * math.sin(2 * math.pi * php) ** 2 * w_end, need)
             P["lean"] += 3.5 * (1 if sp <= 1 else 2.2)
-            if g in ("rest", "sad", "worried") or g.startswith("talk") or gk < 0.3:
-                sw = math.sin(2 * math.pi * phase) * 34 * w_end
+            P["hip_shift"] *= 0.3
+            if (g in ("rest", "sad", "worried") or g.startswith("talk") or gk < 0.3) and not (aname and aw > 0.3):
+                sw = math.sin(2 * math.pi * phase) * 34 * w_end * (1.5 if sp > 1 else 1.0)
                 if not look.get("stick"):
-                    lh = (8 - sw * 0.9, 198 - abs(sw) * 0.25)
+                    lh = (8 - sw * 0.9, 198 - abs(sw) * 0.25 - (40 if sp > 1 else 0))
                 if not hold:
-                    rh = (8 + sw * 0.9, 198 - abs(sw) * 0.25)
+                    rh = (8 + sw * 0.9, 198 - abs(sw) * 0.25 - (40 if sp > 1 else 0))
+                P["shape_l"] = P["shape_r"] = "fist" if sp > 1 else "open"
         # ---- hops (surprise / joy): the whole puppet leaves the ground, with anticipation and landing squash
         for hs in tr["hop"]:
             if hs - 0.12 <= t < hs:
@@ -1179,6 +1476,8 @@ class Renderer:
                 u = (t - hs - 0.45) / 0.15
                 P["dip"] = max(P["dip"], 14 * math.sin(u * math.pi))
         P["lh"], P["rh"] = lh, rh
+        P["_act"] = aname if aw > 0.3 else None
+        P["_gest"] = g
         return P
 
     # ---------------------------------------------------------------- frame
@@ -1231,13 +1530,18 @@ class Renderer:
         for kind, name, px, own in plan["props"]:
             if kind == "stage" and not endscreen and not taken:
                 LP.draw_stage_prop(cv, name, px, FLOOR + 4, t)
+        owner_front = owner in poses and poses[owner].get("_front")
+        if owner_front and not endscreen:   # the owner stepped out in front of his cart: cart first
+            for kind, name, px, own in plan["props"]:
+                if kind == "cart":
+                    LP.draw_cart(cv, name, px + cart_dx(px, owner, self.looks), FLOOR + 30, t, s=SCALE)
         for cid in order:
             P = poses[cid]
             if -400 < P["x"] < W + 400:
                 LC.draw_character(cv, self.looks[cid], P, t)
                 if not endscreen:
                     self.draw_fx(cv, cid, P, t, i)
-            if cid == owner and not endscreen:
+            if cid == owner and not endscreen and not owner_front:
                 for kind, name, px, own in plan["props"]:
                     if kind == "cart":
                         LP.draw_cart(cv, name, px + cart_dx(px, cid, self.looks), FLOOR + 30, t, s=SCALE)
@@ -1265,7 +1569,7 @@ class Renderer:
             if not (fs <= t <= fe + 0.2):
                 continue
             a = min(1.0, (t - fs) / 0.2, (fe + 0.2 - t) / 0.2)
-            if kind == "steam":
+            if kind in ("steam", "steam_hot"):
                 for k in range(3):
                     ph = (t * 1.4 + k / 3) % 1.0
                     sx = hx + (k - 1) * 60 * s
@@ -1410,24 +1714,15 @@ class Renderer:
             return
         i = self.scene_at(t)
         self.draw_scene(cv, i, t)
-        # crossfade into the next scene across the boundary (0.5 s each side)
-        XF = 0.45
-        if i + 1 < len(self.scenes) and t > self.scenes[i]["end"] - XF:   # first half: the next scene fades in
-            a = (t - (self.scenes[i]["end"] - XF)) / (2 * XF)
-            if a > 0.01:
-                surf = skia.Surface(W, H)
-                c2 = surf.getCanvas()
-                self.draw_scene(c2, i + 1, t)
-                p = skia.Paint(); p.setAlphaf(min(1.0, a))
-                cv.drawImage(surf.makeImageSnapshot(), 0, 0, skia.SamplingOptions(), p)
+        # between scenes: a short dip through black (never two scenes overlapping, so no ghosted characters)
+        XF = 0.28
+        dk = 0.0
+        if i + 1 < len(self.scenes) and t > self.scenes[i]["end"] - XF:
+            dk = (t - (self.scenes[i]["end"] - XF)) / XF
         if i > 0 and t < self.scenes[i]["start"] + XF:
-            a = 1 - (t - (self.scenes[i]["start"] - XF)) / (2 * XF)
-            if a > 0.01:
-                surf = skia.Surface(W, H)
-                c2 = surf.getCanvas()
-                self.draw_scene(c2, i - 1, t)
-                p = skia.Paint(); p.setAlphaf(min(1.0, a))
-                cv.drawImage(surf.makeImageSnapshot(), 0, 0, skia.SamplingOptions(), p)
+            dk = max(dk, 1 - (t - self.scenes[i]["start"]) / XF)
+        if dk > 0.01:
+            cv.drawRect(skia.Rect.MakeWH(W, H), paint((0, 0, 0), int(255 * min(1.0, dk))))
         self.overlay(cv, t)
 
 

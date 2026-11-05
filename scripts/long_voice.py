@@ -203,7 +203,8 @@ def write_wav(path, a, sr=SR):
 EMO = {"cry", "angry", "surprised", "scared", "sad", "shocked"}
 
 
-MAX_MIN = float(os.environ.get("BB_LONG_MAX_MIN", "9.85"))   # video length incl. end screen (target 9-10 min)
+MAX_MIN = float(os.environ.get("BB_LONG_MAX_MIN", "9.7"))   # video length incl. end screen (target 9-10 min)
+GAP_SCALE = 1.0   # shrinks the pauses between lines when dropping lines was not enough
 FILLER = {"laugh", "surprised", "shrug", "scratch", "think", "nod", "wave", "greet", "hips", "proud", "celebrate"}
 
 
@@ -211,7 +212,7 @@ def _gap(sc, li):
     ln, prev = sc["lines"][li], sc["lines"][li - 1]
     g = GAP["emotional"] if (ln.get("emotion") in EMO or prev.get("emotion") in EMO) else \
         GAP["same"] if ln.get("speaker") == prev.get("speaker") else GAP["switch"]
-    return g + (0.25 if ln.get("action") in ("walk", "enter", "exit", "give", "run") else 0)
+    return g * GAP_SCALE + (0.25 if ln.get("action") in ("walk", "enter", "exit", "give", "run") else 0)
 
 
 def _total(story):
@@ -224,27 +225,36 @@ def _total(story):
 
 
 def cap_length(story):
-    """The writer's length estimate is only approximate (run 41869713268: estimated 9.76 min, voiced 10.29 min with the
-    extra multilingual voices), so after synthesis drop filler lines until the video fits. Never a scene's first 2 or
-    last 3 lines, objects / gives / entries / exits, or the moral."""
+    """The writer's length estimate is only approximate (run 41968766207: the post-TTS cap ran out of droppable lines
+    and the video ended 10.83 min), so after synthesis measure the real voiced length and drop lines until the video
+    fits, in stages: (1) filler lines from the middle of long scenes, (2) any plain talk / narrator line except a
+    scene's first and last line, (3) then the pauses between lines shrink. Never the moral, objects, gives, entries
+    or exits."""
+    global GAP_SCALE
     dropped = 0
-    while _total(story) > MAX_MIN * 60:
-        best = None
-        for si, sc in enumerate(story["scenes"]):
-            ls = sc["lines"]
-            if len(ls) <= 6:
-                continue
-            for li in range(2, len(ls) - 3):
-                l = ls[li]
-                if l.get("object") or l.get("to") or l.get("action") in ("give", "take", "show", "enter", "exit", "walk", "run"):
+    for stage in (1, 2):
+        while _total(story) > MAX_MIN * 60:
+            best = None
+            for si, sc in enumerate(story["scenes"]):
+                ls = sc["lines"]
+                if len(ls) <= (6 if stage == 1 else 4):
                     continue
-                score = (len(ls), l.get("action") in FILLER, l.get("speaker") == "narrator", -l["dur"])
-                if best is None or score > best[0]:
-                    best = (score, si, li)
-        if not best:
-            break
-        del story["scenes"][best[1]]["lines"][best[2]]
-        dropped += 1
+                lo, hi = (2, len(ls) - 3) if stage == 1 else (1, len(ls) - 1)
+                for li in range(lo, hi):
+                    l = ls[li]
+                    if l.get("object") or l.get("to") or l.get("action") in ("give", "take", "show", "enter", "exit", "walk", "run"):
+                        continue
+                    if sc.get("moral_card") and li == len(ls) - 1:
+                        continue
+                    score = (len(ls), l.get("action") in FILLER, l.get("speaker") == "narrator", -l["dur"])
+                    if best is None or score > best[0]:
+                        best = (score, si, li)
+            if not best:
+                break
+            del story["scenes"][best[1]]["lines"][best[2]]
+            dropped += 1
+    while _total(story) > MAX_MIN * 60 and GAP_SCALE > 0.55:
+        GAP_SCALE -= 0.05
     return dropped
 
 
@@ -302,11 +312,7 @@ async def main_async(path):
         prev_sp = None
         for li, ln in enumerate(sc["lines"]):
             if prev_sp is not None:
-                g = GAP["emotional"] if (ln.get("emotion") in EMO or sc["lines"][li - 1].get("emotion") in EMO) else \
-                    GAP["same"] if ln.get("speaker") == prev_sp else GAP["switch"]
-                if ln.get("action") in ("walk", "enter", "exit", "give", "run"):
-                    g += 0.25
-                t += g
+                t += _gap(sc, li)
             ln["start"] = round(t, 3)
             ln["end"] = round(t + ln["dur"], 3)
             ln["words"] = [[round(t + a, 3), round(t + b, 3), w] for a, b, w in ln.pop("words_rel")]
