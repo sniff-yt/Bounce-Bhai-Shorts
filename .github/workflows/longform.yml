@@ -1,8 +1,18 @@
 name: Bounce Bhai Long Stories
 
-# Long-form animated moral stories (8-10 min, Telugu / Hindi / English). Manual only for now: a daily schedule gets
-# added after the owner approves the test episode. publish=false keeps the video as an artifact (no YouTube upload).
+# Long-form animated moral stories (8-10 min, Telugu / Hindi / English). One public video per language per day:
+#   te 12:30 UTC (6:00 PM IST), hi 13:30 UTC (7:00 PM IST), en 14:30 UTC (8:00 PM IST)
+#   backups 13:10 / 14:10 / 15:10 UTC: same lang, run only when that day's video is still missing (daily guard).
+# Schedule runs always publish (after the gates in make_long.sh). Manual runs: publish=false keeps the video as an
+# artifact only. A language not listed in LONG_READY skips its scheduled runs with a ::warning.
 on:
+  schedule:
+    - cron: '30 12 * * *'   # te
+    - cron: '30 13 * * *'   # hi
+    - cron: '30 14 * * *'   # en
+    - cron: '10 13 * * *'   # te backup
+    - cron: '10 14 * * *'   # hi backup
+    - cron: '10 15 * * *'   # en backup
   workflow_dispatch:
     inputs:
       lang:
@@ -22,7 +32,7 @@ on:
         default: ''
 
 concurrency:
-  group: bouncebhai-long-${{ inputs.lang }}   # separate from the Shorts pipeline (bouncebhai-shorts)
+  group: bouncebhai-long-${{ inputs.lang || ((github.event.schedule == '30 12 * * *' || github.event.schedule == '10 13 * * *') && 'te') || ((github.event.schedule == '30 13 * * *' || github.event.schedule == '10 14 * * *') && 'hi') || 'en' }}   # separate from the Shorts pipeline (bouncebhai-shorts)
   cancel-in-progress: false
 
 permissions:
@@ -39,14 +49,36 @@ jobs:
     env:
       BB_LONG_SEED_THEME: ${{ inputs.theme }}
       BB_X264: veryfast
+      LONG_LANG: ${{ inputs.lang || ((github.event.schedule == '30 12 * * *' || github.event.schedule == '10 13 * * *') && 'te') || ((github.event.schedule == '30 13 * * *' || github.event.schedule == '10 14 * * *') && 'hi') || 'en' }}
+      LONG_PUBLISH: ${{ (github.event_name == 'schedule' || inputs.publish) && 'publish' || '' }}
+      LONG_READY: 'te,hi,en'   # languages whose scheduled runs may post; remove one to pause it
     steps:
       - uses: actions/checkout@v4
 
+      - name: Daily guard
+        id: guard
+        run: |
+          echo "lang=$LONG_LANG publish=${LONG_PUBLISH:-no} event=${{ github.event_name }} cron='${{ github.event.schedule }}'"
+          GO=1
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [[ ",$LONG_READY," != *",$LONG_LANG,"* ]]; then
+              echo "::warning title=not ready::$LONG_LANG long-form is paused (not in LONG_READY) - skipping"; GO=0
+            else
+              git fetch -q origin main && git show origin/main:data/history.json > /tmp/hist_latest.json || cp data/history.json /tmp/hist_latest.json
+              if python3 scripts/long_guard.py posted "$LONG_LANG" /tmp/hist_latest.json; then
+                echo "::notice title=daily guard::today's $LONG_LANG story is already posted - skipping"; GO=0
+              fi
+            fi
+          fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.guard.outputs.go == '1'
         with:
           python-version: "3.11"
 
       - name: System packages
+        if: steps.guard.outputs.go == '1'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libegl1 libfontconfig1 libx11-6 libfribidi0 libraqm0 libharfbuzz0b
@@ -54,11 +86,25 @@ jobs:
           nproc
 
       - name: Python packages
+        if: steps.guard.outputs.go == '1'
         run: |
           pip install --progress-bar off numpy pillow requests edge-tts google-api-python-client google-auth skia-python==144.0.post2
           python -c "from PIL import features; print('raqm', features.check('raqm'))"
 
+      - name: YouTube token check
+        if: steps.guard.outputs.go == '1'
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+          YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw
+        run: |
+          # publish runs stop here if the token cannot upload to Bounce Bhai; test runs only warn
+          python scripts/yt_scope.py || { [ "$LONG_PUBLISH" = "publish" ] && exit 1; echo "::warning title=youtube token::check failed (test run continues)"; }
+
       - name: Fonts (Noto Sans Telugu / Devanagari)
+        if: steps.guard.outputs.go == '1'
         run: |
           mkdir -p assets/fonts
           for f in NotoSansTelugu/hinted/ttf/NotoSansTelugu-Bold.ttf NotoSansTelugu/hinted/ttf/NotoSansTelugu-Black.ttf \
@@ -69,6 +115,7 @@ jobs:
           ls -la assets/fonts
 
       - name: Make the episode (story, voices, music, thumbnail, animation)
+        if: steps.guard.outputs.go == '1'
         env:
           NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -83,11 +130,11 @@ jobs:
           YT_CHANNEL_ID: UCn8j185kE4GH44U8b6n7Qgw   # Bounce Bhai (@bouncebhaiofficial): refuse to post anywhere else
         run: |
           START=$(date +%s)
-          bash scripts/make_long.sh "${{ inputs.lang }}" "${{ inputs.publish && 'publish' || '' }}"
+          bash scripts/make_long.sh "$LONG_LANG" "$LONG_PUBLISH"
           echo "::notice title=total::$(( ($(date +%s) - START) / 60 )) min end to end"
 
       - name: Save the episode
-        if: always()
+        if: always() && steps.guard.outputs.go == '1'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.NAME || 'long_story' }}
@@ -99,10 +146,8 @@ jobs:
           retention-days: 14
 
       - name: Remember what was posted
-        if: success() && inputs.publish
+        if: success() && steps.guard.outputs.go == '1' && env.LONG_PUBLISH == 'publish'
         run: |
           git config user.name "bouncebhai-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add data/history.json data/long_topics.json
-          git commit -m "log: $NAME" || exit 0
-          for i in 1 2 3; do git pull --rebase --autostash && git push && break; sleep 5; done
+          python3 scripts/push_log.py "log: $NAME" data/history.json data/long_topics.json

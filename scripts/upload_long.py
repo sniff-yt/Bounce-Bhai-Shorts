@@ -36,9 +36,11 @@ FOOT = {"te": "కోడ్‌తో గీసిన నిజమైన 2D క�
 ASK = {"te": "ఈ కథ మీకు నచ్చిందా? మీకు నచ్చిన పాత్ర ఎవరు? కామెంట్ చేయండి 👇",
        "hi": "आपको यह कहानी कैसी लगी? आपका पसंदीदा किरदार कौन है? कमेंट करें 👇",
        "en": "Did you like this story? Who was your favourite character? Comment below 👇"}
-HASH = {"te": "#TeluguStories #MoralStories #TeluguKathalu #Cartoon #BounceBhai",
-        "hi": "#HindiKahani #MoralStories #HindiStories #Cartoon #BounceBhai",
-        "en": "#MoralStories #EnglishStories #Cartoon #Kahani #BounceBhai"}
+HASH = {"te": "#moralstory #telugustories #cartoon #bouncebhai #telugukathalu",
+        "hi": "#moralstory #hindikahani #cartoon #bouncebhai #hindistories",
+        "en": "#moralstory #englishstories #cartoon #bouncebhai #kidsstories"}
+SUFFIX = {"te": " | Telugu Moral Story | Bounce Bhai", "hi": " | Hindi Kahani | Bounce Bhai",
+          "en": " | English Moral Story | Bounce Bhai"}
 
 
 def ts(sec):
@@ -60,7 +62,7 @@ def chapters(story):
 
 def build(story):
     lang = story.get("lang", "hi")
-    suffix = f" | {LANG_NAME[lang]} Moral Story | Bounce Bhai"
+    suffix = SUFFIX[lang]
     title = story["title"].strip()
     if len(title) + len(suffix) > 100:
         title = title[:100 - len(suffix) - 1].rstrip() + "…"
@@ -98,10 +100,12 @@ def main(path):
     thumb = story.get("thumb")
     if thumb and os.path.exists(thumb):
         try:
-            yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(thumb, mimetype="image/jpeg")).execute()
-            print("custom thumbnail set")
+            r = yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(thumb, mimetype="image/jpeg")).execute()
+            print("::notice title=thumbnail::custom thumbnail set " + str((r.get("items") or [{}])[0].get("default", {}).get("url", ""))[:160])
         except Exception as e:
             print(f"::warning title=thumbnail::custom thumbnail not set (channel may need phone verification): {str(e)[:300]}")
+    else:
+        print("::warning title=thumbnail::no thumbnail file in the story json; YouTube picks a frame")
     try:
         yt.commentThreads().insert(part="snippet", body={"snippet": {"videoId": vid, "topLevelComment": {
             "snippet": {"textOriginal": f"{ASK[story.get('lang', 'hi')]}\n✨ {story['moral']}"}}}}).execute()

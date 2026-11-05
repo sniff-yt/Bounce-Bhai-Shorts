@@ -70,6 +70,7 @@ v = [x for x in info["streams"] if x["codec_type"] == "video"][0]
 has_audio = any(x["codec_type"] == "audio" for x in info["streams"])
 fz = subprocess.run(["ffmpeg", "-v", "info", "-i", mp4, "-vf", "freezedetect=n=0.003:d=3", "-map", "0:v", "-f", "null", "-"],
                     capture_output=True, text=True).stderr.count("freeze_start")
+s["freezes"] = fz
 print(f"::notice title=video::{dur / 60:.2f} min, {v['width']}x{v['height']}, audio={has_audio}, freezes(>3s)={fz}, "
       f"title={s['title']}, moral={s['moral']}")
 if not has_audio or v["width"] != 1920:
@@ -81,6 +82,15 @@ json.dump(s, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 PY
 
 if [ "$PUBLISH" = "publish" ]; then
+  # publish gates (duration 8.5-10.5 min, no freeze, <=25 % edge-tts fallback): a failed gate skips the upload, the
+  # episode stays in the artifact and the run ends green with ::warning lines (the backup cron then tries again).
+  set +e; trap - ERR
+  python scripts/long_guard.py gate "$J"; GATE=$?
+  git fetch -q origin main 2>/dev/null && git show origin/main:data/history.json > /tmp/hist_latest.json 2>/dev/null
+  python scripts/long_guard.py posted "$LANG_CODE" /tmp/hist_latest.json; POSTED=$?
+  set -e; trap 'echo "::error::make_long failed at line $LINENO: $BASH_COMMAND"' ERR
+  if [ "$GATE" -ne 0 ]; then echo "::warning title=publish::gates failed - upload skipped"; exit 0; fi
+  if [ "$POSTED" -eq 0 ]; then echo "::warning title=publish::today's $LANG_CODE story is already on YouTube - upload skipped"; exit 0; fi
   run python scripts/upload_long.py "$J"
   echo "::notice title=timing::upload $((SECONDS - T))s"
 else

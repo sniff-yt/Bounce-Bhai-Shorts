@@ -162,6 +162,5 @@ jobs:
         run: |
           git config user.name "bouncebhai-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add data/history.json
-          git commit -m "log: $NAME" || exit 0
-          git pull --rebase --autostash && git push
+          # conflict-free append (long-form runs also log to data/history.json): reset to origin/main, re-append, retry
+          python3 scripts/push_log.py "log: $NAME" data/history.json

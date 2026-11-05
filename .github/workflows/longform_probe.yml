@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'tts | sample'
+        description: 'tts | sample | yt (YouTube token scope check)'
         required: true
         default: 'tts'
       lang:
@@ -43,6 +43,16 @@ jobs:
                    NotoSans/hinted/ttf/NotoSans-Bold.ttf NotoSans/hinted/ttf/NotoSans-Black.ttf; do
             b=$(basename "$f"); [ -s "assets/fonts/$b" ] || curl -sfL -o "assets/fonts/$b" "https://github.com/notofonts/notofonts.github.io/raw/main/fonts/$f"
           done
+      - name: YouTube token check
+        if: inputs.mode == 'yt'
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          MY_VOICE_KEY: ${{ secrets.MY_VOICE_KEY }}
+        run: |
+          pip install -q google-api-python-client google-auth
+          python scripts/yt_scope.py
       - name: TTS probe
         if: inputs.mode == 'tts'
         run: python scripts/tts_probe.py out/probe "${{ inputs.lang }}"
