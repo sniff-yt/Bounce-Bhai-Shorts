@@ -9,7 +9,7 @@ on:
         required: true
         default: 'tts'
       lang:
-        description: 'te | hi | en'
+        description: 'te | hi | en | q (quota check)'
         required: false
         default: 'te'
       story:

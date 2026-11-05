@@ -10,6 +10,9 @@ KEY = os.environ.get("GEMINI_API_KEY", "")
 BASE = "https://generativelanguage.googleapis.com/v1beta"
 out = sys.argv[1] if len(sys.argv) > 1 else "out/probe"
 lang = sys.argv[2] if len(sys.argv) > 2 else "te"
+QUOTA = lang == "q"
+if QUOTA:
+    lang = "te"
 os.makedirs(out, exist_ok=True)
 
 r = requests.get(f"{BASE}/models?key={KEY}&pageSize=200", timeout=30)
@@ -55,7 +58,7 @@ def tts(model, voice, style, text):
     r = requests.post(f"{BASE}/models/{model}:generateContent?key={KEY}", json=body, timeout=180)
     dt = time.time() - t0
     if r.status_code != 200:
-        return None, f"{r.status_code} {r.text[:300]}", dt
+        return None, f"{r.status_code} {' '.join(r.text.split())[:2500]}", dt
     j = r.json()
     try:
         p = j["candidates"][0]["content"]["parts"][0]["inlineData"]
@@ -94,11 +97,11 @@ norm = lambda s: re.sub(r"[\W_]+", "", s.lower())
 order = [m.split("/")[-1] for m in TTSM]
 PREF = tuple(os.environ.get("PROBE_MODELS", "gemini-3.1-flash-tts-preview,gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts").split(","))
 STRUCT = os.environ.get("PROBE_STRUCT", "1") == "1"
-pref = [m for m in PREF if m in order]
+pref = [m for m in PREF if m in order] if not QUOTA else [m.split("/")[-1] for m in TTSM]
 report = {"tts_models": TTSM, "samples": []}
 for model in pref[:4]:
-  for STRUCT in ((True, False) if model == "gemini-3.8-flash-tts" else (True,)):
-      for name, voice, style, text in SAMPLES[lang]:
+  for STRUCT in ((True, False) if model == "gemini-3.8-flash-tts" and not QUOTA else (True,)):
+      for name, voice, style, text in (SAMPLES[lang][:1] if QUOTA else SAMPLES[lang]):
           pcm, mime, dt = tts(model, voice, style, text)
           rec = {"model": model, "name": name, "voice": voice, "secs": round(dt, 1), "struct": STRUCT}
           if pcm is None:
