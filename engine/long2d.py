@@ -368,8 +368,22 @@ def line_addressee(sc, li, actor, tracks, t):
     return min(near, key=lambda o: abs(_x_at(tracks[o], t) - ax)) if near else None
 
 
+def _drop_early_exits(sc):
+    """An 'exit' by somebody who speaks or acts again later in the same scene becomes a plain line: walking off and
+    straight back on leaves the next line spoken off screen (staging QC speaker_hidden, en run 42051998401)."""
+    lines = sc.get("lines") or []
+    for k, ln in enumerate(lines):
+        if (ln.get("action") or "").lower().strip() != "exit":
+            continue
+        who = ln.get("speaker") if ln.get("speaker") not in (None, "", "narrator") else ln.get("actor")
+        if who and any(who in (l2.get("speaker"), l2.get("actor")) for l2 in lines[k + 1:]):
+            ln["action"] = "talk"
+            ln.pop("to", None)
+
+
 def plan_scene(story, sc, looks, memo=None):
     """Tracks for every character in the scene (times absolute)."""
+    _drop_early_exits(sc)
     chars = char_index(story)
     t0, t1 = sc["start"], sc["end"]
     cast = []
