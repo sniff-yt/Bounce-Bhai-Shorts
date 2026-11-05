@@ -1,18 +1,22 @@
 name: Bounce Bhai Long Stories
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Long story {0} {1}', inputs.lang, inputs.publish && '(publish)' || '(test)') || 'Long story (scheduled)' }}
 
 # Long-form animated moral stories (8-10 min, Telugu / Hindi / English). One public video per language per day:
-#   te 12:30 UTC (6:00 PM IST), hi 13:30 UTC (7:00 PM IST), en 14:30 UTC (8:00 PM IST)
-#   backups 13:10 / 14:10 / 15:10 UTC: same lang, run only when that day's video is still missing (daily guard).
+#   slots te 12:30 UTC (6:00 PM IST), hi 13:30 UTC (7:00 PM IST), en 14:30 UTC (8:00 PM IST).
+# GitHub drops many scheduled runs, so every scheduled run is a catch-up: it renders the FIRST language (te, hi, en
+# order) whose slot has passed and that has no long_story with today's IST date in data/history.json on main
+# (scripts/long_guard.py pick). Nothing due -> it exits in seconds, before any package install. Catch-up crons fire
+# every 20 min from 12:45 to 18:45 UTC (6:15 PM - 00:15 IST); the :30 slot crons start each language on time.
+# All scheduled runs share ONE concurrency group, so two scheduled runs never render at once (no same-language race);
+# a scheduled run also stands down while an older-version scheduled run is in progress, and skips a language a manual
+# publish run is rendering. make_long.sh re-checks history right before the upload, so a late duplicate never posts.
 # Schedule runs always publish (after the gates in make_long.sh). Manual runs: publish=false keeps the video as an
-# artifact only. A language not listed in LONG_READY skips its scheduled runs with a ::warning.
+# artifact only. A language not listed in LONG_READY is never picked by scheduled runs.
 on:
   schedule:
-    - cron: '30 12 * * *'   # te
-    - cron: '30 13 * * *'   # hi
-    - cron: '30 14 * * *'   # en
-    - cron: '10 13 * * *'   # te backup
-    - cron: '10 14 * * *'   # hi backup
-    - cron: '10 15 * * *'   # en backup
+    - cron: '30 12,13,14 * * *'      # slots: te 12:30, hi 13:30, en 14:30 UTC
+    - cron: '45 12 * * *'            # catch-up
+    - cron: '5,25,45 13-18 * * *'    # catch-up (every 20 min until 18:45 UTC)
   workflow_dispatch:
     inputs:
       lang:
@@ -32,11 +36,13 @@ on:
         default: ''
 
 concurrency:
-  group: bouncebhai-long-${{ inputs.lang || ((github.event.schedule == '30 12 * * *' || github.event.schedule == '10 13 * * *') && 'te') || ((github.event.schedule == '30 13 * * *' || github.event.schedule == '10 14 * * *') && 'hi') || 'en' }}   # separate from the Shorts pipeline (bouncebhai-shorts)
+  # scheduled + catch-up runs: one shared group; manual runs: per language. Separate from the Shorts pipeline.
+  group: ${{ github.event_name == 'schedule' && 'bouncebhai-long-sched' || format('bouncebhai-long-{0}', inputs.lang) }}
   cancel-in-progress: false
 
 permissions:
   contents: write
+  actions: read     # the catch-up picker lists running runs of this workflow
   models: read      # unused since GitHub Models was retired (2026-07-30); harmless
 
 jobs:
@@ -49,27 +55,29 @@ jobs:
     env:
       BB_LONG_SEED_THEME: ${{ inputs.theme }}
       BB_X264: veryfast
-      LONG_LANG: ${{ inputs.lang || ((github.event.schedule == '30 12 * * *' || github.event.schedule == '10 13 * * *') && 'te') || ((github.event.schedule == '30 13 * * *' || github.event.schedule == '10 14 * * *') && 'hi') || 'en' }}
       LONG_PUBLISH: ${{ (github.event_name == 'schedule' || inputs.publish) && 'publish' || '' }}
       LONG_READY: 'te,hi,en'   # languages whose scheduled runs may post; remove one to pause it
     steps:
       - uses: actions/checkout@v4
 
-      - name: Daily guard
+      - name: Daily guard / pick the language
         id: guard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IN_LANG: ${{ inputs.lang }}
         run: |
-          echo "lang=$LONG_LANG publish=${LONG_PUBLISH:-no} event=${{ github.event_name }} cron='${{ github.event.schedule }}'"
-          GO=1
+          echo "event=${{ github.event_name }} cron='${{ github.event.schedule }}' publish=${LONG_PUBLISH:-no}"
+          GO=1; L="$IN_LANG"
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [[ ",$LONG_READY," != *",$LONG_LANG,"* ]]; then
-              echo "::warning title=not ready::$LONG_LANG long-form is paused (not in LONG_READY) - skipping"; GO=0
-            else
-              git fetch -q origin main && git show origin/main:data/history.json > /tmp/hist_latest.json || cp data/history.json /tmp/hist_latest.json
-              if python3 scripts/long_guard.py posted "$LONG_LANG" /tmp/hist_latest.json; then
-                echo "::notice title=daily guard::today's $LONG_LANG story is already posted - skipping"; GO=0
-              fi
+            git fetch -q origin main && git show origin/main:data/history.json > /tmp/hist_latest.json || cp data/history.json /tmp/hist_latest.json
+            L=$(python3 scripts/long_guard.py pick /tmp/hist_latest.json)
+            if [ -n "$L" ] && [[ ",$LONG_READY," != *",$L,"* ]]; then
+              echo "::warning title=not ready::$L long-form is paused (not in LONG_READY) - skipping"; L=""
             fi
+            if [ -z "$L" ]; then echo "::notice title=catch-up::nothing to post right now - exiting"; GO=0; fi
           fi
+          echo "lang=$L"
+          echo "LONG_LANG=$L" >> "$GITHUB_ENV"
           echo "go=$GO" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5

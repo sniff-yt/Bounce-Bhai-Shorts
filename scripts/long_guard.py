@@ -7,6 +7,11 @@
   python scripts/long_guard.py gate out/long_x.json
       publish gates on the finished episode: duration 8.5-10.5 min, no freeze >3 s, <= 25 % of lines voiced by the
       edge-tts fallback instead of Gemini TTS. Prints ::warning lines; exit 0 = OK to upload, 3 = skip the upload.
+  python scripts/long_guard.py pick [history.json]
+      scheduled / catch-up runs: print the first language in te, hi, en order whose slot (te 12:30, hi 13:30, en 14:30 UTC)
+      has passed today and that has no long_story with today's IST date; print nothing when there is none, or when another
+      scheduled run of this workflow is already rendering (it may hold the same language). Languages being rendered by
+      an in-progress manual publish run (run-name "Long story <lang> (publish)") are skipped.
 """
 import datetime, json, os, subprocess, sys
 
@@ -37,6 +42,61 @@ def posted(lang, path=None):
             print(f"posted: {h.get('video_id')} {h.get('yt_title') or h.get('title')}")
             return True
     return False
+
+
+SLOTS = [("te", 12, 30), ("hi", 13, 30), ("en", 14, 30)]   # UTC slot times (6, 7, 8 PM IST)
+
+
+def busy_langs():
+    """(another scheduled run in progress?, langs held by in-progress manual publish runs) via the Actions API."""
+    import urllib.request
+    repo, me = os.environ.get("GITHUB_REPOSITORY"), os.environ.get("GITHUB_RUN_ID")
+    if not repo:
+        return False, set()
+    sched, held = False, set()
+    for st in ("in_progress", "queued"):
+        url = f"https://api.github.com/repos/{repo}/actions/workflows/longform.yml/runs?status={st}&per_page=50"
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        if os.environ.get("GITHUB_TOKEN"):
+            req.add_header("Authorization", "Bearer " + os.environ["GITHUB_TOKEN"])
+        try:
+            runs = json.load(urllib.request.urlopen(req, timeout=20)).get("workflow_runs", [])
+        except Exception as e:
+            print(f"::warning title=pick::could not list running runs ({e}) - continuing", file=sys.stderr)
+            continue
+        for r in runs:
+            if str(r.get("id")) == str(me):
+                continue
+            t = r.get("display_title") or ""
+            if r.get("event") == "schedule" and st == "in_progress":
+                sched = True
+            elif r.get("event") == "workflow_dispatch" and "(publish)" in t:
+                for lang, _, _ in SLOTS:
+                    if f"Long story {lang} " in t:
+                        held.add(lang)
+    return sched, held
+
+
+def pick(path=None):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ready = os.environ.get("LONG_READY", "te,hi,en").split(",")
+    due = [lang for lang, h, m in SLOTS if (now.hour, now.minute) >= (h, m) and lang in ready]
+    import contextlib
+    with contextlib.redirect_stdout(sys.stderr):
+        todo = [lang for lang in due if not posted(lang, path)]
+    if not todo:
+        print("nothing due: " + (", ".join(f"{l} posted" for l in due) or "no slot has passed yet"), file=sys.stderr)
+        return ""
+    sched, held = busy_langs()
+    if sched:
+        print("another scheduled run is still rendering - leaving the catch-up to a later cron", file=sys.stderr)
+        return ""
+    for lang in todo:
+        if lang in held:
+            print(f"{lang}: a manual publish run is rendering it - skipping", file=sys.stderr)
+            continue
+        return lang
+    return ""
 
 
 def video_facts(mp4):
@@ -76,6 +136,9 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "posted":
         sys.exit(0 if posted(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None) else 1)
+    if cmd == "pick":
+        print(pick(sys.argv[2] if len(sys.argv) > 2 else None))
+        sys.exit(0)
     if cmd == "gate":
         sys.exit(gate(sys.argv[2]))
     raise SystemExit(__doc__)
