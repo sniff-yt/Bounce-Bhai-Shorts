@@ -44,10 +44,10 @@ echo "::notice title=timing::voices $((SECONDS - T))s"; T=$SECONDS
 run python engine/long2d.py plan "$J"
 # frame + STAGING checker on the render plan. Staging failures (speaker not on screen, a cut moving somebody, the
 # 180-degree rule, partners apart / not facing, a listener cut inside a line) stop the episode; frame warnings don't.
-set +e
+set +e; trap - ERR
 python scripts/long_qc.py "$J" --report "out/${NAME}_qc.json"
 QC=$?
-set -e
+set -e; trap 'echo "::error::make_long failed at line $LINENO: $BASH_COMMAND"' ERR
 if [ "$QC" -eq 2 ]; then echo "::error title=staging QC::staging failed (see out/${NAME}_qc.json)"; exit 1; fi
 [ "$QC" -ne 0 ] && echo "::warning title=frame QC::soft frame warnings (see out/${NAME}_qc.json in the artifact)"
 run python scripts/long_audio.py "$J"

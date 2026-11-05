@@ -1,0 +1,983 @@
+{
+ "lang": "te",
+ "format": "long_story",
+ "seed": 91921,
+ "theme": "A greedy money-lender's obsession with doubling wealth leads to his own downfall through a magical pot.",
+ "seed_theme": "a magical clay pot (jadui matka) that doubles whatever is put in it, and a greedy neighbour",
+ "title": "మాయా కుండ, అత్యాశ వడ్డీ వ్యాపారి",
+ "title_en": "The Magic Pot and the Greedy Money-lender",
+ "thumbnail_text": "అత్యాశకు తగిన శిక్ష!",
+ "thumbnail_text_en": "Greed's just punishment!",
+ "moral": "అత్యాశ ఎప్పటికైనా నష్టమే తెస్తుంది.",
+ "moral_en": "Greed always brings loss in the end.",
+ "description": "సూరి అనే పేద కూరగాయల వ్యాపారికి ఒక మాయా కుండ దొరుకుతుంది. ఆ కుండను దొంగిలించిన అత్యాశ గల భూపతికి ఎలాంటి గతి పట్టిందో ఈ కథలో చూడండి.",
+ "synopsis": "Suri is a hardworking vegetable seller who lives with his mother. One day, he helps an old man and receives a magical clay pot that doubles anything put inside. A greedy money-lender named Bhupati finds out and uses his power to snatch the pot from Suri. Bhupati starts doubling his gold, but in his excitement, he accidentally drops his only pair of glasses into the pot. As he reaches in to grab them, he falls into the pot himself. The pot begins doubling Bhupati, creating a house full of arguing Bhupatis who eventually break the pot and lose everything, while Suri gets his peaceful life back.",
+ "twist": "The pot doubles anything that falls into it, including living people, leading to a house full of greedy clones.",
+ "tags": [
+  "moral story",
+  "Telugu stories",
+  "Telugu kahani",
+  "మాయా కుండ",
+  "అత్యాశ",
+  "Telugu cartoon",
+  "animated story",
+  "kids stories",
+  "village stories",
+  "Telugu moral stories"
+ ],
+ "thumbnail": {
+  "character": "bhupati",
+  "expression": "greedy",
+  "object": "magic_pot"
+ },
+ "characters": [
+  {
+   "id": "suri",
+   "name": "సూరి",
+   "name_en": "Suri",
+   "type": "man",
+   "costume": "lungi",
+   "color": "green",
+   "build": "thin",
+   "role": "hero",
+   "job": "vegetable seller",
+   "trait": "kind and hardworking"
+  },
+  {
+   "id": "lakshmi",
+   "name": "లక్ష్మి",
+   "name_en": "Lakshmi",
+   "type": "woman",
+   "costume": "saree",
+   "color": "pink",
+   "build": "normal",
+   "role": "wife",
+   "job": "housewife",
+   "trait": "caring mother"
+  },
+  {
+   "id": "bhupati",
+   "name": "భూపతి",
+   "name_en": "Bhupati",
+   "type": "man",
+   "costume": "dhoti",
+   "color": "white",
+   "build": "fat",
+   "role": "villain",
+   "job": "money-lender",
+   "trait": "greedy and arrogant"
+  },
+  {
+   "id": "tata",
+   "name": "ముసలాయన",
+   "name_en": "Old Man",
+   "type": "oldman",
+   "costume": "dhoti",
+   "color": "grey",
+   "build": "thin",
+   "role": "elder",
+   "job": "traveler",
+   "trait": "wise and mysterious"
+  }
+ ],
+ "models": [
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-2.5-flash",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-2.5-flash",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-2.5-flash",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-2.5-flash",
+  "gemini:gemini-3-flash-preview",
+  "gemini:gemini-3-flash-preview"
+ ],
+ "models_by_stage": {
+  "outline": "gemini:gemini-3-flash-preview",
+  "review": "gemini:gemini-2.5-flash",
+  "dialogue": [
+   "gemini:gemini-3-flash-preview",
+   "gemini:gemini-3-flash-preview",
+   "gemini:gemini-3-flash-preview",
+   "gemini:gemini-3-flash-preview",
+   "gemini:gemini-3-flash-preview"
+  ],
+  "editor": [
+   "gemini:gemini-2.5-flash",
+   "gemini:gemini-2.5-flash",
+   "gemini:gemini-3-flash-preview",
+   "gemini:gemini-2.5-flash",
+   "gemini:gemini-3-flash-preview"
+  ]
+ },
+ "review_issues": [
+  "Changed Lakshmi's role to 'mother' to align with her character description and job as 'housewife'.",
+  "Adjusted setup_scene to scene 2, where the pot's doubling ability is first demonstrated, which is the core mechanic for the twist.",
+  "Adjusted twist_scene to scene 10, where Bhupati first falls into the pot and starts doubling, which is the actual twist payoff.",
+  "Corrected the title to be more natural and idiomatic Telugu, as 'మరియు' (and) is less common in simple story titles for children.",
+  "Added 'thumbnail_text_en' for completeness.",
+  "Fixed 'what_happens' in Scene 2 to explicitly state the pot doubles *anything* put inside, reinforcing the setup for the twist.",
+  "Corrected 'what_happens' in Scene 5: Bhupati should be the one claiming the pot, not 'henchmen' (off-screen characters should not perform actions).",
+  "Corrected 'what_happens' in Scene 8: Suri's appeal to conscience is not a 'low point', but rather a futile attempt. Also, Bhupati's glasses are a prop that should be mentioned in the scene's prop list",
+  "Added 'glasses' as a prop to Scene 8, 9, and 10 as they are central to the twist.",
+  "Corrected 'what_happens' in Scene 11: Suri should not be in the cast or run back if the twist is solely about Bhupati's fate. The focus should be on the Bhupatis' actions and the pot breaking. The nar",
+  "Removed 'tata' from Scene 12 cast as his appearance is not essential for the moral and can be delivered by the narrator.",
+  "Removed the old man's dialogue from the moral delivery in Scene 12, as the narrator delivers the moral."
+ ],
+ "editor_flags": [
+  "Scene 0, line 1: Changed 'అతని జీవితాన్నే' to 'తన జీవితాన్నే' for more natural flow.",
+  "Scene 2, line 1: Changed 'ఆత్రుతగా' to 'ఆత్రంగా' for more common spoken usage.",
+  "Scene 2, line 2: Changed 'లక్ష్మమ్మా' to 'లక్ష్మి' as 'లక్ష్మమ్మా' is less common for addressing a wife directly in this context, 'లక్ష్మి' is more natural.",
+  "Scene 2, line 10: 'ఈజీగా' is a common English loanword used in spoken Telugu, so it's kept as per instructions.",
+  "Removed bookish words like 'కర్కోటకుడు' and replaced with 'కఠినమైన వాడు' (hard person).",
+  "Changed 'దుష్టుల' to 'చెడ్డవాళ్ళ' for a more natural village tone.",
+  "Ensured respect markers (అయ్యా, గారు, అమ్మా) are used correctly for the character relationships.",
+  "Polished sentence structures to sound like spoken Telugu rather than translated text.",
+  "Changed 'ప్రశాంతంగా' to 'హాయిగా' for a more natural, spoken tone.",
+  "Changed 'నాణేన్ని' to 'నాణెం' for slightly more casual speech.",
+  "Changed 'కళ్ళద్దాలు సరిగ్గా కనిపించడం లేదు' to 'కళ్ళద్దాలు సరిగ్గా కనిపించట్లేదు' for a more colloquial feel.",
+  "Changed 'కళ్ళద్దాలు నీ దగ్గర ఎందుకు ఉన్నాయి?' to 'కళ్ళద్దాలు నీ దగ్గర ఎందుకున్నాయి?' for a more natural contraction in spoken Telugu.",
+  "Changed 'మీరంతా బయటకి వెళ్ళండి!' to 'మీరంతా బయటికి వెళ్ళండి!' for correct spelling.",
+  "Changed 'మాకు వాటా కావాల్సిందే!' to 'మాకు వాటా కావాలి!' for simpler, more direct speech.",
+  "Changed 'గాలి ఆడటం లేదు' to 'గాలి ఆడట్లేదు' for a more colloquial contraction.",
+  "Changed 'అరేయ్! సంచిని అలా లాగకండిరా!' to 'అరేయ్! సంచిని అలా లాగొద్దురా!' for a more common prohibition.",
+  "Changed 'అది మట్టి కుండ, పగిలిపోతే మన పని అయిపోతుంది!' to 'అది మట్టి కుండ, పగిలిపోతే మన పని అయిపోయినట్టే!' for a more impactful ending.",
+  "Changed 'అత్యాశ వల్ల ఉన్నదంతా పోయింది.' to 'అత్యాశ వల్ల ఉన్నదంతా పోగొట్టుకున్నాను.' to reflect Bhupati's personal loss, then reverted to 'అత్యాశ వల్ల ఉన్నదంతా పోయింది.' as the original phrasing was more general and suita",
+  "Changed 'చవకగా' to 'తక్కువ ధరకే' as it sounds more natural for a village seller.",
+  "Adjusted Lakshmi's address to Suri to 'ఏవండీ' to reflect a traditional village wife's respectful way of speaking.",
+  "Replaced 'గూడు' with 'ఇల్లు' for better flow in spoken dialogue.",
+  "Simplified the moral at the end to sound like a natural conversation between husband and wife."
+ ],
+ "scenes": [
+  {
+   "set": "village_home",
+   "time": "night",
+   "weather": "clear",
+   "mood": "happy",
+   "prop": "magic_pot",
+   "prop_owner": "suri",
+   "cast": [
+    {
+     "id": "suri",
+     "pos": 0.4,
+     "expression": "happy"
+    },
+    {
+     "id": "lakshmi",
+     "pos": 0.6,
+     "expression": "happy"
+    },
+    {
+     "id": "bhupati",
+     "enter": true
+    }
+   ],
+   "chapter": "డబ్బులు రెట్టింపు",
+   "summary": "Suri and Lakshmi use the pot to double their small savings. They are happy they can pay off the debt. They don't realize Bhupati is watching through the window.",
+   "lines": [
+    {
+     "speaker": "narrator",
+     "text": "అనగనగా ఒక ఊరిలో సూరి అనే కూరగాయలు అమ్మే కుర్రాడు ఉండేవాడు. ఒక పాత కుండ తన జీవితాన్నే మార్చేస్తుందని సూరి అస్సలు అనుకోలేదు.",
+     "emotion": "happy",
+     "action": "walk",
+     "to": 0.5,
+     "orig": "అనగనగా ఒక ఊరిలో సూరి అనే కూరగాయలు అమ్మే కుర్రాడు ఉండేవాడు. ఒక పాత కుండ అతని జీవితాన్నే మార్చేస్తుందని సూరి అస్సలు అనుకోలేదు.",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l00.wav",
+     "dur": 13.300566893424037,
+     "voice": "gemini 3.1-flash-tts-preview Sulafat f1.00",
+     "tts_match": 0.92,
+     "start": 2.6,
+     "end": 15.901,
+     "words": [
+      [
+       2.6,
+       3.614,
+       "అనగనగా"
+      ],
+      [
+       3.614,
+       4.334,
+       "ఒక"
+      ],
+      [
+       4.334,
+       5.154,
+       "ఊరిలో"
+      ],
+      [
+       5.154,
+       6.074,
+       "సూరి"
+      ],
+      [
+       6.074,
+       6.394,
+       "అనే"
+      ],
+      [
+       6.394,
+       7.334,
+       "కూరగాయలు"
+      ],
+      [
+       7.334,
+       7.574,
+       "అమ్మే"
+      ],
+      [
+       7.574,
+       8.154,
+       "కుర్రాడు"
+      ],
+      [
+       8.154,
+       9.414,
+       "ఉండేవాడు."
+      ],
+      [
+       9.414,
+       9.594,
+       "ఒక"
+      ],
+      [
+       9.594,
+       10.974,
+       "పాత"
+      ],
+      [
+       9.594,
+       10.974,
+       "కుండ"
+      ],
+      [
+       10.974,
+       11.574,
+       "తన"
+      ],
+      [
+       11.574,
+       12.494,
+       "జీవితాన్నే"
+      ],
+      [
+       12.494,
+       13.614,
+       "మార్చేస్తుందని"
+      ],
+      [
+       13.614,
+       14.454,
+       "సూరి"
+      ],
+      [
+       14.454,
+       15.134,
+       "అస్సలు"
+      ],
+      [
+       15.134,
+       15.814,
+       "అనుకోలేదు."
+      ]
+     ],
+     "actor": "suri",
+     "beats": [
+      [
+       8.004,
+       10.404,
+       "suri",
+       "point"
+      ]
+     ]
+    },
+    {
+     "speaker": "lakshmi",
+     "text": "సూరి, ఎవరైనా చూస్తారేమో జాగ్రత్త రా! తలుపులు సరిగ్గా వేశావా?",
+     "emotion": "worried",
+     "action": "look_around",
+     "target": "suri",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l01.wav",
+     "dur": 5.184625850340136,
+     "voice": "gemini 3.1-flash-tts-preview Kore f1.00",
+     "tts_match": 0.89,
+     "react_gap": 0.95,
+     "react_by": "suri",
+     "start": 16.401,
+     "end": 21.586,
+     "words": [
+      [
+       16.401,
+       16.809,
+       "సూరి,"
+      ],
+      [
+       16.809,
+       17.909,
+       "ఎవరైనా"
+      ],
+      [
+       17.909,
+       18.669,
+       "చూస్తారేమో"
+      ],
+      [
+       18.669,
+       19.429,
+       "జాగ్రత్త"
+      ],
+      [
+       18.669,
+       19.429,
+       "రా!"
+      ],
+      [
+       19.429,
+       20.329,
+       "తలుపులు"
+      ],
+      [
+       20.329,
+       20.689,
+       "సరిగ్గా"
+      ],
+      [
+       20.689,
+       21.229,
+       "వేశావా?"
+      ]
+     ],
+     "beats": [
+      [
+       16.451,
+       19.251,
+       "lakshmi",
+       "look_around"
+      ]
+     ]
+    },
+    {
+     "speaker": "suri",
+     "text": "వేశాను అమ్మా. ఇదిగో, మన దగ్గర ఉన్న ఈ వంద రూపాయలు ఇందులో వేస్తున్నాను చూడు.",
+     "emotion": "happy",
+     "action": "give",
+     "target": "lakshmi",
+     "object": "money",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l02.wav",
+     "dur": 4.826417233560091,
+     "voice": "gemini 2.5-flash-preview-tts Achird f1.00",
+     "tts_match": 0.9,
+     "start": 23.286,
+     "end": 28.112,
+     "words": [
+      [
+       23.286,
+       24.356,
+       "వేశాను"
+      ],
+      [
+       23.286,
+       24.356,
+       "అమ్మా."
+      ],
+      [
+       24.356,
+       25.156,
+       "ఇదిగో,"
+      ],
+      [
+       25.156,
+       25.836,
+       "మన"
+      ],
+      [
+       25.156,
+       25.836,
+       "దగ్గర"
+      ],
+      [
+       25.156,
+       25.836,
+       "ఉన్న"
+      ],
+      [
+       25.836,
+       25.946,
+       "ఈ"
+      ],
+      [
+       25.836,
+       26.616,
+       "వంద"
+      ],
+      [
+       25.836,
+       26.616,
+       "రూపాయలు"
+      ],
+      [
+       26.616,
+       27.196,
+       "ఇందులో"
+      ],
+      [
+       27.196,
+       27.656,
+       "వేస్తున్నాను"
+      ],
+      [
+       27.656,
+       28.316,
+       "చూడు."
+      ]
+     ],
+     "beats": [
+      [
+       23.336,
+       25.736,
+       "suri",
+       "give"
+      ],
+      [
+       27.506,
+       28.506,
+       "suri",
+       "show"
+      ]
+     ]
+    },
+    {
+     "speaker": "lakshmi",
+     "text": "అరెరే! చూస్తుండగానే రెండు వందలు అయ్యాయి! మళ్ళీ వేయి నాయనా, మళ్ళీ వేయి!",
+     "emotion": "surprised",
+     "action": "touch",
+     "object": "money",
+     "sfx": "magic",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l03.wav",
+     "dur": 5.159863945578231,
+     "voice": "gemini 3.1-flash-tts-preview Kore f1.00",
+     "tts_match": 0.81,
+     "react_gap": 0.95,
+     "react_by": "suri",
+     "start": 28.812,
+     "end": 33.972,
+     "words": [
+      [
+       28.812,
+       29.23,
+       "అరెరే!"
+      ],
+      [
+       29.23,
+       30.59,
+       "చూస్తుండగానే"
+      ],
+      [
+       30.59,
+       30.93,
+       "రెండు"
+      ],
+      [
+       30.93,
+       31.39,
+       "వందలు"
+      ],
+      [
+       30.93,
+       31.39,
+       "అయ్యాయి!"
+      ],
+      [
+       31.39,
+       32.33,
+       "మళ్ళీ"
+      ],
+      [
+       32.33,
+       32.55,
+       "వేయి"
+      ],
+      [
+       32.55,
+       32.91,
+       "నాయనా,"
+      ],
+      [
+       32.91,
+       33.55,
+       "మళ్ళీ"
+      ],
+      [
+       33.55,
+       33.83,
+       "వేయి!"
+      ]
+     ],
+     "beats": [
+      [
+       28.862,
+       30.862,
+       "lakshmi",
+       "touch"
+      ]
+     ]
+    },
+    {
+     "speaker": "suri",
+     "text": "చూడమ్మా! ఇప్పుడు ఇవి నాలుగు వందలు అయ్యాయి. రేపటికల్లా భూపతి అప్పు తీర్చేయొచ్చు!",
+     "emotion": "happy",
+     "action": "count",
+     "object": "money",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l04.wav",
+     "dur": 4.577437641723356,
+     "voice": "gemini 2.5-flash-preview-tts Achird f1.00",
+     "tts_match": 0.9,
+     "start": 35.622,
+     "end": 40.199,
+     "words": [
+      [
+       35.622,
+       36.391,
+       "చూడమ్మా!"
+      ],
+      [
+       36.391,
+       36.851,
+       "ఇప్పుడు"
+      ],
+      [
+       36.391,
+       36.851,
+       "ఇవి"
+      ],
+      [
+       36.851,
+       37.251,
+       "నాలుగు"
+      ],
+      [
+       37.251,
+       38.091,
+       "వందలు"
+      ],
+      [
+       37.251,
+       38.091,
+       "అయ్యాయి."
+      ],
+      [
+       38.091,
+       38.751,
+       "రేపటికల్లా"
+      ],
+      [
+       38.751,
+       39.191,
+       "భూపతి"
+      ],
+      [
+       39.191,
+       39.411,
+       "అప్పు"
+      ],
+      [
+       39.411,
+       40.051,
+       "తీర్చేయొచ్చు!"
+      ]
+     ],
+     "beats": [
+      [
+       35.672,
+       38.672,
+       "suri",
+       "count_money"
+      ]
+     ]
+    },
+    {
+     "speaker": "bhupati",
+     "text": "అమ్మదొంగ! మాయా కుండ అన్నమాట! అందుకే వీడు అంత ధీమాగా ఉన్నాడు.",
+     "emotion": "greedy",
+     "action": "think",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l05.wav",
+     "dur": 7.487437641723356,
+     "voice": "gemini 3.8-flash-tts Algenib f1.00",
+     "tts_match": 0.96,
+     "react_gap": 0.95,
+     "react_by": "lakshmi",
+     "start": 40.699,
+     "end": 48.186,
+     "words": [
+      [
+       40.699,
+       41.959,
+       "అమ్మదొంగ!"
+      ],
+      [
+       41.959,
+       43.059,
+       "మాయా"
+      ],
+      [
+       43.059,
+       43.479,
+       "కుండ"
+      ],
+      [
+       43.059,
+       43.799,
+       "అన్నమాట!"
+      ],
+      [
+       43.799,
+       44.939,
+       "అందుకే"
+      ],
+      [
+       44.939,
+       45.679,
+       "వీడు"
+      ],
+      [
+       45.679,
+       46.119,
+       "అంత"
+      ],
+      [
+       46.119,
+       46.939,
+       "ధీమాగా"
+      ],
+      [
+       46.939,
+       47.259,
+       "ఉన్నాడు."
+      ]
+     ],
+     "beats": [
+      [
+       40.749,
+       43.949,
+       "bhupati",
+       "think"
+      ]
+     ]
+    },
+    {
+     "speaker": "lakshmi",
+     "text": "నిజంగా ఆ దేవుడే మనల్ని కాపాడాడు రా సూరి. ఇక మనకి కష్టాలు ఉండవు.",
+     "emotion": "happy",
+     "action": "comfort",
+     "target": "suri",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l06.wav",
+     "dur": 6.167709750566893,
+     "voice": "gemini 3.1-flash-tts-preview Kore f1.00",
+     "tts_match": 0.93,
+     "start": 49.636,
+     "end": 55.804,
+     "words": [
+      [
+       49.636,
+       50.487,
+       "నిజంగా"
+      ],
+      [
+       50.487,
+       51.107,
+       "ఆ"
+      ],
+      [
+       51.107,
+       51.727,
+       "దేవుడే"
+      ],
+      [
+       51.727,
+       52.107,
+       "మనల్ని"
+      ],
+      [
+       52.107,
+       52.787,
+       "కాపాడాడు"
+      ],
+      [
+       52.787,
+       52.927,
+       "రా"
+      ],
+      [
+       52.927,
+       53.307,
+       "సూరి."
+      ],
+      [
+       53.307,
+       54.487,
+       "ఇక"
+      ],
+      [
+       54.487,
+       54.807,
+       "మనకి"
+      ],
+      [
+       54.807,
+       55.367,
+       "కష్టాలు"
+      ],
+      [
+       55.367,
+       55.707,
+       "ఉండవు."
+      ]
+     ],
+     "beats": [
+      [
+       49.686,
+       52.086,
+       "lakshmi",
+       "comfort"
+      ]
+     ]
+    },
+    {
+     "speaker": "bhupati",
+     "text": "ఉండవు కాదమ్మా, ఇప్పుడే మొదలవుతాయి! ఆ కుండ నా చేతిలో ఉంటే నేను కోటీశ్వరుడిని అయిపోతాను!",
+     "emotion": "greedy",
+     "action": "laugh",
+     "sfx": "laugh",
+     "audio": "out/sample_te_20261105_0805_vo/s00_l07.wav",
+     "dur": 9.487437641723355,
+     "voice": "gemini 3.8-flash-tts Algenib f1.00",
+     "tts_match": 0.89,
+     "start": 56.304,
+     "end": 65.791,
+     "words": [
+      [
+       56.304,
+       57.224,
+       "ఉండవు"
+      ],
+      [
+       57.224,
+       57.864,
+       "కాదమ్మా,"
+      ],
+      [
+       57.864,
+       59.184,
+       "ఇప్పుడే"
+      ],
+      [
+       59.184,
+       60.044,
+       "మొదలవుతాయి!"
+      ],
+      [
+       60.044,
+       60.764,
+       "ఆ"
+      ],
+      [
+       60.764,
+       61.464,
+       "కుండ"
+      ],
+      [
+       60.764,
+       61.464,
+       "నా"
+      ],
+      [
+       61.464,
+       61.924,
+       "చేతిలో"
+      ],
+      [
+       61.924,
+       62.264,
+       "ఉంటే"
+      ],
+      [
+       62.264,
+       63.404,
+       "నేను"
+      ],
+      [
+       63.404,
+       64.624,
+       "కోటీశ్వరుడిని"
+      ],
+      [
+       64.624,
+       65.284,
+       "అయిపోతాను!"
+      ]
+     ],
+     "beats": [
+      [
+       56.354,
+       59.554,
+       "bhupati",
+       "laugh"
+      ]
+     ]
+    }
+   ],
+   "start": 0.6,
+   "end": 66.491
+  }
+ ],
+ "estimated_minutes": 10.79,
+ "sample_of_scene": 4,
+ "voices": {
+  "narrator": {
+   "voice": "te-IN-ShrutiNeural",
+   "pitch": -6,
+   "rate": -6,
+   "formant": 0.97
+  },
+  "suri": {
+   "voice": "te-IN-MohanNeural",
+   "pitch": 0,
+   "rate": 0,
+   "formant": 1.0
+  },
+  "tata": {
+   "voice": "te-IN-MohanNeural",
+   "pitch": -14,
+   "rate": -12,
+   "formant": 0.93
+  },
+  "lakshmi": {
+   "voice": "te-IN-ShrutiNeural",
+   "pitch": 4,
+   "rate": 2,
+   "formant": 1.0
+  },
+  "bhupati": {
+   "voice": "te-IN-MohanNeural",
+   "pitch": -15,
+   "rate": -4,
+   "formant": 0.931
+  }
+ },
+ "voices_gemini": {
+  "suri": {
+   "gemini": "Achird",
+   "formant": 1.0,
+   "kind": "hero_m",
+   "persona": "Suri, a man in his thirties, vegetable seller, kind and hardworking.",
+   "f0_median": 149
+  },
+  "bhupati": {
+   "gemini": "Algenib",
+   "formant": 1.0,
+   "kind": "villain",
+   "persona": "Bhupati, a man in his thirties, money-lender, greedy and arrogant.",
+   "f0_median": 114
+  },
+  "lakshmi": {
+   "gemini": "Kore",
+   "formant": 1.0,
+   "kind": "woman",
+   "persona": "Lakshmi, a young woman in her late twenties, housewife, caring mother.",
+   "f0_median": 259
+  },
+  "tata": {
+   "gemini": "Sadaltager",
+   "formant": 0.97,
+   "kind": "oldman",
+   "persona": "Old Man, an old man of about seventy, traveler, wise and mysterious."
+  },
+  "narrator": {
+   "gemini": "Sulafat",
+   "formant": 1.0,
+   "kind": "narrator",
+   "persona": "a warm, loving grandmother telling a bedtime story to her grandchildren",
+   "f0_median": 202
+  }
+ },
+ "end_screen": [
+  66.491,
+  71.491
+ ],
+ "duration": 71.491,
+ "speech_wav": "out/sample_te_20261105_0805_speech.wav",
+ "sfx_cues": [
+  {
+   "t": 0.6,
+   "end": 66.491,
+   "type": "ambience",
+   "names": [
+    "crickets"
+   ]
+  },
+  {
+   "t": 25.5338,
+   "type": "coins"
+  },
+  {
+   "t": 28.662000000000003,
+   "type": "magic"
+  },
+  {
+   "t": 40.499,
+   "type": "step",
+   "x": 1.2708333333333333
+  },
+  {
+   "t": 40.789,
+   "type": "step",
+   "x": 1.2167491713838083
+  },
+  {
+   "t": 41.079,
+   "type": "step",
+   "x": 1.139794122663432
+  },
+  {
+   "t": 41.369,
+   "type": "step",
+   "x": 1.0285674577197974
+  },
+  {
+   "t": 41.659,
+   "type": "step",
+   "x": 0.8888562734220834
+  },
+  {
+   "t": 41.949,
+   "type": "step",
+   "x": 0.7407331607440472
+  },
+  {
+   "t": 42.239,
+   "type": "step",
+   "x": 0.6084894426588083
+  },
+  {
+   "t": 42.529,
+   "type": "step",
+   "x": 0.5084526427500646
+  },
+  {
+   "t": 56.154,
+   "type": "laugh"
+  },
+  {
+   "t": 66.491,
+   "type": "ding"
+  }
+ ],
+ "scene_moods": [
+  [
+   0.6,
+   66.491,
+   "happy"
+  ]
+ ]
+}

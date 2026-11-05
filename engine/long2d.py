@@ -466,6 +466,11 @@ def plan_scene(story, sc, looks, memo=None):
                       (act in ("walk", "run", "enter") and not on_now and tracks[actor].get("gone_after") is None)):
             tr = tracks[actor]
             ws = max(ls - (0.2 if act != "enter" else 0.6), walk_end[actor] + 0.15)
+            if tr.get("pending_enter") is not None and act != "exit":
+                # an entrance finishes BEFORE the line: the speaker walks in (from their side) during the previous
+                # beat, arrives on the mark and then speaks on camera
+                d_in = max(0.6, min(4.5, abs(tr["pending_enter"] - _x_at(tr, ls)) / (WALK_SPEED * (0.78 if looks[actor]["kid"] else 1.0))))
+                ws = max(t0 + 0.3, walk_end[actor] + 0.15, ls - d_in - 0.3)
             x0 = _x_at(tr, ws)
             if act == "exit":   # leave by the side with fewer people in the way
                 others = [_x_at(tro, ws) for o, tro in tracks.items() if o != actor]
