@@ -14,8 +14,8 @@ os.makedirs(out, exist_ok=True)
 
 r = requests.get(f"{BASE}/models?key={KEY}&pageSize=200", timeout=30)
 models = [m["name"] for m in r.json().get("models", [])]
-tts = [m for m in models if "tts" in m]
-print("::notice title=tts models::" + ", ".join(tts))
+TTSM = [m for m in models if "tts" in m]
+print("::notice title=tts models::" + ", ".join(TTSM))
 print("all models:", models)
 
 SAMPLES = {"te": [
@@ -85,11 +85,11 @@ def whisper(path):
 
 
 norm = lambda s: re.sub(r"[\W_]+", "", s.lower())
-order = [m.split("/")[-1] for m in tts]
-pref = [m for m in ("gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts") if m in order] + \
-       [m for m in order if m not in ("gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts")]
-report = {"tts_models": tts, "samples": []}
-for model in pref[:3]:
+order = [m.split("/")[-1] for m in TTSM]
+PREF = ("gemini-3.8-flash-tts", "gemini-2.5-pro-preview-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")
+pref = [m for m in PREF if m in order]
+report = {"tts_models": TTSM, "samples": []}
+for model in pref[:4]:
     for name, voice, style, text in SAMPLES[lang]:
         pcm, mime, dt = tts(model, voice, style, text)
         rec = {"model": model, "name": name, "voice": voice, "secs": round(dt, 1)}
