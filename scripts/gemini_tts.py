@@ -252,9 +252,12 @@ class Gemini:
             last = f"{r.status_code} {r.text[:200]}"
             if r.status_code == 429:
                 txt = r.text
-                if "PerDay" in txt or "per_day" in txt.lower() or "daily" in txt.lower():
+                qids = re.findall(r'"quotaId":\s*"([^"]+)"', txt)
+                qval = re.findall(r'"quotaValue":\s*"?(\d+)', txt)
+                daily = any("PerDay" in q for q in qids) if qids else ("PerDay" in txt or "per_day" in txt.lower())
+                if daily:
                     self.dead.add(model)
-                    self.log(f"::warning title=gemini tts::{model} daily quota exhausted; switching model")
+                    self.log(f"::warning title=gemini tts::{model} daily quota exhausted ({','.join(qids)} limit {','.join(qval)}); switching model")
                     raise RuntimeError(f"{model} quota")
                 m = re.search(r'"retryDelay":\s*"(\d+)', txt)
                 d = float(m.group(1)) + 1 if m else 15 + attempt * 10
