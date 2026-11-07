@@ -2216,5 +2216,21 @@
   "series": "BALL RACE #91",
   "names": null,
   "variant": "jelly"
+ },
+ {
+  "date": "2026-11-07T13:58:52.285242+00:00",
+  "title": "Ball escape 20261107_1355",
+  "hook": "Sirf 1 gap... bahar nikal paayegi?",
+  "video_id": "bDq9D2DYcug",
+  "seed": 80205,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Sirf 1 gap... bahar nikal paayegi? 🔴 | Ball Escape #25 #shorts",
+  "series": "BALL ESCAPE #25",
+  "names": [
+   "K4KROT"
+  ],
+  "variant": "gap"
  }
 ]
