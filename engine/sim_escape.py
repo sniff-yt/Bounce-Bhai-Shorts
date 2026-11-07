@@ -19,7 +19,12 @@ def hsv(h, s=0.85, v=1.0):
 
 NSEG = 24                 # "break" variant: the ring is 24 bricks; each hit cracks one, at 0 hp it shatters
 
-def simulate(seed, gap, spin, grow, max_t=40.0, mode="gap"):
+TAIL = 1.0                # seconds after the escape (was 2.2): tight ending, then the loop cross-fade
+SLOW = 0.35               # escape moment plays at 0.35x (interpolated frames)
+LOOP_FADE = 0.4           # last 0.4 s cross-fades into frame 1: auto-replays read as rewatches
+
+def simulate(seed, gap, spin, grow, max_t=40.0, mode="gap", accel=0.0):
+    """accel: the ring spins up over time (angle = spin*(t + accel*t^2/2)) -> rising tension, real physics."""
     rnd = random.Random(seed)
     hp = [rnd.randint(2, 4) for _ in range(NSEG)] if mode == "break" else None
     if mode == "break": gap = 360 / NSEG
@@ -36,7 +41,7 @@ def simulate(seed, gap, spin, grow, max_t=40.0, mode="gap"):
             t += dt
             v[1] += G*dt
             p[0] += v[0]*dt; p[1] += v[1]*dt
-            gc = g0 + spin*t
+            gc = g0 + spin*(t + accel*t*t/2)
             dx, dy = p[0]-CX, p[1]-CY; d = math.hypot(dx, dy)
             rin = R - TH/2
             if escaped_at is None and d + r > rin and d < R + TH/2 + r:
@@ -64,15 +69,15 @@ def simulate(seed, gap, spin, grow, max_t=40.0, mode="gap"):
                         target = max(spd*1.0, 900)
                         v = [v[0]/spd*target, v[1]/spd*target]
                         bounces += 1; r = min(r + grow, r_max)
-                        events.append((t, bounces))
+                        events.append((t, bounces, spd))
                         if hp is not None and hp[kb] > 0:
                             hp[kb] -= 1
-                            if hp[kb] == 0: events.append((t, -1 - kb))      # brick shattered
+                            if hp[kb] == 0: events.append((t, -1 - kb, spd))      # brick shattered
                     p = [CX + nx*(rin - r), CY + ny*(rin - r)]
             if escaped_at is None and d - r > R + TH/2:
                 escaped_at = t
-        frames.append((p[0], p[1], r, (g0 + spin*t) % 360, bounces, tuple(hp) if hp else None))
-        if escaped_at is not None and t > escaped_at + 2.2:
+        frames.append((p[0], p[1], r, (g0 + spin*(t + accel*t*t/2)) % 360, bounces, tuple(hp) if hp else None))
+        if escaped_at is not None and t > escaped_at + TAIL:
             break
     return frames, events, escaped_at
 
@@ -84,7 +89,8 @@ def find(cfg):
     import time
     best, best_d, t0 = None, 1e9, time.time()
     for seed in range(s0, s0 + 4000):
-        fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"], mode=cfg.get("variant", "gap"))
+        fr, ev, esc = simulate(seed, cfg["gap_deg"], cfg["spin"], cfg["grow"], mode=cfg.get("variant", "gap"),
+                               accel=cfg.get("spin_accel", 0.03))
         if len(_hits(ev)) > 160:
             continue
         if esc and lo <= esc <= hi and len(_hits(ev)) >= 25:
@@ -122,6 +128,21 @@ def text_center(dr, y, txt, size, fill=(255,255,255), stroke=0, max_w=960):
         dr.text(((W*SS - w)/2, (y + i*size*1.18)*SS), l, font=f, fill=fill,
                 stroke_width=stroke*SS, stroke_fill=(0,0,0))
 
+def timeline(frames, esc):
+    """Output frame -> fractional sim frame. Real time, except the escape plays in slow motion."""
+    tl, x, n = [], 0.0, len(frames) - 1
+    a, b = ((esc - 0.35) * FPS, (esc + 0.4) * FPS) if esc else (1e9, 1e9)
+    while x <= n:
+        tl.append(x); x += SLOW if a <= x < b else 1.0
+    return tl
+
+def frame_at(frames, x):
+    k0 = int(x); k1 = min(k0 + 1, len(frames) - 1); u = x - k0
+    f0, f1 = frames[k0], frames[k1]
+    dg = ((f1[3] - f0[3] + 180) % 360) - 180
+    return (f0[0] + (f1[0] - f0[0]) * u, f0[1] + (f1[1] - f0[1]) * u, f0[2] + (f1[2] - f0[2]) * u,
+            (f0[3] + dg * u) % 360, f0[4], f0[5])
+
 def render(cfg, frames, esc, tmpdir, events=()):
     os.makedirs(tmpdir, exist_ok=True)
     trail = []
@@ -130,10 +151,21 @@ def render(cfg, frames, esc, tmpdir, events=()):
     hit_t = [e[0] for e in events if e[1] > 0]
     breaks = [(e[0], -1 - e[1]) for e in events if e[1] < 0]
     name = (cfg.get("names") or [None])[0]
-    for i, (x, y, r, gc, b, hp) in enumerate(frames):
-        t = i / FPS
+    tl = timeline(frames, esc)
+    sa, sb = ((esc - 0.35), (esc + 0.4)) if esc else (1e9, 1e9)
+    nfade = int(LOOP_FADE * FPS); first = None
+    for i, xf in enumerate(tl):
+        x, y, r, gc, b, hp = frame_at(frames, xf)
+        t = xf / FPS
+        slow = sa <= t < sb
         img = Image.new("RGB", (W*SS, H*SS), (10, 10, 18))
         dr = ImageDraw.Draw(img)
+        # tension: the background warms up and pulses on every bounce as time runs (and the ring spins up)
+        lh = max([h for h in hit_t if h <= t] or [-9])
+        heat = min(1.0, t / max(1.0, (esc or 30)))
+        pulse = math.exp(-(t - lh) * 9) if esc is None or t < esc else 0.0
+        bgc = (int(10 + 34*heat + 30*pulse*heat), int(10 + 6*pulse), int(18 + 10*pulse))
+        img.paste(bgc, (0, 0, W*SS, H*SS))
         hue = 0.02 + b*0.031
         col = hsv(hue)
         # ring
@@ -158,6 +190,10 @@ def render(cfg, frames, esc, tmpdir, events=()):
                     dr.polygon([((px - q)*SS, (py - q)*SS), ((px + q)*SS, (py - q*0.3)*SS), ((px - q*0.2)*SS, (py + q)*SS)], fill=ring_col)
         elif esc is None or t < esc:
             dr.arc(bb, gc + gap/2, gc + 360 - gap/2, fill=ring_col, width=TH*SS)
+        elif t - esc < 0.6:                            # the ring bursts outward as the ball gets out
+            age = t - esc; rr_ = R + 260*age
+            ca = tuple(int(10 + (cc - 10)*(1 - age/0.6)) for cc in ring_col)
+            dr.arc([(CX-rr_)*SS, (CY-rr_)*SS, (CX+rr_)*SS, (CY+rr_)*SS], gc + gap/2, gc + 360 - gap/2, fill=ca, width=max(2, int(TH*(1 - age/0.6)))*SS)
         # trail
         trail.append((x, y, r, col)); trail[:] = trail[-14:]
         for j, (tx, ty, tr, tc) in enumerate(trail[:-1]):
@@ -167,7 +203,7 @@ def render(cfg, frames, esc, tmpdir, events=()):
             dr.ellipse([(tx-rr)*SS, (ty-rr)*SS, (tx+rr)*SS, (ty+rr)*SS], fill=c)
         sx_ = sy_ = 1.0
         if jelly:     # jelly ball: squash + damped wobble after every bounce, glossy translucent core
-            lh = max([h for h in hit_t if h <= t] or [-9]); age = t - lh
+            age = t - lh
             if age < 0.8:
                 a_ = 0.28*math.exp(-age*7)*math.cos(age*34); sx_, sy_ = 1 + a_, 1 - a_*0.9
         dr.ellipse([(x-r*sx_)*SS, (y-r*sy_)*SS, (x+r*sx_)*SS, (y+r*sy_)*SS], fill=col,
@@ -176,8 +212,13 @@ def render(cfg, frames, esc, tmpdir, events=()):
             lc = tuple(min(255, cc + 90) for cc in col)
             dr.ellipse([(x-r*sx_*0.55+r*0.1)*SS, (y-r*sy_*0.55+r*0.15)*SS, (x+r*sx_*0.55+r*0.1)*SS, (y+r*sy_*0.55+r*0.15)*SS], fill=lc)
             dr.ellipse([(x-r*0.55)*SS, (y-r*0.6)*SS, (x-r*0.15)*SS, (y-r*0.3)*SS], fill=(255, 255, 255))
-        # texts (hook on frame 1)
-        text_center(dr, 200, cfg["hook"], 66, stroke=4)
+        if slow and esc and t >= esc - 0.35:           # slow-mo: escape flash ring around the ball
+            fa = max(0.0, 1 - abs(t - esc) / 0.45)
+            rr = r + 30 + 60*(1 - fa)
+            dr.ellipse([(x-rr)*SS, (y-rr)*SS, (x+rr)*SS, (y+rr)*SS], outline=(255, 230, 120), width=max(1, int(8*fa))*SS)
+        # texts: 0-second hook = big line on frame 1, settles to the normal title size after ~2 s
+        hk = min(1.0, max(0.0, (t - 1.8) / 0.3))
+        text_center(dr, int(170 + 30*hk), cfg["hook"], int(92 - 26*hk), stroke=5)
         text_center(dr, 420, f"Bounces: {b}", 76, fill=col, stroke=4)
         if cfg.get("series"):
             text_center(dr, 115, cfg["series"], 38, fill=(180, 200, 255), stroke=3)
@@ -186,41 +227,78 @@ def render(cfg, frames, esc, tmpdir, events=()):
         text_center(dr, 1840, "@bouncebhaiofficial", 32, fill=(200, 200, 220), stroke=3)
         if esc is not None and t >= esc:
             text_center(dr, 1420, cfg.get("win", "BAHAR NIKAL GAYI!"), 70, fill=(255, 220, 60), stroke=5)
+            text_center(dr, 1530, f"{b} bounce mein bahar!", 50, fill=col, stroke=4)
             if t >= esc + 0.5:   # on-video subscribe CTA on the end beat
-                dr.rounded_rectangle([290*SS, 1560*SS, 790*SS, 1660*SS], radius=26*SS, fill=(230, 30, 40))
-                text_center(dr, 1578, "SUBSCRIBE", 58, stroke=0)
-                text_center(dr, 1690, "Roz naye challenges!", 42, fill=(255, 220, 60), stroke=3)
+                dr.rounded_rectangle([320*SS, 1640*SS, 760*SS, 1730*SS], radius=26*SS, fill=(230, 30, 40))
+                text_center(dr, 1654, "SUBSCRIBE", 54, stroke=0)
         else:
             text_center(dr, 1420, cfg["cta"], 46, fill=(220,220,230), stroke=3)
+            tp0 = 6.0                                  # pinned-question pill (comment bait) mid-video
+            if tp0 <= t < tp0 + 2.6 and (esc is None or t < esc - 2):
+                ptxt = cfg.get("pin", "Escape se pehle guess comment karo!")
+                f_ = ImageFont.truetype(FONT, 38*SS); pw = min(980, dr.textlength(ptxt, font=f_)/SS + 60)
+                dr.rounded_rectangle([(540 - pw/2)*SS, 1520*SS, (540 + pw/2)*SS, 1582*SS], radius=31*SS, fill=(250, 250, 250))
+                text_center(dr, 1528, ptxt, 38, fill=(20, 20, 30), stroke=0, max_w=pw - 50)
         img = img.resize((W, H), Image.LANCZOS)
+        if i == 0: first = img.copy()
+        if i >= len(tl) - nfade:                       # loop: cross-fade into frame 1
+            img = Image.blend(img, first, (i - (len(tl) - nfade) + 1) / (nfade + 1))
         img.save(f"{tmpdir}/f{i:05d}.png", compress_level=1)
-    return len(frames)
+    return tl
 
-def audio(events, n_frames, esc, path):
-    sr = 44100; n = int(n_frames/FPS*sr) + sr
+def audio(events, tl, esc, path):
+    sr = 44100; T_end = len(tl)/FPS; n = int(T_end*sr) + sr
     buf = np.zeros(n, dtype=np.float32)
-    scale = [0, 2, 4, 7, 9]  # pentatonic
+    simt = np.array(tl)/FPS; outt = np.arange(len(tl))/FPS
+    O = lambda ts: float(np.interp(ts, simt, outt))        # sim time -> output time (slow-mo stretches it)
+    def add(x, t0, g):
+        s = int(t0*sr)
+        if s < 0 or s >= n: return
+        m = min(len(x), n - s); buf[s:s+m] += g*np.asarray(x[:m], np.float32)
+    scale = [0, 2, 4, 7, 9]  # pentatonic: every bounce climbs the scale (the melody IS the bounce count)
     R_ = np.random.RandomState(5)
-    for (t, b) in events:
+    tt_ = lambda d: np.arange(int(d*sr))/sr
+    # frame-1 sound: a punchy downbeat + a pulse that speeds up and gets louder as time runs (tension)
+    tk = tt_(0.25); kick = np.sin(2*np.pi*(120*tk - 120*tk*tk))*np.exp(-tk*16)
+    add(kick, 0.0, 0.5)
+    end_beat = O(esc) if esc else T_end
+    bt = 0.0
+    while bt < end_beat - 0.05:
+        p = min(1.0, bt/max(1.0, end_beat))
+        add(kick, bt, 0.16 + 0.22*p)
+        bt += 0.62 - 0.30*p                                 # 97 -> 187 bpm heartbeat
+    for e in events:
+        t, b = e[0], e[1]; spd = e[2] if len(e) > 2 else 900
+        o = O(t)
         if b < 0:      # brick shatter: short bright noise burst
-            L = int(0.35*sr); tt = np.arange(L)/sr
-            x = R_.randn(L)*np.exp(-tt*14); s = int(t*sr)
-            buf[s:s+L] += 0.35*x[:max(0, min(L, n-s))]
-            continue
+            tt = tt_(0.35); x = R_.randn(len(tt))*np.exp(-tt*14)
+            add(x, o, 0.35); continue
+        k = min(1.0, max(0.0, (spd - 800)/1400))          # impact speed -> brightness + level
         note = 60 + scale[b % 5] + 12*((b//5) % 3)
         fr = 440*2**((note-69)/12)
-        L = int(0.22*sr); tt = np.arange(L)/sr
-        tone = (np.sin(2*np.pi*fr*tt) + 0.3*np.sin(4*np.pi*fr*tt)) * np.exp(-tt*16)
-        s = int(t*sr); buf[s:s+L] += 0.28*tone[:max(0, min(L, n-s))]
+        tt = tt_(0.2)
+        tone = (np.sin(2*np.pi*fr*tt) + (0.25 + 0.35*k)*np.sin(4*np.pi*fr*tt)) * np.exp(-tt*(18 - 4*k))
+        tone[:int(0.003*sr)] += R_.randn(int(0.003*sr))*0.5*k        # crisp click transient on hard hits
+        add(tone, o, 0.2 + 0.14*k)
     if esc:
-        L = int(0.8*sr); tt = np.arange(L)/sr
+        oe = O(esc)
+        rl = 2.0; tt = tt_(rl); p = tt/rl                    # riser into the escape
+        riser = np.sin(2*np.pi*np.cumsum(220 + 900*p**2)/sr)*0.5 + R_.randn(len(tt))*0.25
+        add(riser*p**2, oe - rl, 0.2)
+        tt = tt_(0.7); add(np.sin(2*np.pi*(150*tt - 80*tt*tt))*np.exp(-tt*4), O(esc - 0.35), 0.3)   # slow-mo whoomp
+        tt = tt_(1.0)
         sweep = np.sin(2*np.pi*(500*tt + 700*tt**2)) * np.exp(-tt*3)
-        s = int(esc*sr); buf[s:s+L] += 0.3*sweep[:max(0, min(L, n-s))]
+        add(sweep, oe, 0.32)
+        boom = np.sin(2*np.pi*(80*tt - 25*tt*tt))*np.exp(-tt*3.5)
+        add(boom, oe, 0.4)
+        for h, fq in enumerate([523, 659, 784, 1046]):
+            tt = tt_(0.4); add(np.sin(2*np.pi*fq*tt)*np.exp(-tt*6), oe + 0.25 + h*0.08, 0.15)
     peak = np.max(np.abs(buf)) or 1
-    buf = buf/peak*0.8
+    buf = np.tanh(buf/peak*1.6)/np.tanh(1.6)*0.88
+    e = int(T_end*sr); fo = int(0.1*sr); buf[e-fo:e] *= np.linspace(1, 0.3, fo)
     with wave.open(path, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
-        w.writeframes((buf*32767).astype(np.int16).tobytes())
+        w.writeframes((buf[:e]*32767).astype(np.int16).tobytes())
 
 if __name__ == "__main__":
     cfg = json.load(open(sys.argv[1]))
@@ -228,10 +306,12 @@ if __name__ == "__main__":
     print("seed", seed, "escape", round(esc, 2), "bounces", len(_hits(events)), "frames", len(frames))
     tmp = cfg["out"] + ".frames"
     subprocess.run(["rm", "-rf", tmp])
-    n = render(cfg, frames, esc, tmp, events)
-    wav = cfg["out"] + ".wav"; audio(events, n, esc, wav)
+    tl = render(cfg, frames, esc, tmp, events)
+    wav = cfg["out"] + ".wav"; audio(events, tl, esc, wav)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{tmp}/f%05d.png",
                     "-i", wav, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-preset", "medium",
-                    "-c:a", "aac", "-b:a", "160k", "-shortest", cfg["out"]], check=True)
+                    "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", cfg["out"]], check=True)
     subprocess.run(["rm", "-rf", tmp, wav])
-    print("done", cfg["out"])
+    json.dump({"seed": seed, "escape": round(esc or 0, 2), "bounces": len(_hits(events)), "frames": len(tl),
+               "dur": round(len(tl) / FPS, 2)}, open(cfg["out"] + ".json", "w"))
+    print("done", cfg["out"], f"{len(tl)/FPS:.1f}s")

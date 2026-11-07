@@ -283,7 +283,9 @@ def simulate(seed, max_t=70.0):
 
 # ---------------- race analysis ----------------
 REPLAY_SPEED = 0.4        # photo-finish replay plays at 0.4x (interpolated, not duplicated frames)
-END_HOLD = 2.4            # end card seconds (last 0.5 s cross-fades into frame 1 for the loop)
+END_HOLD = 1.4            # end card: ~0.75 s result, whip-pan back up to the arena, last 0.4 s cross-fades into frame 1 (loop)
+LOOP_FADE = 0.4           # seconds of cross-fade into frame 1 at the very end (seamless auto-replay)
+SLOW_STEP = 0.45          # live slow-mo speed on genuine late overtakes (from the real physics, never staged)
 MARGIN = 14               # px a ball must be ahead before the displayed order flips (no flicker)
 
 def rank_track(frames, finish):
@@ -339,8 +341,8 @@ def score(c, frames, events, finish):
     win = f1 - COUNT
     spread = finish[order[2]] - f1
     k_cut, rep, photo = plan(frames, finish)
-    out = (k_cut + 1 + len(rep)) / FPS + END_HOLD + 0.8     # + up to ~0.8 s of impact frames / hit-stops
-    if out > 36 or win < 9: return -1
+    out = (k_cut + 1 + len(rep)) / FPS + END_HOLD + 1.6     # + impact frames / hit-stops + up to 2 live slow-mos
+    if out > 38 or win < 9: return -1
     ords = rank_track(frames, finish)
     changes, last = 0, None
     for k in range(int((COUNT + 1) * FPS), int(f1 * FPS) + 1):
@@ -355,7 +357,7 @@ def score(c, frames, events, finish):
     comeback = ords[max(0, int((f1 - 4) * FPS))].index(w)   # winner was 2nd/3rd four seconds before the line
     s = min(changes, 12) * 1.4 + tight * 14 + min(clashes, 30) * 0.3 + comeback * 3.5
     s += 12 if gap < 0.12 else 9 if gap < 0.3 else 5 if gap < 0.7 else -gap * 3
-    s += 8 if 22 <= out <= 34 else -abs(out - 28) * 2
+    s += 8 if 24 <= out <= 36 else -abs(out - 30) * 2
     s -= max(0, spread - 6) * 2
     return s, dict(dur=round(out, 1), gap=round(gap, 2), changes=changes, win=round(win, 1), spread=round(spread, 1),
                    tight=round(tight, 2), clashes=clashes, comeback=comeback)
@@ -495,10 +497,25 @@ def build(cfg, c, frames, events, finish):
     def fx_seq(kind, tk, spec):
         pt, nflash, power = spec
         return [(kind, tk, ("flash", q, pt, power)) for q in range(nflash)] + [(kind, tk, ("freeze", q, pt, power)) for q in range(8)]
-    shots = []
-    for k in range(kc + 1):
-        if k in hit_at: shots += fx_seq("live", float(k), hit_at[k])
-        shots.append(("live", float(k), None))
+    # live slow-mo: at most 2 genuine late lead changes (the physics decided them), each ~0.7 s of race time
+    slow_w = []
+    if not cfg.get("no_slowmo"):
+        for k in range(int((COUNT + 4) * FPS), min(k_cut, int((f1 - 1.1) * FPS)) + 1):
+            t_ = k / FPS
+            if ords[k][0] != ords[k - 1][0] and t_ > f1 - 9 and all(abs(t_ - (a + 0.35)) > 3.0 for a, b in slow_w):
+                if any(abs(te - t_) < 0.5 for (te, _, _) in hits): continue     # an impact frame already marks it
+                slow_w.append((t_ - 0.35, t_ + 0.35))
+        slow_w = slow_w[-2:]
+    in_slow = lambda t_: any(a <= t_ < b for a, b in slow_w)
+    tks, x = [], 0.0
+    while x < kc:
+        tks.append(x); x += SLOW_STEP if in_slow(x / OUT_FPS) else 1.0
+    tks.append(float(kc))
+    shots, prev = [], -1.0
+    for x in tks:
+        for k in sorted(hit_at):
+            if prev < k <= x: shots += fx_seq("live", float(k), hit_at[k])
+        shots.append(("live", x, None)); prev = x
     done = False
     for x in rep:
         if not done and x / OUT_FPS >= f1:
@@ -507,6 +524,7 @@ def build(cfg, c, frames, events, finish):
     rep_start = next((q for q, s_ in enumerate(shots) if s_[0] == "rep"), None)
     n_end = len(shots)
     shots += [("end", float(kc), None)] * int(END_HOLD * OUT_FPS)
+    n_pan0, n_pan1 = n_end + int(0.75 * OUT_FPS), n_end + int(1.0 * OUT_FPS)   # whip-pan back to the arena (loop)
     def P_at(tk):
         k0 = max(0, min(int(tk), len(F) - 1)); k1 = min(k0 + 1, len(F) - 1); a = max(0.0, tk - k0)
         return [(F[k0][i][0] * (1 - a) + F[k1][i][0] * a, F[k0][i][1] * (1 - a) + F[k1][i][1] * a) for i in range(3)]
@@ -535,7 +553,7 @@ def build(cfg, c, frames, events, finish):
         t = tk / OUT_FPS; P = P_at(tk)
         racing = [i for i in range(3) if i not in finish or finish[i] > t]
         top2 = sorted((racing or range(3)) if kind == "live" else range(3), key=lambda i: -P[i][1])[:2]
-        if kind == "rep": top2 = B_order[:2]          # replay stays on the winner and the runner-up
+        if kind == "rep" or (kind == "live" and t >= f1): top2 = B_order[:2]   # after the line: stay on the winner + runner-up
         ox = oy = 0.0
         if kind == "live" and fx is None:
             ys = [P[i][1] for i in top2]
@@ -543,7 +561,11 @@ def build(cfg, c, frames, events, finish):
             close = len(ys) > 1 and ys[0] - ys[1] < 260
             zt = 1.0
             if t > COUNT + 0.8 and close: zt = 1.24 if fy - ys[0] < 900 else 1.14
-            z += (zt - z) * a_z
+            sl = in_slow(t)
+            if sl: zt = 1.42                      # push in on the overtake while time slows down
+            dx_ = max(P[i][0] for i in top2) - min(P[i][0] for i in top2)
+            zt = min(zt, max(1.0, W / (dx_ + 2 * BR + 300)))   # never zoom so far that a ball leaves the frame
+            z += (zt - z) * (a_z * 2.2 if sl else a_z)
             xt = sum(P[i][0] for i in top2) / len(top2)
             xt = min(max(xt, W / (2 * z)), W - W / (2 * z))
             cx += (xt - cx) * a_pos
@@ -572,16 +594,20 @@ def build(cfg, c, frames, events, finish):
                 sh = 16 * (1 - (t - f1) / 0.12); ox, oy = math.sin(n * 1.9) * sh, math.cos(n * 2.3) * sh
             cam.append((rcx, rcy, rz, ox, oy))
         elif kind == "end":
-            cam.append((*cam_end, 0.0, 0.0))
+            u = min(1.0, max(0.0, (n - n_pan0) / max(1, n_pan1 - n_pan0)))
+            u = u * u * (3 - 2 * u)                # eased whip-pan up the course to the frame-1 view
+            ex, ey, ez = cam_end
+            cam.append((ex + (W / 2 - ex) * u, ey + (H / 2 - ey) * u, ez + (1.0 - ez) * u, 0.0, 0.0))
         else:
             cam.append((cx, cy, z, ox, oy))
-            if k_cut * 2 == tk: cam_end = (cx, cy, z)
+            if fx is None: cam_end = (cx, cy, z)
         if kind == "live" and fx is None and t >= COUNT:
             o = ords[min(int(tk / 2), len(ords) - 1)]
             for r_ in range(3): slot_y[o[r_]] += (slot[r_] - slot_y[o[r_]]) * 0.16
         slots.append(dict(slot_y))
     return dict(F=F, shots=shots, cam=cam, slots=slots, ords=ords, pops=pops, lead_changes=lead_changes,
-                k_cut=k_cut, kc=kc, rep=rep, rep_start=rep_start, photo=photo, f1=f1, win_i=win_i, order_final=order_final, places=placings(finish), n_end=n_end, P_at=P_at)
+                k_cut=k_cut, kc=kc, rep=rep, rep_start=rep_start, photo=photo, f1=f1, win_i=win_i, order_final=order_final,
+                places=placings(finish), n_end=n_end, n_pan0=n_pan0, n_pan1=n_pan1, slow_w=slow_w, P_at=P_at)
 
 # ---------------- drawing ----------------
 _R = {}
@@ -783,15 +809,45 @@ def draw_shot(n, look):
             a = int((70 if INTENSE else 45) + 50 * (0.5 + 0.5 * math.sin(n * 0.28)))
             vg = skia.GradientShader.MakeRadial((540, 960), 1150, [C((255, 0, 40), 0), C((255, 0, 40), 0), C((255, 20, 50), a)], [0.0, 0.62, 1.0])
             cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Shader=vg))
+    if live and fx is None and any(a <= t < b for a, b in B["slow_w"]):
+        cv.drawRect(skia.Rect(0, 0, W, H), look.vig)          # slow-mo: deeper vignette, the world tunnels in
     cv.drawImage(look.grain[n % 3], 0, 0)
     # ---- HUD: hook at the start, small 1-2-3 tag, one rare pop-up, end card ----
     if live:
         cv.drawRect(skia.Rect(0, 0, W, 300), skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, 300)], [C((0, 0, 0), 170), C((0, 0, 0), 0)])))
         ha = 255 if t < COUNT + 0.3 else max(0, 255 * (1 - (t - COUNT - 0.3) / 0.6))   # hook gone before the tag shows
-        if ha > 0:
-            text(cv, cfg.get("hook", "KAUN JEETEGA?"), 540, 110, 78, (255, 255, 255), stroke=10, alpha=ha)
+        if ha > 0:      # 0-second hook: big line on frame 1 (already readable), small punch-in pulse on the beat
+            pz = 1.0 + 0.06 * max(0.0, 1 - (t % 0.5) / 0.18) if t < COUNT else 1.0
+            text(cv, cfg.get("hook", "KAUN JEETEGA?"), 540, 165, 104 * pz, (255, 255, 255), stroke=12, alpha=ha)
+            if cfg.get("hook_sub"):
+                text(cv, cfg["hook_sub"], 540, 238, 54, (255, 226, 70), stroke=8, alpha=ha)
             if cfg.get("series"):
-                text(cv, cfg["series"], 540, 175, 40, (190, 205, 255), stroke=6, alpha=ha)
+                text(cv, cfg["series"], 540, 292, 34, (190, 205, 255), stroke=6, alpha=ha)
+            # colour chips under the countdown: "pick one" (fan names when the balls carry them)
+            f_ = skia.Font(TF, 40); gap_ = 34
+            ws = [f_.measureText(NAMES[i]) + 62 for i in range(3)]
+            x_ = 540 - (sum(ws) + 2 * gap_) / 2
+            for i in range(3):
+                r_ = skia.Rect(x_, 1040, x_ + ws[i], 1104)     # above the countdown, clear of the Shorts caption area
+                cv.drawRRect(skia.RRect.MakeRectXY(r_, 32, 32), skia.Paint(Color=C((0, 0, 0), 0.7 * ha), AntiAlias=True))
+                cv.drawRRect(skia.RRect.MakeRectXY(r_, 32, 32), skia.Paint(Color=C(PAL[i], ha), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=4))
+                cv.drawCircle(x_ + 32, 1072, 14, skia.Paint(Color=C(PAL[i], ha), AntiAlias=True))
+                text(cv, NAMES[i], x_ + 52, 1086, 40, lighten(PAL[i], 50), center=False, stroke=0, alpha=ha)
+                x_ += ws[i] + gap_
+            text(cv, cfg.get("pin", "Finish se pehle colour comment karo!"), 540, 1170, 42, (235, 235, 245), stroke=7, alpha=ha)
+        pa = 0                               # pinned-question pill mid-race (comment bait), never during the finish
+        tp0 = COUNT + 5.0
+        if tp0 <= t < tp0 + 2.6 and t < f1 - 2.0:
+            pa = 255 * min(1, (t - tp0) / 0.2, (tp0 + 2.6 - t) / 0.3)
+        if pa > 0:
+            ptxt = cfg.get("pin", "Finish se pehle colour comment karo!")
+            f_ = skia.Font(TF, 38); pw = min(1000, f_.measureText(ptxt) + 96)
+            rr_ = skia.Rect(540 - pw / 2, 228, 540 + pw / 2, 290)
+            cv.drawRRect(skia.RRect.MakeRectXY(rr_, 31, 31), skia.Paint(Color=C((255, 255, 255), 0.93 * pa), AntiAlias=True))
+            pin_ = skia.Path(); px0 = rr_.left() + 40
+            pin_.moveTo(px0 - 12, 248); pin_.lineTo(px0 + 12, 248); pin_.lineTo(px0, 272); pin_.close()   # down arrow
+            cv.drawPath(pin_, skia.Paint(Color=C((230, 30, 40), pa), AntiAlias=True))
+            text(cv, ptxt, 540 + 22, 272, 38 if pw < 1000 else 38 * 904 / (pw - 96), (20, 20, 30), stroke=0, alpha=pa)
         if t < COUNT:
             text(cv, str(int(COUNT) - int(t)), 540, 1500, 260 * (1.3 - (t % 1) * 0.3), (255, 226, 70), stroke=14)
         elif t < COUNT + 0.7:
@@ -815,58 +871,75 @@ def draw_shot(n, look):
             if 0 <= age < 0.9:
                 s_ = 1.25 - 0.25 * min(1, age / 0.15)
                 text(cv, "OVERTAKE!", 540, 400, 84 * s_, lighten(PAL[who], 30), stroke=11, alpha=255 * min(1, (0.9 - age) / 0.3))
+        if t >= f1 + 0.12 and not (fx and fx[0] == "flash"):
+            winner_banner(cv, B, cfg, min(1.0, (t - f1 - 0.12) / 0.15))
         top, bot = 330, 1650
-        cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(1000, top, 1024, bot), 12, 12), skia.Paint(Color=C((255, 255, 255), 50), AntiAlias=True))
+        cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(1000, top, 1024, bot), 12, 12), skia.Paint(Color=C((255, 255, 255), 85), AntiAlias=True))
         for q in range(2):
             for r2 in range(2):
                 cv.drawRect(skia.Rect(1000 + q * 12, bot + 8 + r2 * 12, 1012 + q * 12, bot + 20 + r2 * 12), skia.Paint(Color=C((255, 255, 255) if (q + r2) % 2 else (20, 20, 20))))
         for i in range(3):
             pr = max(0, min(1, (P[i][1] - 900) / (fy - 900)))
+            cv.drawCircle(1012, top + (bot - top) * pr, 21, skia.Paint(Color=C((8, 6, 18)), AntiAlias=True))
             cv.drawCircle(1012, top + (bot - top) * pr, 17, skia.Paint(Color=C(PAL[i]), AntiAlias=True))
     elif kind == "rep":
         cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(28, 52, 330, 104), 26, 26), skia.Paint(Color=C((0, 0, 0), 170), AntiAlias=True))
         if (n // 24) % 2 == 0:
             cv.drawCircle(58, 78, 11, skia.Paint(Color=C((255, 50, 60)), AntiAlias=True))
         text(cv, "SLOW-MO REPLAY", 80, 90, 32, (255, 255, 255), center=False, stroke=0)
+        if t >= f1 + 0.04 and fx is None:
+            winner_banner(cv, B, cfg, 1.0)
         ri = n - B["rep_start"]
         if 0 <= ri < 8 and fx is None:     # flash cut into the replay
             cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((255, 255, 255), 230 * (1 - ri / 8))))
     else:
         w = B["order_final"][0]
         pl = B["places"]
-        cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 215)))
-        if cfg.get("series"):      # same spot as on frame 1, so the loop cross-fade doesn't double it
-            text(cv, cfg["series"], 540, 175, 40, (190, 205, 255), stroke=6)
+        ea = 255 * (1 - min(1.0, max(0.0, (n - B["n_pan0"]) / max(1, B["n_pan1"] - B["n_pan0"]))))   # card fades as the camera whips up
+        cv.drawRect(skia.Rect(0, 0, W, H), skia.Paint(Color=C((0, 0, 0), 0.78 * ea)))
+        if ea > 0: end_card(cv, B, cfg, w, pl, finish, ea)
+    text(cv, "@bouncebhaiofficial", 540, 1880, 34, (200, 200, 220), stroke=5)
+
+def winner_banner(cv, B, cfg, a):
+    """Result line as soon as the winner crosses (same tie logic as the end card: TIE_GAP dead heats)."""
+    pl = B["places"]; tied = [i for i in B["order_final"] if pl[i] == 1]
+    s_ = 1.0 + 0.25 * (1 - a)
+    if len(tied) > 1:
+        wl = "TIE! " + " & ".join(NAMES[i] for i in tied); col = (255, 226, 70)
+    else:
+        wl = f"{NAMES[tied[0]]} JEET GAYA!"; col = lighten(PAL[tied[0]], 30)
+    text(cv, wl, 540, 400, min(100, int(1700 / max(1, len(wl)))) * s_, col, stroke=13, alpha=255 * a)
+
+def end_card(cv, B, cfg, w, pl, finish, ea):
+    if True:
         tied = [i for i in B["order_final"] if pl[i] == 1]
         if len(tied) > 1:          # dead heat: nobody is declared the winner
-            text(cv, "TIE!", 540, 780, 130, (255, 226, 70), stroke=14)
+            text(cv, "TIE!", 540, 780, 130, (255, 226, 70), stroke=14, alpha=ea)
             wl = " & ".join(NAMES[i] for i in tied) + " BARABAR!"
-            text(cv, wl, 540, 900, min(96, int(1700 / max(1, len(wl)))), (255, 255, 255), stroke=12)
+            text(cv, wl, 540, 900, min(96, int(1700 / max(1, len(wl)))), (255, 255, 255), stroke=12, alpha=ea)
         else:
             wl = f"{NAMES[w]} JEET GAYA!"
-            text(cv, wl, 540, 880, min(120, int(1700 / max(1, len(wl)))), PAL[w], stroke=14)
+            text(cv, wl, 540, 880, min(120, int(1700 / max(1, len(wl)))), PAL[w], stroke=14, alpha=ea)
         lead_t = {}
         for i in B["order_final"]: lead_t.setdefault(pl[i], finish[i])
         for r_, i in enumerate(B["order_final"]):
             rl = f"{['1st', '2nd', '3rd'][pl[i] - 1]}  {NAMES[i]}  {lead_t[pl[i]] - COUNT:0.2f}s"
-            text(cv, rl, 540, 1010 + r_ * 80, min(58, int(1650 / max(1, len(rl)))), lighten(PAL[i], 20), stroke=8)
-        if NAMES != [b[1] for b in BALLS]:
-            text(cv, "Comment karo, agli race mein tumhari ball!", 540, 1250, 40, (220, 220, 235), stroke=6)
-        cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(250, 1330, 830, 1440), 28, 28), skia.Paint(Color=C((230, 30, 40)), AntiAlias=True))
-        text(cv, "SUBSCRIBE", 540, 1406, 64, (255, 255, 255), stroke=0)
-        text(cv, cfg.get("sub_line", "Roz nayi race!"), 540, 1520, 46, (255, 226, 70), stroke=7)
-    text(cv, "@bouncebhaiofficial", 540, 1880, 34, (200, 200, 220), stroke=5)
+            text(cv, rl, 540, 1010 + r_ * 80, min(58, int(1650 / max(1, len(rl)))), lighten(PAL[i], 20), stroke=8, alpha=ea)
+        text(cv, "Tumhara colour jeeta? Comment karo!" if NAMES == [b[1] for b in BALLS] else "Comment karo, agli race mein tumhari ball!",
+             540, 1290, 40, (220, 220, 235), stroke=6, alpha=ea)
+        cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(290, 1360, 790, 1450), 26, 26), skia.Paint(Color=C((230, 30, 40), ea), AntiAlias=True))
+        text(cv, "SUBSCRIBE", 540, 1424, 56, (255, 255, 255), stroke=0, alpha=ea)
 
 def _render_chunk(args):
     lo, hi, tmp = args
     look = Look(_R["c"]["finish"])
-    shots = _R["B"]["shots"]; fade = int(0.5 * OUT_FPS); first = None
+    shots = _R["B"]["shots"]; fade = int(LOOP_FADE * OUT_FPS); first = None
     for n in range(lo, hi):
         if n >= len(shots) - fade and first is None:
             draw_shot(0, look); first = look.surf.makeImageSnapshot()
         draw_shot(n, look)
         if n >= len(shots) - fade:      # last 0.5 s cross-fades into frame 1: seamless loop
-            a = (n - (len(shots) - fade) + 1) / fade
+            a = (n - (len(shots) - fade) + 1) / (fade + 1)   # never a duplicate of frame 1 (no hitch on replay)
             look.cv.drawImage(first, 0, 0, LIN, skia.Paint(Alphaf=a))
         look.surf.makeImageSnapshot().save(f"{tmp}/f{n:05d}.jpg", skia.kJPEG, 95)
     return hi - lo
@@ -940,17 +1013,26 @@ def audio(events, finish, B, path):
         x = noise(d); return (x - lp(x, 4)) * np.exp(-np.arange(len(x)) / sr * 2.6)
     for s in range(int(COUNT)): add(tone(660, 0.18, 10), s, 0.35)
     add(tone(1320, 0.4, 6), COUNT, 0.4); add(whoosh(0.5), COUNT - 0.1, 0.25)
+    add(thump(90, 0.3), 0.0, 0.45)                   # sound on frame 1: a hit on the downbeat, not silence
     # beat from GO to the line (in output time), then a drum roll / riser / crowd build over the last ~5 s
     bpm = 150 if INTENSE else 132; step = 60 / bpm
     kk = tone(55, 0.25, 18); _c = tone(110, 0.08, 40); kk[:len(_c)] += _c * 0.5
     hat = noise(0.04) * np.exp(-np.arange(int(0.04 * sr)) / sr * 90)
     snare = lp(noise(0.12), 2) * np.exp(-np.arange(int(0.12 * sr)) / sr * 30) + tone(190, 0.12, 30) * 0.5
-    bt = COUNT
+    bt = 0.0                                          # the groove starts on frame 1 and builds toward the line
+    clap = lp(noise(0.09), 2) * np.exp(-np.arange(int(0.09 * sr)) / sr * 38)
+    nb = 0
     while bt < F1 - 0.02:
-        add(kk, bt, 0.5); add(hat, bt + step / 2, 0.09); bt += step
+        p = max(0.0, min(1.0, (bt - COUNT) / max(1.0, F1 - COUNT)))     # race progress 0..1 (output time)
+        add(kk, bt, 0.42 + 0.18 * p); add(hat, bt + step / 2, 0.07 + 0.05 * p)
+        if p > 0.45: add(hat, bt + step / 4, 0.05); add(hat, bt + 3 * step / 4, 0.05)   # 16th hats: second half
+        if p > 0.25 and nb % 2 == 1: add(clap, bt, 0.10 + 0.08 * p)                    # backbeat joins early
+        bt += step; nb += 1
     bass = [55, 55, 65.4, 49]
     for q, bt in enumerate(np.arange(COUNT, F1 - step, step * 4)):
-        add(tone(bass[q % 4], min(step * 4, F1 - bt), 1.2, "sq"), bt, 0.09)
+        p = (bt - COUNT) / max(1.0, F1 - COUNT)
+        up = 2 ** (round(p * 4) / 12)                      # bass line climbs a semitone per quarter of the race
+        add(tone(bass[q % 4] * up, min(step * 4, F1 - bt), 1.2, "sq"), bt, 0.08 + 0.06 * p)
     b0 = max(COUNT + 2, F1 - 5.0); bt = b0
     while bt < F1 - 0.03:
         p = (bt - b0) / max(0.1, F1 - b0); add(snare, bt, 0.06 + 0.16 * p); bt += step / (2 + 6 * p * p)
@@ -967,15 +1049,19 @@ def audio(events, finish, B, path):
     for q in fx_starts:
         add(boom(), q, 0.55); add(crash(0.9), q, 0.2); add(tone(2400, 0.5, 7), q + 0.02, 0.06)
     last = {}; last_cl = -1
+    click = noise(0.004) * np.linspace(1, 0, int(0.004 * sr))
     for (te, kind, i, d) in events:
         o = L(te)
         if o is None: continue
         if kind == "clash" and te > COUNT:
             if te - last_cl < 0.05: continue
-            last_cl = te; add(thump(130), o, 0.12 + 0.3 * min(1, d[3] / 1500))
+            k_ = min(1, d[3] / 1500)          # pitch + punch follow the real closing speed
+            last_cl = te; add(thump(100 + 120 * k_), o, 0.12 + 0.3 * k_); add(click, o, 0.25 * k_)
         elif kind in ("wall", "kick"):
             if te - last.get(i, -1) < 0.07: continue
-            last[i] = te; add(tone([523.3, 659.3, 784.0][i] * (1.5 if kind == "kick" else 1), 0.12, 26), o, 0.12)
+            k_ = min(1.0, d / 1900)           # impact speed -> pitch (0.8x..1.5x) and level
+            f_ = [523.3, 659.3, 784.0][i] * (1.5 if kind == "kick" else 1) * (0.8 + 0.7 * k_)
+            last[i] = te; add(tone(f_, 0.1, 30), o, 0.05 + 0.13 * k_); add(tone(f_ * 2.01, 0.05, 60), o, 0.35 * (0.05 + 0.13 * k_)); add(click, o, 0.12 * k_)
         elif kind == "bump":
             sw = np.arange(int(0.25 * sr)) / sr; add(np.sin(2 * np.pi * (300 * sw + 900 * sw ** 2)) * np.exp(-sw * 10), o, 0.24)
         elif kind == "glass":       # shatter: bright noise burst + glassy tinkles
@@ -988,6 +1074,11 @@ def audio(events, finish, B, path):
         if lc - lw < 0.6: continue
         lw = lc; add(whoosh(), (L(lc) or 0) - 0.2, 0.22)
     for (tp, who) in B["pops"]: add(whoosh(0.6), (L(tp) or 0) - 0.25, 0.35)
+    for (a, b) in B["slow_w"]:                     # slow-mo in: a pitched-down whoomp; out: a whoosh
+        oa, ob = L(a), L(b)
+        if oa is None or ob is None: continue
+        sw = np.arange(int(0.6 * sr)) / sr
+        add(np.sin(2 * np.pi * (160 * sw - 90 * sw * sw)) * np.exp(-sw * 4), oa, 0.3); add(whoosh(0.4), ob - 0.15, 0.25)
     if R0 is not None:
         d = E0 - R0; tt = np.arange(int(d * sr)) / sr
         drone = (np.sin(2 * np.pi * 55 * tt) + 0.5 * np.sin(2 * np.pi * 82.4 * tt)) * np.minimum(1, tt / 0.3) * np.minimum(1, (d - tt) / 0.2 + 0.01)
@@ -998,10 +1089,11 @@ def audio(events, finish, B, path):
         for (te, kind, i, dd) in events:
             if kind == "clash": add(thump(70, 0.4), Rp(te), 0.25)
     for h, fq in enumerate([523, 659, 784, 1046]):
-        add(tone(fq, 0.6, 4), E0 + 0.05 + h * 0.1, 0.22)
+        add(tone(fq, 0.45, 5), E0 + 0.03 + h * 0.08, 0.22)
+    add(whoosh(0.5)[::-1], B["n_pan0"] / OUT_FPS - 0.1, 0.3)        # rewind whoosh as the camera whips back to the start
     peak = np.abs(buf).max() or 1
     buf = np.tanh(buf / peak * 1.8) / np.tanh(1.8) * 0.9          # gentle limiter: punchy, never clips
-    fo = int(0.35 * sr); e = int(T_end * sr)
+    fo = int(0.12 * sr); e = int(T_end * sr)                       # short tail fade: the loop restarts on a downbeat
     buf[e - fo:e] *= np.linspace(1, 0, fo)
     with wave.open(path, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
@@ -1018,11 +1110,11 @@ def _try(seed):
 
 def excellent(b):
     return (b["changes"] >= 8 and b["gap"] < 0.15 and b["tight"] >= 0.6 and b["comeback"] >= 1
-            and 22 <= b["dur"] <= 34 and b["win"] >= 12)
+            and 24 <= b["dur"] <= 36 and b["win"] >= 12)
 
 def good_enough(b):
     return (b["changes"] >= (8 if INTENSE else 6) and b["gap"] < (0.2 if INTENSE else 0.3) and b["tight"] >= 0.55
-            and 22 <= b["dur"] <= 34 and b["win"] >= 12)
+            and 24 <= b["dur"] <= 36 and b["win"] >= 12)
 
 if __name__ == "__main__":
     import multiprocessing as mp

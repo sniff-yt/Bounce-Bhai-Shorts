@@ -93,7 +93,8 @@ SUB = {"hi_roman": "🔔 Subscribe karo: roz naye physics races & challenges �
        "en": "🔔 Subscribe for a new physics race & challenge every day 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1",
        "te": "🔔 సబ్‌స్క్రైబ్ చేయండి: రోజూ కొత్త ఫిజిక్స్ రేస్ & ఛాలెంజ్ 👉 https://www.youtube.com/@bouncebhaiofficial?sub_confirmation=1"}
 _q = lambda k: c["question"][k] if c["question"][k].rstrip().endswith("👇") else f"{c['question'][k]} 👇"
-desc = lambda k: f"{_q(k)}\n{SUB[k]}\n{FOOT[k]}\n{tags_line}"
+_dh = lambda k: ((c.get("desc_hook") or {}).get(k) or "").strip()      # curiosity line first (race/sim only)
+desc = lambda k: (f"{_dh(k)}\n" if _dh(k) else "") + f"{_q(k)}\n{SUB[k]}\n{FOOT[k]}\n{tags_line}"
 yt_t = c["yt_title"]
 
 body = {

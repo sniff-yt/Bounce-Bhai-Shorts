@@ -14,6 +14,10 @@ HOOKS = [
     (2, "99% log is race ka winner galat guess karte hain 😳🏁", "99% guess this winner wrong 😳🏁", "99% మంది ఈ విజేతను తప్పుగా ఊహిస్తారు 😳🏁", "99% लोग इस रेस का विनर गलत गेस करते हैं 😳🏁", "99% galat guess karte hain!"),
     (2, "Which ball wins? Guess karo 🏁", "Which ball wins? Guess now 🏁", "ఏ బాల్ గెలుస్తుంది? ఊహించండి 🏁", "कौन सी बॉल जीतेगी? गेस करो 🏁", "Which ball wins?"),
     (1, "Last second mein palat gaya? 😱", "Did it flip in the last second? 😱", "చివరి సెకనులో మారిపోయిందా? 😱", "लास्ट सेकंड में पलट गया? 😱", "Last tak dekhna!"),
+    # A/B (2026-11-07, retention upgrade): new curiosity families, tracked via cfg["ab"] in history.json
+    (2, "3 second mein winner pick karo ⏱️🏁", "Pick the winner in 3 seconds ⏱️🏁", "3 సెకన్లలో విజేతను ఎంచుకోండి ⏱️🏁", "3 सेकंड में विनर पिक करो ⏱️🏁", "3 sec mein pick karo!"),
+    (2, "Finish line pe kya hua dekho 😳🏁", "Watch what happens at the finish line 😳🏁", "ఫినిష్ లైన్ దగ్గర ఏమైందో చూడండి 😳🏁", "फिनिश लाइन पे क्या हुआ देखो 😳🏁", "Finish tak dekhna!"),
+    (1, "Tumhara colour jeetega? Comment karo 👇🏁", "Will your colour win? Comment 👇🏁", "మీ రంగు గెలుస్తుందా? కామెంట్ చేయండి 👇🏁", "तुम्हारा कलर जीतेगा? कमेंट करो 👇🏁", "Apna colour chuno!"),
 ]
 INTENSE_HOOKS = [
     (2, "Dil thaam ke dekhna 😤🔥", "Hold your breath for this one 😤🔥", "ఊపిరి బిగబట్టి చూడండి 😤🔥", "दिल थाम के देखना 😤🔥", "Winner guess karo!"),
@@ -43,7 +47,10 @@ def main(out):
     intense = rng.random() < 0.35   # ~1 in 3 races is an "intense" one
     jelly = rng.random() < 0.35     # ~1 in 3 races uses soft jelly balls (variety: new physics look)
     hist = _history()
-    _, hr, en, te, hd, sub = pick_hook(rng, INTENSE_HOOKS if intense else HOOKS, hist)
+    pool = INTENSE_HOOKS if intense else HOOKS
+    hk = pick_hook(rng, pool, hist)
+    _, hr, en, te, hd, sub = hk
+    ab = ("intense" if intense else "race") + f"-h{pool.index(hk)}"
     name = os.path.splitext(os.path.basename(out))[0]
     ep = 1 + sum(1 for h in hist if h.get("format") == "race" and h.get("video_id") and not h.get("deleted"))
     series = f"Ball Race #{ep}"
@@ -52,6 +59,12 @@ def main(out):
         # parallel search (all runner cores) for the closest, most contested race; on-screen text is only the hook
         "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 10 ** 6), "tries": 400, "budget": 170,
         "hook": "JELLY RACE!" if jelly else "KAUN JEETEGA?", "intense": intense, "jelly": jelly,
+        "hook_sub": sub, "ab": ab,     # 0-second hook: big line + sub-line on frame 1
+        "pin": "Finish se pehle colour comment karo!",   # on-screen pinned-question (font has no emoji)
+        "desc_hook": {"hi_roman": "Finish se pehle apna colour comment karo, phir dekho kaun jeeta 👀",
+                      "en": "Comment your colour before the finish, then watch who wins 👀",
+                      "te": "ఫినిష్ ముందే మీ రంగు కామెంట్ చేయండి, తర్వాత ఎవరు గెలిచారో చూడండి 👀",
+                      "hi": "फिनिश से पहले अपना कलर कमेंट करो, फिर देखो कौन जीता 👀"},
         "variant": "jelly" if jelly else ("intense" if intense else "classic"),
         "series": series.upper(), "sub_line": "Roz nayi race!",
         "yt_title": {k: f"{v} | {series} #shorts" for k, v in (("hi_roman", hr), ("en", en), ("te", te), ("hi", hd))},

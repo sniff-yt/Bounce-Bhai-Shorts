@@ -11,6 +11,9 @@ HOOKS = [
     ("Ye ball fasi rahegi ya nikalegi? 😱", "Will the ball stay trapped? 😱", "బాల్ చిక్కుకుంటుందా? 😱", "ये बॉल फंसी रहेगी या निकलेगी? 😱"),
     ("Sirf 1 gap... bahar nikal paayegi? 🔴", "Only 1 gap... can it get out? 🔴", "ఒకే గ్యాప్... బయటపడుతుందా? 🔴", "सिर्फ 1 गैप... बाहर निकल पाएगी? 🔴"),
     ("Guess karo: kab nikalegi? ⏱️", "Guess when it escapes ⏱️", "ఎప్పుడు బయటపడుతుందో ఊహించండి ⏱️", "गेस करो: कब निकलेगी? ⏱️"),
+    # A/B (2026-11-07, retention upgrade): new curiosity families, tracked via cfg["ab"]
+    ("Ring tez hota ja raha hai... nikal paayegi? 😰", "The ring keeps speeding up... can it escape? 😰", "రింగ్ వేగం పెరుగుతోంది... బయటపడుతుందా? 😰", "रिंग तेज़ होता जा रहा है... निकल पाएगी? 😰"),
+    ("Kitne bounce? Pehle guess, phir dekho 👀", "How many bounces? Guess first, then watch 👀", "ఎన్ని బౌన్సులు? ముందు ఊహించండి, తర్వాత చూడండి 👀", "कितने बाउंस? पहले गेस, फिर देखो 👀"),
 ]
 BREAK_HOOKS = [
     ("Deewar tod ke nikal paayegi? 🧱", "Can it smash its way out? 🧱", "గోడ పగలగొట్టి బయటపడుతుందా? 🧱", "दीवार तोड़ के निकल पाएगी? 🧱"),
@@ -32,10 +35,10 @@ def main(out):
     # never reuse the last 2 escape titles: 3 identical "Is gap se nikal paayegi?" in a row (2026-10-28) -> 208, 0, 0 views
     recent = [h.get("yt_title") or h.get("hook", "") for h in hist if h.get("format") == "sim"][-2:]
     cands = [h for h in HOOKS if not any(r.startswith(h[0].rsplit(" ", 1)[0]) for r in recent)] or HOOKS
-    hr, en, te, hd = rng.choice(cands)
+    hk = rng.choice(cands); hr, en, te, hd = hk; ab = f"sim-h{HOOKS.index(hk)}"
     variant = "break" if rng.random() < 0.35 else "gap"     # ~1 in 3: no gap, the ball must SMASH its way out
     if variant == "break":
-        hr, en, te, hd = rng.choice(BREAK_HOOKS)
+        hk = rng.choice(BREAK_HOOKS); hr, en, te, hd = hk; ab = f"break-h{BREAK_HOOKS.index(hk)}"
     jelly = rng.random() < 0.35
     name = os.path.splitext(os.path.basename(out))[0]
     ep = 1 + sum(1 for h in hist if h.get("format") == "sim" and h.get("video_id") and not h.get("deleted"))
@@ -45,7 +48,13 @@ def main(out):
         "out": out.replace(".json", ".mp4"), "seed": rng.randint(1, 99999),
         "hook": hr.rsplit(" ", 1)[0], "cta": rng.choice(CTAS),
         "gap_deg": rng.randint(24, 40), "spin": rng.randint(40, 110), "grow": round(rng.uniform(0.8, 2.0), 2),
-        "target": [22, 30], "variant": variant, "jelly": jelly,
+        "target": [20, 28], "variant": variant, "jelly": jelly, "ab": ab,
+        "spin_accel": 0.03,     # the ring spins up over time (tension); escape plays in slow-mo; loops into frame 1
+        "pin": "Escape se pehle guess comment karo!",
+        "desc_hook": {"hi_roman": "Escape se pehle guess comment karo: kitne bounce lagenge? 👀",
+                      "en": "Comment your guess before it escapes: how many bounces? 👀",
+                      "te": "బయటపడే ముందే మీ అంచనా కామెంట్ చేయండి: ఎన్ని బౌన్సులు? 👀",
+                      "hi": "एस्केप से पहले गेस कमेंट करो: कितने बाउंस लगेंगे? 👀"},
         "series": series.upper(),
         "yt_title": {k: f"{v} | {series} #shorts" for k, v in (("hi_roman", hr), ("en", en), ("te", te), ("hi", hd))},
         "question": {"hi_roman": "Tumhara guess kya tha? Kitne bounce? 👇", "en": "What was your guess? How many bounces? 👇",
