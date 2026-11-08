@@ -4,6 +4,9 @@ usage: python scripts/make_race.py out/short_x.json
 """
 import json, random, sys, os
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import race_teams
+
 # Hook = YouTube title (curiosity / challenge). Weights follow real views (scripts/insights.py, 2026-10-28):
 # "Is race ka winner guess karo" median 944 views (3 posts) -> weight 4; "Kaun jeetega? Apna colour chuno" 421;
 # "Red, Blue ya Green? Race shuru!" median 160 (4 posts, one 26) -> dropped.
@@ -24,6 +27,18 @@ INTENSE_HOOKS = [
     (2, "Photo finish! Winner guess karo 😱🔥", "Photo finish! Guess the winner 😱🔥", "ఫోటో ఫినిష్! విజేతను ఊహించండి 😱🔥", "फोटो फिनिश! विनर गेस करो 😱🔥", "Winner guess karo!"),
     (1, "Sabse INTENSE race! Kaun jeetega? 🔥", "The most INTENSE race! Who wins? 🔥", "అత్యంత ఉత్కంఠభరిత రేస్! ఎవరు గెలుస్తారు? 🔥", "सबसे इंटेंस रेस! कौन जीतेगा? 🔥", "Kaun jeetega?"),
 ]
+# Team races (owner 2026-11-08): ~60% of races label the balls as IPL teams / states / cities / countries.
+# {m} = "CSK vs MI vs RCB", {e} = 🏏 (IPL) or 🔥. (weight, Hinglish, English, Telugu, Devanagari)
+TEAM_SHARE = 0.6
+TEAM_HOOKS = [
+    (3, "{m} {e} Kaun jeetega?", "{m} {e} Who wins?", "{m} {e} ఎవరు గెలుస్తారు?", "{m} {e} कौन जीतेगा?"),
+    (3, "{m} {e} Apni team chuno 👇", "{m} {e} Pick your team 👇", "{m} {e} మీ టీమ్ ఎంచుకోండి 👇", "{m} {e} अपनी टीम चुनो 👇"),
+    (2, "{m} {e} 99% galat guess karte hain 😳", "{m} {e} 99% guess this wrong 😳", "{m} {e} 99% మంది తప్పుగా ఊహిస్తారు 😳", "{m} {e} 99% गलत गेस करते हैं 😳"),
+    (1, "{m} {e} Last tak dekhna 😱", "{m} {e} Watch till the end 😱", "{m} {e} చివరి వరకు చూడండి 😱", "{m} {e} लास्ट तक देखना 😱"),
+]
+TEAM_PINS = ["Finish se pehle apni team comment karo!", "Comment your team before the finish!"]
+POOL_TAGS = {"ipl": (["ipl", "ipl 2026", "cricket"], "#ipl #cricket"), "state": (["india", "indian states"], "#india"),
+             "city": (["india", "indian cities"], "#india"), "country": (["countryballs", "country race"], "#countryballs")}
 CTAS = ["Tumhara colour jeeta? Comment karo!", "Kaunsa colour tha tumhara? Comment!", "Sahi guess kiya? Comment karo!"]
 HIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "history.json")
 
@@ -40,6 +55,40 @@ def pick_hook(rng, pool, hist):
     recent = [h.get("yt_title", "") for h in hist if h.get("format") == "race"][-2:]
     cands = [h for h in pool if not any(r.startswith(h[1]) for r in recent)] or pool
     return rng.choices(cands, weights=[h[0] for h in cands])[0]
+
+
+def team_overlay(rng, hist, series, ab_variant):
+    """cfg keys that turn a colour/fan race into a team race (names + colours only, physics untouched)."""
+    pool, teams = race_teams.pick_team_race(rng, hist)
+    disp = [t["name"] if pool == "ipl" else t["name"].title() for t in teams]
+    m = " vs ".join(disp)
+    e = "🏏" if pool == "ipl" else "🔥"
+    last = [x.get("ab", "") for x in hist if x.get("teams")][-1:]          # never the same title family twice in a row
+    cands = [h for i, h in enumerate(TEAM_HOOKS) if not (last and f"-h{i}-" in last[0])] or TEAM_HOOKS
+    hk = rng.choices(cands, weights=[h[0] for h in cands])[0]
+    big = " vs ".join(t["name"] for t in teams)
+    if len(big) > 20: big = " vs ".join(t["abbr"] for t in teams)
+    ptags, phash = POOL_TAGS[pool]
+    ttags = [t["tags"][0] for t in teams] + [x for t in teams for x in t["tags"][1:2]]
+    names = [t["name"] for t in teams]
+    return {
+        "race_kind": "team", "team_pool": pool, "teams": names, "names": names,
+        "balls": [race_teams.ball_spec(t) for t in teams],
+        "hook": big, "hook_sub": rng.choice(["Apni team chuno!", "Kaun jeetega? Team chuno!"]),
+        "pin": rng.choice(TEAM_PINS), "ab": f"team-{pool}-h{TEAM_HOOKS.index(hk)}-{ab_variant}",
+        "yt_title": {k: f"{v.format(m=m, e=e)} | {series} #shorts" for k, v in zip(("hi_roman", "en", "te", "hi"), hk[1:])},
+        "desc_hook": {"hi_roman": f"{m}: finish se pehle apni team comment karo, phir dekho kaun jeeta 👀",
+                      "en": f"{m}: comment your team before the finish, then watch who wins 👀",
+                      "te": f"{m}: ఫినిష్ ముందే మీ టీమ్ కామెంట్ చేయండి, తర్వాత ఎవరు గెలిచారో చూడండి 👀",
+                      "hi": f"{m}: फिनिश से पहले अपनी टीम कमेंट करो, फिर देखो कौन जीता 👀"},
+        "question": {"hi_roman": "Tumhari team kaunsi thi? 👇", "en": "Which team did you pick? 👇",
+                     "te": "మీరు ఏ టీమ్ ఎంచుకున్నారు? 👇", "hi": "तुम्हारी टीम कौनसी थी? 👇"},
+        "comment": f"{series}: {m}! Finish se pehle apni team comment karo 👇 " + " / ".join(names) + "?\n"
+                   "Sahi nikla? Subscribe karo, roz nayi race aati hai 🔔",
+        "tags": ptags + ttags + ["ball race", "marble race", "guess the winner", "bounce bhai", "satisfying", "physics simulation", "race"],
+        "hashtags": f"#shorts {phash} " + " ".join(t["hash"] for t in teams) + " #ballrace #marblerace #guessthewinner",
+        "genre_tag": "#ballrace",
+    }
 
 
 def main(out):
@@ -78,9 +127,19 @@ def main(out):
         "hashtags": "#shorts #marblerace #ballrace #guessthewinner #satisfying #physics #simulation",
         "genre_tag": "#marblerace",
     }
+    # Team race (~60%) or fan-name race; a fan race with too few fresh commenters falls back to its team overlay
+    # (scripts/fan_names.py), and a pinned fan name (data/pin_names.json) turns a team race back into a fan race.
+    team = team_overlay(rng, hist, series, cfg["variant"])
+    if rng.random() < TEAM_SHARE:
+        cfg["fan_alt"] = {k: cfg.get(k) for k in team}
+        cfg.update(team)
+    else:
+        cfg["race_kind"] = "fan"
+        cfg["team_alt"] = team
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(cfg, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print("race:", "INTENSE" if intense else "", "JELLY" if jelly else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"])
+    print("race:", cfg["race_kind"], "INTENSE" if intense else "", "JELLY" if jelly else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"],
+          "| team fallback:" if cfg.get("team_alt") else "", (cfg.get("team_alt") or {}).get("teams", ""))
 
 
 if __name__ == "__main__":

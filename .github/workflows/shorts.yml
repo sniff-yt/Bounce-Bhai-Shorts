@@ -2,8 +2,9 @@ name: Bounce Bhai Shorts
 
 on:
   schedule:
-    # GitHub silently drops many scheduled runs, so wake 3x an hour; the gate posts at most once per ~50 min,
-    # and only in the IST hours listed in data/schedule.json.
+    # GitHub silently drops many scheduled runs, so wake 3x an hour; the gate posts only when the last Short/promo is
+    # >= data/schedule.json "min_gap_min" old (240 = ~4 Shorts a day since 2026-11-08; was 50), and only in the IST
+    # hours listed there. Long-form stories never count.
     - cron: "10 * * * *"
     - cron: "30 * * * *"
     - cron: "50 * * * *"
@@ -42,11 +43,15 @@ jobs:
           if ! python3 -c "
           import json, datetime as d
           try:
+              gap = float(json.load(open('data/schedule.json')).get('min_gap_min', 240))
+          except Exception:
+              gap = 240
+          try:
               h = [x for x in json.load(open('data/history.json')) if x.get('video_id') and x.get('format') != 'long_story']
               age = (d.datetime.now(d.timezone.utc) - d.datetime.fromisoformat(h[-1]['date'])).total_seconds() / 60
           except Exception:
               age = 1e9
-          print(f'last post {age:.0f} min ago'); raise SystemExit(0 if age >= 50 else 1)"; then
+          print(f'last post {age:.0f} min ago (gate {gap:.0f} min)'); raise SystemExit(0 if age >= gap else 1)"; then
             echo "Posted recently, skipping"; echo go=false >> "$GITHUB_OUTPUT"; exit 0
           fi
           if python3 -c "import json,sys;h=json.load(open('data/schedule.json')).get('hours_ist',[]);sys.exit(0 if int(sys.argv[1]) in h else 1)" "$H"; then

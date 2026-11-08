@@ -166,7 +166,9 @@ history.append({"date": datetime.datetime.now(datetime.timezone.utc).isoformat()
                 "video_id": story.get("video_id"), "seed": story.get("seed"),
                 "format": story.get("format", "story"), "genre": story.get("genre"), "topic": story.get("topic"),
                 "yt_title": (story.get("yt_title") or {}).get("hi_roman"), "series": story.get("series"),
-                "names": story.get("names"), "variant": story.get("variant"), "ab": story.get("ab")})
+                "names": story.get("names"), "variant": story.get("variant"), "ab": story.get("ab"),
+                "race_kind": story.get("race_kind"), "teams": story.get("teams"), "team_pool": story.get("team_pool"),
+                "race_fallback": story.get("race_fallback")})
 with open(history_path, "w", encoding="utf-8") as stream:
     json.dump(history, stream, ensure_ascii=False, indent=1)
     stream.write("\n")

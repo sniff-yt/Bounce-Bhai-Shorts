@@ -302,8 +302,10 @@ def run_actions(actions, videos):
         elif t == "schedule":
             hrs = sorted({int(x) for x in a.get("hours_ist", []) if str(x).lstrip("-").isdigit() and 0 <= int(x) <= 23})
             if hrs:
-                json.dump({"hours_ist": hrs, "note": "IST hours when a scheduled run may post (runs start ~:40)"},
-                          open(SCHEDULE, "w"), indent=1)
+                try: sch = json.load(open(SCHEDULE))       # keep min_gap_min (Shorts cadence gate) and notes
+                except Exception: sch = {}
+                sch.update({"hours_ist": hrs, "note": "IST hours when a scheduled run may post (runs start ~:40)"})
+                json.dump(sch, open(SCHEDULE, "w"), indent=1)
                 changed.append(SCHEDULE)
                 done.append("posting hours (IST) now " + ", ".join(map(str, hrs)))
     return done, changed

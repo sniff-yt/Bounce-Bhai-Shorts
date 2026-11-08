@@ -23,6 +23,9 @@ COUNT = 2.0               # countdown seconds (gate closed): short, so the race 
 INTENSE = False           # "intense" races: harder physics, closer finishes, red pulse, faster beat
 JELLY = False             # "jelly" races: soft-body look (balls squash and wobble on every hit), bouncier walls
 NAMES = [b[1] for b in BALLS]   # labels on screen; cfg "names" swaps in commenter names (fan-named balls)
+FLAGS = [None, None, None]      # team races (cfg "balls"): painted team colours (bands / dot / cross), names + colours only
+TAGS = None                     # short label drawn over each moving ball (team abbr / fan name); None = colour race
+TEAM = False
 
 # ---------------- course ----------------
 def make_course(rnd):
@@ -447,7 +450,25 @@ class Look:
         self.vig = skia.Paint(Shader=skia.GradientShader.MakeRadial((540, 900), 1250, [C((0, 0, 0), 0), C((0, 0, 0), 0), C((0, 0, 0), 175)], [0.0, 0.55, 1.0]))
         self.bg = skia.Paint(Shader=skia.GradientShader.MakeLinear([(0, 0), (0, H)], [C((30, 10, 58)), C((4, 16, 40))]))
 
-def ball(cv, x, y, col, vx, vy, lead, wob=None):
+def paint_flag(cv, fl):
+    """Team colours inside the (already clipped) ball: bands, optional dot / cross, then a cel shadow so it stays a ball."""
+    bands = fl["bands"]; w = fl.get("w") or [1 / len(bands)] * len(bands)
+    a = -BR
+    for col_, wi in zip(bands, w):
+        b_ = a + 2 * BR * wi
+        r_ = skia.Rect(a, -BR, b_ + 0.5, BR) if fl.get("dir") == "v" else skia.Rect(-BR, a, BR, b_ + 0.5)
+        cv.drawRect(r_, skia.Paint(Color=C(col_), AntiAlias=True)); a = b_
+    if fl.get("cross"):
+        cv.drawRect(skia.Rect(-BR, -BR * 0.17, BR, BR * 0.17), skia.Paint(Color=C(fl["cross"])))
+        cv.drawRect(skia.Rect(-BR * 0.17, -BR, BR * 0.17, BR), skia.Paint(Color=C(fl["cross"])))
+    if fl.get("dot"):
+        cv.drawCircle(0, 0, BR * 0.36, skia.Paint(Color=C(fl["dot"]), AntiAlias=True))
+    sh = skia.Path(); sh.addCircle(0, 0, BR + 2); sh.addCircle(-BR * 0.2, -BR * 0.22, BR * 0.93)
+    sh.setFillType(skia.PathFillType.kEvenOdd)
+    cv.drawPath(sh, skia.Paint(Color=C((0, 0, 0), 95), AntiAlias=True))       # hard cel shadow crescent
+
+
+def ball(cv, x, y, col, vx, vy, lead, wob=None, flag=None):
     """Cel-shaded anime ball: bold outline, hard shadow crescent, rim light, specular highlight, speed smear.
     wob = (age, strength) of the last hit: jelly balls squash and wobble (damped spring)."""
     sp = math.hypot(vx, vy)
@@ -466,6 +487,7 @@ def ball(cv, x, y, col, vx, vy, lead, wob=None):
     cv.save(); cv.clipPath(skia.Path().addCircle(0, 0, BR), skia.ClipOp.kIntersect, True)
     cv.drawCircle(0, 0, BR, skia.Paint(Color=C(darken(col, 0.58)), AntiAlias=True))        # shadow tone
     cv.drawCircle(-BR * 0.2, -BR * 0.22, BR * 0.93, skia.Paint(Color=C(col), AntiAlias=True))  # lit tone (hard cel edge)
+    if flag: paint_flag(cv, flag)
     if JELLY:   # jelly: translucent glossy core + inner bubbles
         cv.drawCircle(BR * 0.1, BR * 0.15, BR * 0.6, skia.Paint(Color=C(lighten(col, 90), 120), AntiAlias=True, MaskFilter=skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, 8)))
         for (bx_, by_, br_) in ((0.35, 0.3, 0.12), (-0.1, 0.45, 0.08), (0.45, -0.05, 0.07)):
@@ -761,7 +783,7 @@ def draw_shot(n, look):
             hs = _R["imp"].get(i, [])
             k_ = next((q for q in range(len(hs) - 1, -1, -1) if hs[q][0] <= t), None)
             if k_ is not None and t - hs[k_][0] < 0.8: wob = (t - hs[k_][0], hs[k_][1])
-        ball(cv, P[i][0], P[i][1], PAL[i], *vel[i], i == leader and t > COUNT + 0.6 and kind != "end", wob)
+        ball(cv, P[i][0], P[i][1], PAL[i], *vel[i], i == leader and t > COUNT + 0.6 and kind != "end", wob, FLAGS[i])
     cv.restore()
     # ---- grade (contrast + saturation) and bloom ----
     img = surf.makeImageSnapshot()
@@ -780,6 +802,29 @@ def draw_shot(n, look):
             for _ in range(16):
                 x0 = rr.choice([rr.uniform(0, 210), rr.uniform(870, W)]); y0 = rr.uniform(0, H); L = rr.uniform(160, 420)
                 cv.drawLine(x0, y0, x0 - ux * L, y0 - uy * L, skia.Paint(Color=C((255, 255, 255), a), AntiAlias=True, StrokeWidth=rr.uniform(2, 5), StrokeCap=rc))
+    # ---- team / fan labels riding on the balls (screen space, constant size, kept out of the Shorts UI zones) ----
+    if TAGS and fx is None and kind != "end":
+        la_ = 255 if kind != "live" else min(255, 255 * t / 0.3 + 60)
+        f_ = skia.Font(TF, 34); boxes = []
+        for i in sorted(range(3), key=lambda i: -P[i][1]):
+            sx, sy = (P[i][0] - cx) * z + W / 2 + ox, (P[i][1] - cy) * z + H / 2 + oy
+            if not (-60 < sx < W + 60 and 200 < sy < 1520): continue
+            lb = la_ * min(1.0, (1520 - sy) / 120)              # fade out before the Shorts caption / button zone
+            tw = f_.measureText(TAGS[i]); bw = tw + 30
+            bx = min(max(sx - bw / 2, 12), W - 60 - bw)        # clear of the right-hand progress bar
+            by = sy - (BR + 8) * z - 50
+            by = max(by, 330)                                  # never in the top UI zone (ranking tags / hook)
+            if t >= f1 and by < 440: continue                  # keep the "<TEAM> JEET GAYA!" banner (y 400) clean
+            for (ox_, oy_, ow_) in boxes:                      # stack labels of balls that are side by side
+                if bx < ox_ + ow_ and ox_ < bx + bw and abs(by - oy_) < 46:
+                    by = oy_ - 48 if oy_ - 48 >= 330 else oy_ + 48
+            boxes.append((bx, by, bw))
+            rr_ = skia.RRect.MakeRectXY(skia.Rect(bx, by, bx + bw, by + 44), 22, 22)
+            cv.drawRRect(rr_, skia.Paint(Color=C((6, 6, 16), 0.82 * lb), AntiAlias=True))
+            cv.drawRRect(rr_, skia.Paint(Color=C(PAL[i], lb), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=4))
+            text(cv, TAGS[i], bx + 15, by + 34, 34, (255, 255, 255), center=False, stroke=0, alpha=lb)
+            tri = skia.Path(); tri.moveTo(sx - 9, by + 44); tri.lineTo(sx + 9, by + 44); tri.lineTo(sx, by + 55); tri.close()
+            if bx + 10 < sx < bx + bw - 10 and by + 55 < sy - BR * z: cv.drawPath(tri, skia.Paint(Color=C(PAL[i], lb), AntiAlias=True))
     # ---- impact frame ----
     if fx is not None:
         mode, q, pt, power = fx
@@ -824,15 +869,18 @@ def draw_shot(n, look):
             if cfg.get("series"):
                 text(cv, cfg["series"], 540, 292, 34, (190, 205, 255), stroke=6, alpha=ha)
             # colour chips under the countdown: "pick one" (fan names when the balls carry them)
-            f_ = skia.Font(TF, 40); gap_ = 34
-            ws = [f_.measureText(NAMES[i]) + 62 for i in range(3)]
+            fs_ = 40; gap_ = 34
+            while True:      # long team / fan names: shrink the chips until all three fit
+                f_ = skia.Font(TF, fs_); ws = [f_.measureText(NAMES[i]) + 62 for i in range(3)]
+                if sum(ws) + 2 * gap_ <= 1010 or fs_ <= 26: break
+                fs_ -= 2; gap_ = 22
             x_ = 540 - (sum(ws) + 2 * gap_) / 2
             for i in range(3):
                 r_ = skia.Rect(x_, 1040, x_ + ws[i], 1104)     # above the countdown, clear of the Shorts caption area
                 cv.drawRRect(skia.RRect.MakeRectXY(r_, 32, 32), skia.Paint(Color=C((0, 0, 0), 0.7 * ha), AntiAlias=True))
                 cv.drawRRect(skia.RRect.MakeRectXY(r_, 32, 32), skia.Paint(Color=C(PAL[i], ha), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=4))
                 cv.drawCircle(x_ + 32, 1072, 14, skia.Paint(Color=C(PAL[i], ha), AntiAlias=True))
-                text(cv, NAMES[i], x_ + 52, 1086, 40, lighten(PAL[i], 50), center=False, stroke=0, alpha=ha)
+                text(cv, NAMES[i], x_ + 52, 1072 + fs_ * 0.35, fs_, lighten(PAL[i], 50), center=False, stroke=0, alpha=ha)
                 x_ += ws[i] + gap_
             text(cv, cfg.get("pin", "Finish se pehle colour comment karo!"), 540, 1170, 42, (235, 235, 245), stroke=7, alpha=ha)
         pa = 0                               # pinned-question pill mid-race (comment bait), never during the finish
@@ -857,7 +905,7 @@ def draw_shot(n, look):
             o = B["ords"][min(int(tk / 2), len(B["ords"]) - 1)]; sy_ = B["slots"][n]
             pl_ = B["places"]
             for r_ in range(3):
-                i = o[r_]; col, name = PAL[i], NAMES[i]; y0 = sy_[i]
+                i = o[r_]; col, name = PAL[i], (TAGS[i] if TEAM else NAMES[i]); y0 = sy_[i]   # team races: short codes (IND, CSK)
                 if i in finish and finish[i] <= t and pl_[i] - 1 < r_: r_ = pl_[i] - 1   # tied finishers share the number
                 rect = skia.Rect(28, y0 - 23, max(232, 136 + 19 * len(name)), y0 + 23)
                 cv.drawRRect(skia.RRect.MakeRectXY(rect, 23, 23), skia.Paint(Color=C((0, 0, 0), 0.62 * la), AntiAlias=True))
@@ -925,7 +973,7 @@ def end_card(cv, B, cfg, w, pl, finish, ea):
         for r_, i in enumerate(B["order_final"]):
             rl = f"{['1st', '2nd', '3rd'][pl[i] - 1]}  {NAMES[i]}  {lead_t[pl[i]] - COUNT:0.2f}s"
             text(cv, rl, 540, 1010 + r_ * 80, min(58, int(1650 / max(1, len(rl)))), lighten(PAL[i], 20), stroke=8, alpha=ea)
-        text(cv, "Tumhara colour jeeta? Comment karo!" if NAMES == [b[1] for b in BALLS] else "Comment karo, agli race mein tumhari ball!",
+        text(cv, "Tumhari team jeeti? Comment karo!" if TEAM else "Tumhara colour jeeta? Comment karo!" if NAMES == [b[1] for b in BALLS] else "Comment karo, agli race mein tumhari ball!",
              540, 1290, 40, (220, 220, 235), stroke=6, alpha=ea)
         cv.drawRRect(skia.RRect.MakeRectXY(skia.Rect(290, 1360, 790, 1450), 26, 26), skia.Paint(Color=C((230, 30, 40), ea), AntiAlias=True))
         text(cv, "SUBSCRIBE", 540, 1424, 56, (255, 255, 255), stroke=0, alpha=ea)
@@ -1121,6 +1169,14 @@ if __name__ == "__main__":
     cfg = json.load(open(sys.argv[1]))
     INTENSE = bool(cfg.get("intense")); JELLY = bool(cfg.get("jelly"))
     if cfg.get("names") and len(cfg["names"]) == 3: NAMES = [str(x)[:12] for x in cfg["names"]]
+    if cfg.get("balls") and len(cfg["balls"]) == 3 and cfg.get("race_kind") == "team":   # team race: colours + labels only
+        TEAM = True
+        PAL = [tuple(int(v) for v in b["col"]) for b in cfg["balls"]]
+        FLAGS = [b.get("flag") for b in cfg["balls"]]
+        NAMES = [str(b["name"])[:12] for b in cfg["balls"]]
+        TAGS = [str(b.get("abbr") or b["name"])[:6] for b in cfg["balls"]]
+    elif NAMES != [b[1] for b in BALLS]:
+        TAGS = list(NAMES)          # fan-named balls carry their names too
     s0 = cfg.get("seed", random.randint(1, 10 ** 6))
     best, t_start, n_ok = None, time.time(), 0
     workers = max(1, min(8, os.cpu_count() or 1))

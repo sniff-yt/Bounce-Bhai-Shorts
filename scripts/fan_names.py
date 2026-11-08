@@ -20,9 +20,25 @@ def clean(name):
     return n[:12].upper()
 
 
+def _overlay(cfg, alt):
+    for k, v in (alt or {}).items():
+        if v is None: cfg.pop(k, None)
+        else: cfg[k] = v
+
+
+def to_team(cfg, path, why):
+    """Race fallback (owner 2026-11-08): too few fresh commenters -> a team race, never plain colours."""
+    if cfg.get("format") != "race" or not cfg.get("team_alt"):
+        print(f"fan names: {why}, balls keep their colours"); return
+    _overlay(cfg, cfg.pop("team_alt")); cfg["race_fallback"] = "team"
+    json.dump(cfg, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"fan names: {why} -> team race:", " vs ".join(cfg["teams"]))
+
+
 def main(path):
     cfg = json.load(open(path, encoding="utf-8"))
     need = 3 if cfg.get("format") == "race" else 1
+    team = cfg.get("race_kind") == "team"
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from yt_client import youtube, CHANNEL
@@ -43,7 +59,10 @@ def main(path):
         try: pin = json.load(open(os.path.join(ROOT, "data", "pin_names.json"), encoding="utf-8"))
         except Exception: pass
         red = (pin.get("red") or "").strip().upper()[:12]
-        if red and cfg.get("format") == "race" and red not in used:
+        ever = {n for h in hist for n in (h.get("names") or [])}   # pinned name is used ONCE (was: last-12 window, so it repeated every ~12 posts)
+        if red and cfg.get("format") == "race" and red not in ever:
+            if team:          # a pinned fan name overrides a team race: back to the fan-race title/hook/pin
+                _overlay(cfg, cfg.pop("fan_alt", None)); cfg["race_kind"] = "fan"
             # owner-pinned name for the RED ball (used once: it expires when it shows up in history)
             others = [n for n in fresh if not (n.startswith(red) or red.startswith(n))][:2]
             pick = [red] + (others if len(others) == 2 else ["BLUE", "GREEN"])
@@ -51,9 +70,11 @@ def main(path):
             cfg["comment"] = (cfg.get("comment", "") + f"\n🏷️ Aaj RED ball ka naam: {red}! Comment karo, agli baar tumhara naam ball pe hoga 👇").strip()
             json.dump(cfg, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
             print("fan names (pinned red):", ", ".join(pick)); return
+        if team:
+            print("fan names: team race", " vs ".join(cfg.get("teams") or []), "(no pinned name pending)"); return
         pool = fresh if len(fresh) >= need else []
         if not pool:
-            print(f"fan names: only {len(fresh)} new commenters, balls keep their colours"); return
+            return to_team(cfg, path, f"only {len(fresh)} new commenters")
         pick = random.sample(pool[:30], need)
         cfg["names"] = pick
         tag = ", ".join(pick)
@@ -62,6 +83,7 @@ def main(path):
         print("fan names:", tag)
     except Exception as e:
         print("fan names skipped:", str(e)[:200])
+        if not team: to_team(cfg, path, "comments unavailable")
 
 
 if __name__ == "__main__":
