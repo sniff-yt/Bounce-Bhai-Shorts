@@ -76,7 +76,8 @@ def team_overlay(rng, hist, series, ab_variant):
         "balls": [race_teams.ball_spec(t) for t in teams],
         "hook": big, "hook_sub": rng.choice(["Apni team chuno!", "Kaun jeetega? Team chuno!"]),
         "pin": rng.choice(TEAM_PINS), "ab": f"team-{pool}-h{TEAM_HOOKS.index(hk)}-{ab_variant}",
-        "yt_title": {k: f"{v.format(m=m, e=e)} | {series} #shorts" for k, v in zip(("hi_roman", "en", "te", "hi"), hk[1:])},
+        "yt_title": {k: f"{v.format(m=m if len(f'{hk[1]}{m}{series}') < 80 else big, e=e)} | {series} #shorts"   # YouTube cuts at 95
+                     for k, v in zip(("hi_roman", "en", "te", "hi"), hk[1:])},
         "desc_hook": {"hi_roman": f"{m}: finish se pehle apni team comment karo, phir dekho kaun jeeta 👀",
                       "en": f"{m}: comment your team before the finish, then watch who wins 👀",
                       "te": f"{m}: ఫినిష్ ముందే మీ టీమ్ కామెంట్ చేయండి, తర్వాత ఎవరు గెలిచారో చూడండి 👀",
