@@ -2489,5 +2489,24 @@
   ],
   "team_pool": "ipl",
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-09T10:39:36.055590+00:00",
+  "title": "Ball escape 20261109_1037",
+  "hook": "Koi gap nahi... phir bhi bahar?",
+  "video_id": "5UpMIpquYkk",
+  "seed": 41038,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Koi gap nahi... phir bhi bahar? 😱 | Ball Escape #27 #shorts",
+  "series": "BALL ESCAPE #27",
+  "names": null,
+  "variant": "break",
+  "ab": "break-h1",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
