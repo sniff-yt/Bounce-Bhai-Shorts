@@ -2508,5 +2508,32 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-09T15:07:59.956424+00:00",
+  "title": "Ball race 20261109_1501",
+  "hook": "CHE vs VIZ vs KOL",
+  "video_id": "Skq0zKmF2QQ",
+  "seed": 299911,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Chennai vs Vizag vs Kolkata 🔥 99% galat guess karte hain 😳 | Ball Race #100 #shorts",
+  "series": "BALL RACE #100",
+  "names": [
+   "CHENNAI",
+   "VIZAG",
+   "KOLKATA"
+  ],
+  "variant": "classic",
+  "ab": "team-city-h2-classic",
+  "race_kind": "team",
+  "teams": [
+   "CHENNAI",
+   "VIZAG",
+   "KOLKATA"
+  ],
+  "team_pool": "city",
+  "race_fallback": null
  }
 ]
