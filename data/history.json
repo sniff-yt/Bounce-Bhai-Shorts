@@ -2462,5 +2462,32 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-09T05:50:39.526434+00:00",
+  "title": "Ball race 20261109_0544",
+  "hook": "CSK vs DC vs PBKS",
+  "video_id": "UeQgp3aRWnU",
+  "seed": 64682,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "CSK vs DC vs PBKS 🏏 Apni team chuno 👇 | Ball Race #99 #shorts",
+  "series": "BALL RACE #99",
+  "names": [
+   "CSK",
+   "DC",
+   "PBKS"
+  ],
+  "variant": "classic",
+  "ab": "team-ipl-h1-classic",
+  "race_kind": "team",
+  "teams": [
+   "CSK",
+   "DC",
+   "PBKS"
+  ],
+  "team_pool": "ipl",
+  "race_fallback": null
  }
 ]
