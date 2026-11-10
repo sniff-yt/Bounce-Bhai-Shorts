@@ -2611,5 +2611,32 @@
   ],
   "team_pool": "country",
   "race_fallback": "team"
+ },
+ {
+  "date": "2026-11-10T10:43:57.308866+00:00",
+  "title": "Ball race 20261110_1039",
+  "hook": "JAI vs CHE vs DEL",
+  "video_id": "cXB0r6QT0Y8",
+  "seed": 300427,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Jaipur vs Chennai vs Delhi 🔥 99% galat guess karte hain 😳 | Ball Race #102 #shorts",
+  "series": "BALL RACE #102",
+  "names": [
+   "JAIPUR",
+   "CHENNAI",
+   "DELHI"
+  ],
+  "variant": "classic",
+  "ab": "team-city-h2-classic",
+  "race_kind": "team",
+  "teams": [
+   "JAIPUR",
+   "CHENNAI",
+   "DELHI"
+  ],
+  "team_pool": "city",
+  "race_fallback": "team"
  }
 ]
