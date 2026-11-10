@@ -2584,5 +2584,32 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-10T06:07:12.992516+00:00",
+  "title": "Ball race 20261110_0600",
+  "hook": "ENG vs BAN vs ARG",
+  "video_id": "3lypju4JiFQ",
+  "seed": 21979,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "England vs Bangladesh vs Argentina 🔥 Apni team chuno 👇 | Ball Race #101 #shorts",
+  "series": "BALL RACE #101",
+  "names": [
+   "ENGLAND",
+   "BANGLADESH",
+   "ARGENTINA"
+  ],
+  "variant": "jelly",
+  "ab": "team-country-h1-jelly",
+  "race_kind": "team",
+  "teams": [
+   "ENGLAND",
+   "BANGLADESH",
+   "ARGENTINA"
+  ],
+  "team_pool": "country",
+  "race_fallback": "team"
  }
 ]
