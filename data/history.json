@@ -2638,5 +2638,32 @@
   ],
   "team_pool": "city",
   "race_fallback": "team"
+ },
+ {
+  "date": "2026-11-10T15:26:45.756131+00:00",
+  "title": "Ball race 20261110_1520",
+  "hook": "IND vs PAK vs CAN",
+  "video_id": "Xwnz9PDNgr4",
+  "seed": 951956,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "India vs Pakistan vs Canada 🔥 Last tak dekhna 😱 | Ball Race #103 #shorts",
+  "series": "BALL RACE #103",
+  "names": [
+   "INDIA",
+   "PAKISTAN",
+   "CANADA"
+  ],
+  "variant": "intense",
+  "ab": "team-country-h3-intense",
+  "race_kind": "team",
+  "teams": [
+   "INDIA",
+   "PAKISTAN",
+   "CANADA"
+  ],
+  "team_pool": "country",
+  "race_fallback": null
  }
 ]
