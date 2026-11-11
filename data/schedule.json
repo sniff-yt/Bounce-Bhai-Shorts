@@ -12,6 +12,6 @@
   21
  ],
  "note": "IST hours when a scheduled run may post (runs start ~:40). 10/day since 2026-10-28 (was 17): YouTube caps ~10-13 uploads/day and back-to-back hourly posts were starving each other (3 hourly escapes on 2026-10-28: 208, 0, 0 views). Evening-weighted for Indian viewers. The dashboard chat agent can change this.",
- "min_gap_min": 240,
- "gap_note": "Shorts cadence gate (owner 2026-11-08: fewer, stronger posts, ~4/day): a scheduled Shorts run posts only if the last Short/promo (history.json, long_story ignored) is >= min_gap_min old. Was 50 min (8-9/day)."
+ "min_gap_min": 50,
+ "gap_note": "Shorts cadence gate: a scheduled Shorts run posts only if the last Short/promo (history.json, long_story ignored) is >= min_gap_min old. Owner 2026-11-11: back to 50 min (8-9/day) after the 240-min/4-a-day test (2026-11-09..11) did worse."
 }

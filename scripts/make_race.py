@@ -29,7 +29,7 @@ INTENSE_HOOKS = [
 ]
 # Team races (owner 2026-11-08): ~60% of races label the balls as IPL teams / states / cities / countries.
 # {m} = "CSK vs MI vs RCB", {e} = 🏏 (IPL) or 🔥. (weight, Hinglish, English, Telugu, Devanagari)
-TEAM_SHARE = 0.6
+TEAM_SHARE = 0.0  # owner 2026-11-11: back to old style (team races underperformed: 371-808 vs ~1,000)
 TEAM_HOOKS = [
     (3, "{m} {e} Kaun jeetega?", "{m} {e} Who wins?", "{m} {e} ఎవరు గెలుస్తారు?", "{m} {e} कौन जीतेगा?"),
     (3, "{m} {e} Apni team chuno 👇", "{m} {e} Pick your team 👇", "{m} {e} మీ టీమ్ ఎంచుకోండి 👇", "{m} {e} अपनी टीम चुनो 👇"),
@@ -136,7 +136,8 @@ def main(out):
         cfg.update(team)
     else:
         cfg["race_kind"] = "fan"
-        cfg["team_alt"] = team
+        if TEAM_SHARE > 0:
+            cfg["team_alt"] = team
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     json.dump(cfg, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("race:", cfg["race_kind"], "INTENSE" if intense else "", "JELLY" if jelly else "", cfg["yt_title"]["hi_roman"], "seed", cfg["seed"],
