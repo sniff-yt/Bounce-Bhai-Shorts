@@ -2731,5 +2731,28 @@
   ],
   "team_pool": "ipl",
   "race_fallback": "team"
+ },
+ {
+  "date": "2026-11-11T09:07:57.350255+00:00",
+  "title": "Ball race 20261111_0902",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "woFbLDTtOXg",
+  "seed": 46809,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Finish line pe kya hua dekho 😳🏁 | Ball Race #105 #shorts",
+  "series": "BALL RACE #105",
+  "names": [
+   "NOTHIN_STRIK",
+   "K4KROT",
+   "NIRAJRAI7242"
+  ],
+  "variant": "classic",
+  "ab": "race-h6",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
