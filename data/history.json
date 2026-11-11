@@ -2754,5 +2754,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-11T10:46:39.738446+00:00",
+  "title": "Ball escape 20261111_1043",
+  "hook": "Koi gap nahi... phir bhi bahar?",
+  "video_id": "QYjoeq2lBZM",
+  "seed": 26165,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Koi gap nahi... phir bhi bahar? 😱 | Ball Escape #28 #shorts",
+  "series": "BALL ESCAPE #28",
+  "names": null,
+  "variant": "break",
+  "ab": "break-h1",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
