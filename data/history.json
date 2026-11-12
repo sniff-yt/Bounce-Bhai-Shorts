@@ -2879,5 +2879,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-12T05:50:11.474280+00:00",
+  "title": "Ball race 20261112_0544",
+  "hook": "JELLY RACE!",
+  "video_id": "X_fp63DNYEs",
+  "seed": 960615,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Which ball wins? Guess karo 🏁 | Ball Race #107 #shorts",
+  "series": "BALL RACE #107",
+  "names": null,
+  "variant": "jelly",
+  "ab": "race-h3",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
