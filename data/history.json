@@ -2860,5 +2860,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-12T03:36:03.250567+00:00",
+  "title": "Ball escape 20261112_0334",
+  "hook": "Sirf 1 gap... bahar nikal paayegi?",
+  "video_id": "TNU5WPXnzKU",
+  "seed": 2141,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Sirf 1 gap... bahar nikal paayegi? 🔴 | Ball Escape #30 #shorts",
+  "series": "BALL ESCAPE #30",
+  "names": null,
+  "variant": "gap",
+  "ab": "sim-h3",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
