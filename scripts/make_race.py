@@ -52,8 +52,11 @@ def _history():
 
 def pick_hook(rng, pool, hist):
     """Weighted pick that never repeats one of the last 2 race titles (identical back-to-back titles flopped)."""
-    recent = [h.get("yt_title", "") for h in hist if h.get("format") == "race"][-2:]
-    cands = [h for h in pool if not any(r.startswith(h[1]) for r in recent)] or pool
+    # 2026-11-12: the same title was coming back within hours (race-h0 at 13:28 and 18:17) -> no repeat in the last 8 races
+    recent = [str(h.get("yt_title") or "") for h in hist if h.get("format") == "race"][-8:]
+    cands = [h for h in pool if not any(r.startswith(h[1]) for r in recent)]
+    if not cands:   # every title in this pool was used lately: take the one used longest ago
+        cands = [min(pool, key=lambda h: max([i for i, r in enumerate(recent) if r.startswith(h[1])] or [-1]))]
     return rng.choices(cands, weights=[h[0] for h in cands])[0]
 
 

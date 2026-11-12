@@ -33,12 +33,13 @@ def main(out):
     except Exception:
         hist = []
     # never reuse the last 2 escape titles: 3 identical "Is gap se nikal paayegi?" in a row (2026-10-28) -> 208, 0, 0 views
-    recent = [h.get("yt_title") or h.get("hook", "") for h in hist if h.get("format") == "sim"][-2:]
+    recent = [str(h.get("yt_title") or h.get("hook", "")) for h in hist if h.get("format") == "sim"][-4:]   # 2026-11-12: wider no-repeat window
     cands = [h for h in HOOKS if not any(r.startswith(h[0].rsplit(" ", 1)[0]) for r in recent)] or HOOKS
     hk = rng.choice(cands); hr, en, te, hd = hk; ab = f"sim-h{HOOKS.index(hk)}"
     variant = "break" if rng.random() < 0.35 else "gap"     # ~1 in 3: no gap, the ball must SMASH its way out
     if variant == "break":
-        hk = rng.choice(BREAK_HOOKS); hr, en, te, hd = hk; ab = f"break-h{BREAK_HOOKS.index(hk)}"
+        bc = [h for h in BREAK_HOOKS if not any(r.startswith(h[0]) for r in recent)] or BREAK_HOOKS
+        hk = rng.choice(bc); hr, en, te, hd = hk; ab = f"break-h{BREAK_HOOKS.index(hk)}"
     jelly = rng.random() < 0.35
     name = os.path.splitext(os.path.basename(out))[0]
     ep = 1 + sum(1 for h in hist if h.get("format") == "sim" and h.get("video_id") and not h.get("deleted"))
