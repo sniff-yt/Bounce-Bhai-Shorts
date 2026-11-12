@@ -2974,5 +2974,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-12T13:48:57.070829+00:00",
+  "title": "Ball race 20261112_1343",
+  "hook": "JELLY RACE!",
+  "video_id": "c9Oz3U9G9VE",
+  "seed": 435912,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Dil thaam ke dekhna 😤🔥 | Ball Race #112 #shorts",
+  "series": "BALL RACE #112",
+  "names": null,
+  "variant": "jelly",
+  "ab": "intense-h0",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
