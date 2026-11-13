@@ -3206,5 +3206,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-13T15:04:56.599304+00:00",
+  "title": "Ball race 20261113_1457",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "sGG9IySNxJ0",
+  "seed": 211138,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Is race ka winner guess karo 🏁 | Ball Race #120 #shorts",
+  "series": "BALL RACE #120",
+  "names": null,
+  "variant": "classic",
+  "ab": "race-h0",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
