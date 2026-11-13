@@ -3092,5 +3092,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-13T03:38:54.662686+00:00",
+  "title": "Ball race 20261113_0334",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "3vC5fXWWB00",
+  "seed": 302010,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Last second mein palat gaya? 😱 | Ball Race #114 #shorts",
+  "series": "BALL RACE #114",
+  "names": null,
+  "variant": "classic",
+  "ab": "race-h4",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
