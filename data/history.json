@@ -3149,5 +3149,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-13T09:29:45.007917+00:00",
+  "title": "Ball race 20261113_0925",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "Tetwn-ESPCU",
+  "seed": 896168,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Which ball wins? Guess karo 🏁 | Ball Race #117 #shorts",
+  "series": "BALL RACE #117",
+  "names": null,
+  "variant": "classic",
+  "ab": "race-h3",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
