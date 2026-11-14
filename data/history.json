@@ -3340,5 +3340,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-14T11:16:00.479044+00:00",
+  "title": "Ball race 20261114_1108",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "E6OJugwCxQ4",
+  "seed": 508218,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Kaun jeetega? Apna colour chuno! 🔴🔵🟢 | Ball Race #125 #shorts",
+  "series": "BALL RACE #125",
+  "names": null,
+  "variant": "classic",
+  "ab": "race-h1",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
