@@ -1,17 +1,13 @@
 {
  "hours_ist": [
   7,
-  9,
-  11,
+  10,
   13,
-  14,
   16,
-  18,
   19,
-  20,
   21
  ],
- "note": "IST hours when a scheduled run may post (runs start ~:40). 10/day since 2026-10-28 (was 17): YouTube caps ~10-13 uploads/day and back-to-back hourly posts were starving each other (3 hourly escapes on 2026-10-28: 208, 0, 0 views). Evening-weighted for Indian viewers. The dashboard chat agent can change this.",
- "min_gap_min": 90,
- "gap_note": "Shorts cadence gate: a scheduled Shorts run posts only if the last Short/promo is >= min_gap_min old (long_story ignored). 2026-11-12: 90 min (~7/day). At 50 min the late-evening posts landed hourly (18:17, 19:18, 20:36, 21:41) and competed with each other; 240 min (~4/day, 2026-11-09..11) was too few."
+ "note": "IST hours when a scheduled run may post (cron wakes 3x/hour; the gate applies). 6/day, evening-weighted for Indian viewers, spaced to reduce self-competition/cannibalization. The dashboard chat agent can change this.",
+ "min_gap_min": 150,
+ "gap_note": "Shorts cadence gate: a scheduled Shorts run posts only if the last Short/promo is >= min_gap_min old (long_story ignored). 150 min targets ~6 well-spaced posts/day to give each Short more room to get impressions."
 }

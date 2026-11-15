@@ -13,90 +13,38 @@ prepare_models() {
   printf '%s\n' "$NAME" > out/current_name.txt
   printf 'Preparing %s\n' "$NAME"
 
-  FORMAT="$(python scripts/insights.py format 2>/dev/null || echo race)"
-  echo "Format picked from channel stats: $FORMAT"
+  # Honour explicit override (workflow_dispatch input / env), else pick from insights.
+  FORMAT="${BB_FORMAT:-$(python scripts/insights.py format 2>/dev/null || echo race)}"
+  echo "Format selected: $FORMAT"
   echo "::notice title=format::$FORMAT"
-  if [ "$FORMAT" = "promo" ]; then
-    live stage "Planning a Bhai Drive game promo" --pct 5
-    python scripts/make_promo.py "out/$NAME.json"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0
-  fi
-  if [ "$FORMAT" = "race" ]; then
-    live stage "Setting up a 3-ball race" --pct 5
-    python scripts/make_race.py "out/$NAME.json"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0
-  fi
-  if [ "$FORMAT" = "multiply" ]; then
-    live stage "Setting up a ball-multiply challenge" --pct 5
-    python scripts/make_multiply.py "out/$NAME.json"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0
-  fi
-  if [ "$FORMAT" = "sim" ]; then
-    live stage "Setting up a ball-escape challenge" --pct 5
-    python scripts/make_sim.py "out/$NAME.json"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0
-  fi
 
-  T=$SECONDS
-  live stage "Writing a new story" --pct 3
-  # Owner's strict rule: only race + ball-escape Shorts. Anything else falls back to a race.
-  echo "::warning title=format::format '$FORMAT' is not allowed (race/sim only) - making a race"
-  live stage "Setting up a 3-ball race" --pct 5
-  python scripts/make_race.py "out/$NAME.json"
-  echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-  echo "Setup complete: out/$NAME.json"
-  return 0
-  if ! python scripts/write_story.py "out/$NAME.json"; then
-    # Every story LLM failed (providers down / models retired): still post today, as a ball-escape Short.
-    echo "::warning title=story::All story LLMs failed - posting a ball-escape Short instead"
-    live stage "Story AI is down - making a ball-escape challenge instead" --pct 5
-    python scripts/make_sim.py "out/$NAME.json"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0
-  fi
-  live event "Story: $(python -c 'import json,sys;print(json.load(open(sys.argv[1]))["title"])' "out/$NAME.json" 2>/dev/null)"
-  echo "::notice title=timing::story $((SECONDS - T))s"; T=$SECONDS
-  live stage "Recording the voice (your cloned voice)" --pct 10
-  python scripts/voice.py "out/$NAME.json" voice/ref.wav
-  echo "::notice title=timing::voice $((SECONDS - T))s"
-
-  # Sketchfab actors are opt-in: search hits are random rigid meshes (cars etc.) that wreck the framing.
-  # Default = rigged CC0 Quaternius characters with baked skeletal clips, lip-sync and gesture layers.
-  case "${BB_USE_SKETCHFAB:-0}" in 1|true|yes) ;; *)
-    echo "Using the rigged Quaternius cast (assets/characters/cast.blend; BB_USE_SKETCHFAB=1 for Sketchfab models)"
-    echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-    echo "Setup complete: out/$NAME.json"
-    return 0 ;;
+  case "$FORMAT" in
+    promo)
+      live stage "Planning a Bhai Drive game promo" --pct 5
+      python scripts/make_promo.py "out/$NAME.json"
+      ;;
+    race)
+      live stage "Setting up a 3-ball race" --pct 5
+      python scripts/make_race.py "out/$NAME.json"
+      ;;
+    multiply)
+      live stage "Setting up a ball-multiply challenge" --pct 5
+      python scripts/make_multiply.py "out/$NAME.json"
+      ;;
+    sim)
+      live stage "Setting up a ball-escape challenge" --pct 5
+      python scripts/make_sim.py "out/$NAME.json"
+      ;;
+    *)
+      echo "::warning title=format::Unsupported format '$FORMAT' - falling back to race"
+      live stage "Setting up a 3-ball race" --pct 5
+      python scripts/make_race.py "out/$NAME.json"
+      FORMAT="race"
+      ;;
   esac
-  python scripts/fetch_models.py "out/$NAME.json"
-  "${BLENDER:-blender}" -b --factory-startup --python engine/setup_models.py -- "out/$NAME.json"
-
-  python - "$NAME" <<'PY'
-import json, os, sys
-name = sys.argv[1]
-path = f"out/{name}.json"
-with open(path, encoding="utf-8") as stream:
-    story = json.load(stream)
-cast = story.get("cast") or []
-missing = [i for i, c in enumerate(cast) if not isinstance(c, dict) or
-           not str(c.get("model_path", "")).endswith(".blend") or
-           not os.path.isfile(c["model_path"])]
-if missing:
-    raise SystemExit(f"Blender model setup failed for cast indexes {missing}")
-print(f"Blender setup validated for {len(cast)} actors")
-PY
 
   echo "NAME=$NAME" >> "${GITHUB_ENV:-/dev/null}"
-  echo "Setup complete: out/$NAME.json"
+  echo "Setup complete: out/$NAME.json (format=$FORMAT)"
 }
 
 animate_and_post() {
