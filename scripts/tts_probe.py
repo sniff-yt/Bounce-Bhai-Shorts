@@ -18,8 +18,7 @@ os.makedirs(out, exist_ok=True)
 r = requests.get(f"{BASE}/models?key={KEY}&pageSize=200", timeout=30)
 models = [m["name"] for m in r.json().get("models", [])]
 TTSM = [m for m in models if "tts" in m]
-print("::notice title=tts models::" + ", ".join(TTSM))
-print("all models:", models)
+print(f"Models found: {len(models)}; TTS models: {len(TTSM)}")
 
 SAMPLES = {"te": [
     ("narrator", "Gacrux", "Read this like a warm, loving grandmother telling a bedtime story to children, slowly, with gentle pauses",
@@ -58,12 +57,12 @@ def tts(model, voice, style, text):
     r = requests.post(f"{BASE}/models/{model}:generateContent?key={KEY}", json=body, timeout=180)
     dt = time.time() - t0
     if r.status_code != 200:
-        return None, f"{r.status_code} {' '.join(r.text.split())[:2500]}", dt
+        return None, f"HTTP {r.status_code}", dt
     j = r.json()
     try:
         p = j["candidates"][0]["content"]["parts"][0]["inlineData"]
     except Exception:
-        return None, "no content: " + json.dumps(j)[:300], dt
+        return None, "no audio content in response", dt
     return base64.b64decode(p["data"]), p.get("mimeType"), dt
 
 
@@ -89,7 +88,7 @@ def whisper(path):
                       data={"model": "whisper-large-v3", "language": lang, "response_format": "verbose_json",
                             "timestamp_granularities[]": "word", "temperature": "0"}, timeout=90)
     if r.status_code != 200:
-        return {"error": r.text[:200]}
+        return {"error": f"HTTP {r.status_code}"}
     return r.json()
 
 
