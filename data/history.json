@@ -3530,5 +3530,32 @@
   ],
   "team_pool": "country",
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-15T13:43:53.240092+00:00",
+  "title": "Ball race 20261115_1338",
+  "hook": "HYD vs MUM vs PUNE",
+  "video_id": "H3xKcCYIsj4",
+  "seed": 541158,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Hyderabad vs Mumbai vs Pune 🔥 Finish tak dekhna 😱 | Ball Race #132 #shorts",
+  "series": "BALL RACE #132",
+  "names": [
+   "HYDERABAD",
+   "MUMBAI",
+   "PUNE"
+  ],
+  "variant": "classic",
+  "ab": "team-city-h2-classic",
+  "race_kind": "team",
+  "teams": [
+   "HYDERABAD",
+   "MUMBAI",
+   "PUNE"
+  ],
+  "team_pool": "city",
+  "race_fallback": null
  }
 ]
