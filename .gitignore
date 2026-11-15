@@ -1,5 +1,17 @@
 out/
+models/blender_cache/
 voice/ref.wav
 *.pyc
 __pycache__/
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
 mix.wav
+*.tmp
+*.log
+.DS_Store

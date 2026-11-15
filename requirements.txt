@@ -1,8 +1,14 @@
+# Core dependencies for the current Shorts pipeline (race/sim/promo/multiply + upload).
+# CI installs a minimal set inline for speed; use this for local runs of the common path.
 numpy<2
 pillow
-chatterbox-tts
+requests
 google-api-python-client
 google-auth
-noisereduce
-scipy
-requests
+skia-python==144.0.post2
+
+# Optional / format-specific (install as needed):
+# playwright                # promo/gameplay capture (also: playwright install chromium)
+# chatterbox-tts            # voice cloning / narrated story formats (legacy/optional)
+# noisereduce, scipy       # audio cleanup for voice workflows (legacy/optional)
+# torch, torchaudio        # required by voice/TTS stacks (CPU wheels recommended)
