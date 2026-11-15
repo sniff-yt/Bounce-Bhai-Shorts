@@ -3503,5 +3503,32 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-15T09:05:57.164103+00:00",
+  "title": "Ball race 20261115_0900",
+  "hook": "IND vs CAN vs BAN",
+  "video_id": "hb_B91-5kKg",
+  "seed": 509408,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "India vs Canada vs Bangladesh 🔥 Kaun jeetega? | Ball Race #131 #shorts",
+  "series": "BALL RACE #131",
+  "names": [
+   "INDIA",
+   "CANADA",
+   "BANGLADESH"
+  ],
+  "variant": "jelly",
+  "ab": "team-country-h0-jelly",
+  "race_kind": "team",
+  "teams": [
+   "INDIA",
+   "CANADA",
+   "BANGLADESH"
+  ],
+  "team_pool": "country",
+  "race_fallback": null
  }
 ]
