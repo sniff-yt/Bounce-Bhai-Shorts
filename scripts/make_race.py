@@ -26,7 +26,7 @@ INTENSE_HOOKS = [
 ]
 # Team races (owner 2026-11-08): label balls as IPL teams / states / cities / countries.
 # {m} = "CSK vs MI vs RCB", {e} = 🏏 (IPL) or 🔥. (weight, Hinglish, English, Telugu, Devanagari)
-TEAM_SHARE = 0.25  # keep as a minority variant; A/B via history, not forced
+TEAM_SHARE = 0.0  # owner 2026-11-11 "return to old style": team races got 215-821 vs ~1,000
 TEAM_HOOKS = [
     (3, "{m} {e} Kaun jeetega?", "{m} {e} Who wins?", "{m} {e} ఎవరు గెలుస్తారు?", "{m} {e} कौन जीतेगा?"),
     (3, "{m} {e} Apni team chuno 👇", "{m} {e} Pick your team 👇", "{m} {e} మీ టీమ్ ఎంచుకోండి 👇", "{m} {e} अपनी टीम चुनो 👇"),

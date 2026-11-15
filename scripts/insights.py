@@ -81,7 +81,8 @@ def promo_due(hours=20):
     return time.time() - last > hours * 3600
 
 
-RACE_SHARE = float(os.environ.get("BB_RACE_SHARE", "0.85"))   # owner (2026-10-28): race Shorts get the most views -> lean in
+RACE_SHARE = float(os.environ.get("BB_RACE_SHARE", "0.55"))   # 2026-11-15: was 0.85; 22 races in a row (Nov 13-15) fatigued the feed while escapes held ~900-1,150
+MULTIPLY_SHARE = float(os.environ.get("BB_MULTIPLY_SHARE", "0.15"))   # owner 2026-11-03: "if it's good add it to automation"; #1 got 956 (= race median)   # owner (2026-10-28): race Shorts get the most views -> lean in
 
 
 ALLOWED_FORMATS = ("race", "sim")   # OWNER'S STRICT RULE (2026-10-25): only ball-race, ball-escape and the daily Bhai Drive game promo. No stories.
@@ -102,6 +103,9 @@ def pick_format(rng=random):
     (rs, rn), (ss, sn) = (_score([v for v in vs if v["format"] == f]) for f in ("race", "sim"))
     if rn >= 5 and sn >= 5 and ss > rs + 0.7:   # escapes clearly winning lately (~2x views): rebalance, still keep races
         share = 0.5
+    r = rng.random()
+    if r < MULTIPLY_SHARE:
+        return "multiply"
     return "race" if rng.random() < share else "sim"
 
 
