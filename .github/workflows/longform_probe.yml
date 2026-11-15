@@ -21,6 +21,8 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    permissions:
+      contents: read
     env:
       BB_X264: veryfast
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
