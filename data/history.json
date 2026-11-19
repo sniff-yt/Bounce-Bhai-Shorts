@@ -3773,5 +3773,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-19T13:43:33.201335+00:00",
+  "title": "Ball escape 20261119_1341",
+  "hook": "Deewar tod ke nikal paayegi?",
+  "video_id": "kchL8eVWRsw",
+  "seed": 83960,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Deewar tod ke nikal paayegi? 😱🧱 | Ball Escape #33 #shorts",
+  "series": "BALL ESCAPE #33",
+  "names": null,
+  "variant": "break",
+  "ab": "break-h2",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
