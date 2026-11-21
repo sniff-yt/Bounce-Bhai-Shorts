@@ -3880,5 +3880,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-21T07:46:35.911231+00:00",
+  "title": "Ball escape 20261121_0744",
+  "hook": "Is gap se bach paayegi ya nahi?",
+  "video_id": "JlVfy8pDoqk",
+  "seed": 67408,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Is gap se bach paayegi ya nahi? 😱 | Ball Escape #34 #shorts",
+  "series": "BALL ESCAPE #34",
+  "names": null,
+  "variant": "gap",
+  "ab": "sim-h2",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
