@@ -3918,5 +3918,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-21T15:41:34.680206+00:00",
+  "title": "Ball escape 20261121_1539",
+  "hook": "Kitne bounce mein bahar niklegi?",
+  "video_id": "wSjekepAXoE",
+  "seed": 19114,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Kitne bounce mein bahar niklegi? 🤯 | Ball Escape #35 #shorts",
+  "series": "BALL ESCAPE #35",
+  "names": null,
+  "variant": "gap",
+  "ab": "sim-h1",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
