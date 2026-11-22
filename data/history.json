@@ -3976,5 +3976,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-22T08:31:27.956777+00:00",
+  "title": "Ball race 20261122_0825",
+  "hook": "KAUN JEETEGA?",
+  "video_id": "LkgNz17fqHI",
+  "seed": 148078,
+  "format": "race",
+  "genre": null,
+  "topic": "ball race",
+  "yt_title": "Sabse CLOSE race! Kaun jeetega? 🔥 | Ball Race #135 #shorts",
+  "series": "BALL RACE #135",
+  "names": null,
+  "variant": "intense",
+  "ab": "intense-h1",
+  "race_kind": "fan",
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
