@@ -4034,5 +4034,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-24T02:45:08.161333+00:00",
+  "title": "Ball escape 20261124_0243",
+  "hook": "Ring tez hota ja raha hai... nikal paayegi?",
+  "video_id": "PnUsHLZ0zkQ",
+  "seed": 72152,
+  "format": "sim",
+  "genre": null,
+  "topic": "ball escape",
+  "yt_title": "Ring tez hota ja raha hai... nikal paayegi? 😰 | Ball Escape #36 #shorts",
+  "series": "BALL ESCAPE #36",
+  "names": null,
+  "variant": "gap",
+  "ab": "sim-h5",
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
