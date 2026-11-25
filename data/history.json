@@ -4111,5 +4111,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-25T15:35:58.107363+00:00",
+  "title": "Bhai Drive promo 20261125_1534",
+  "hook": "Parking test: pass ya fail?",
+  "video_id": "oFeG2RgQacM",
+  "seed": 2453,
+  "format": "promo",
+  "genre": null,
+  "topic": "bhai drive game promo",
+  "yt_title": "Parking test: pass ya fail? 😅 #shorts",
+  "series": null,
+  "names": null,
+  "variant": null,
+  "ab": null,
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
