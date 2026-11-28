@@ -4218,5 +4218,24 @@
   "teams": null,
   "team_pool": null,
   "race_fallback": null
+ },
+ {
+  "date": "2026-11-28T10:57:33.678084+00:00",
+  "title": "Ball multiply 20261128_1055",
+  "hook": "1 BALL SE 500 BALLS!",
+  "video_id": "b24Gt_ouSpY",
+  "seed": 69495,
+  "format": "multiply",
+  "genre": null,
+  "topic": "ball multiply",
+  "yt_title": "1 ball se 500 balls 🔴 | Ball Multiply #3 #shorts",
+  "series": "BALL MULTIPLY #3",
+  "names": null,
+  "variant": null,
+  "ab": null,
+  "race_kind": null,
+  "teams": null,
+  "team_pool": null,
+  "race_fallback": null
  }
 ]
